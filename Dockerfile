@@ -19,8 +19,10 @@ RUN git clone -b ${VERSION} --depth=1 https://github.com/1Panel-dev/1Panel /src
 WORKDIR /src/frontend
 
 COPY scripts/patch_frontend_xpack_compat.mjs /tmp/patch_frontend_xpack_compat.mjs
+COPY scripts/patch_backend_xpack_compat.mjs /tmp/patch_backend_xpack_compat.mjs
 
 RUN set -ex \
+    && node /tmp/patch_backend_xpack_compat.mjs /src \
     && node /tmp/patch_frontend_xpack_compat.mjs /src/frontend \
     && npm install \
     && npm run build:pro \
@@ -45,12 +47,10 @@ RUN set -ex \
 
 # Use custom download script instead of ci/script.sh for cross-version compatibility
 COPY scripts/download_resources.sh /tmp/download_resources.sh
-COPY scripts/patch_backend_xpack_compat.mjs /tmp/patch_backend_xpack_compat.mjs
 
 RUN set -ex \
     && chmod +x /tmp/download_resources.sh \
     && INSTALLER_REF="${INSTALLER_REF:-v2}" /tmp/download_resources.sh \
-    && node /tmp/patch_backend_xpack_compat.mjs /opt/1Panel \
     && sed -i "s@^ORIGINAL_VERSION=.*@ORIGINAL_VERSION=${VERSION}@g" /opt/1Panel/1pctl
 
 RUN set -ex \
