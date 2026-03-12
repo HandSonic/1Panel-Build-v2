@@ -45,10 +45,12 @@ RUN set -ex \
 
 # Use custom download script instead of ci/script.sh for cross-version compatibility
 COPY scripts/download_resources.sh /tmp/download_resources.sh
+COPY scripts/patch_backend_xpack_compat.mjs /tmp/patch_backend_xpack_compat.mjs
 
 RUN set -ex \
     && chmod +x /tmp/download_resources.sh \
     && INSTALLER_REF="${INSTALLER_REF:-v2}" /tmp/download_resources.sh \
+    && node /tmp/patch_backend_xpack_compat.mjs /opt/1Panel \
     && sed -i "s@^ORIGINAL_VERSION=.*@ORIGINAL_VERSION=${VERSION}@g" /opt/1Panel/1pctl
 
 RUN set -ex \
@@ -71,22 +73,22 @@ RUN set -ex \
         GOARCH=${ARCH}; GOARM=""; APP_ARCH=${ARCH}; \
         if [ "${ARCH}" = "armv7" ]; then GOARCH=arm; GOARM=7; APP_ARCH=armv7; fi; \
         cd /opt/1Panel/core; \
-        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} GOARM=${GOARM} go build -trimpath -ldflags '-s -w' -o ../build/1panel-core ./cmd/server/main.go; \
+        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} GOARM=${GOARM} go build -trimpath -ldflags '-s -w' -o ../build/1panel-core ./cmd/server/main.go || exit 1; \
         cd /opt/1Panel/agent; \
-        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} GOARM=${GOARM} go build -trimpath -ldflags '-s -w' -o ../build/1panel-agent ./cmd/server/main.go; \
+        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} GOARM=${GOARM} go build -trimpath -ldflags '-s -w' -o ../build/1panel-agent ./cmd/server/main.go || exit 1; \
         PACKAGE_NAME="1panel-${VERSION}-linux-${APP_ARCH}"; \
         mkdir -p "/opt/1Panel/${PACKAGE_NAME}"; \
-        cp /opt/1Panel/build/1panel-core /opt/1Panel/build/1panel-agent "/opt/1Panel/${PACKAGE_NAME}/"; \
-        cp /opt/1Panel/1pctl /opt/1Panel/install.sh "/opt/1Panel/${PACKAGE_NAME}/"; \
-        [ -f /opt/1Panel/1panel-core.service ] && cp /opt/1Panel/1panel-core.service "/opt/1Panel/${PACKAGE_NAME}/"; \
-        [ -f /opt/1Panel/1panel-agent.service ] && cp /opt/1Panel/1panel-agent.service "/opt/1Panel/${PACKAGE_NAME}/"; \
-        [ -f /opt/1Panel/GeoIP.mmdb ] && cp /opt/1Panel/GeoIP.mmdb "/opt/1Panel/${PACKAGE_NAME}/"; \
-        [ -f /opt/1Panel/LICENSE ] && cp /opt/1Panel/LICENSE "/opt/1Panel/${PACKAGE_NAME}/"; \
-        [ -f /opt/1Panel/README.md ] && cp /opt/1Panel/README.md "/opt/1Panel/${PACKAGE_NAME}/"; \
-        cp -r /opt/1Panel/initscript /opt/1Panel/lang "/opt/1Panel/${PACKAGE_NAME}/"; \
-        tar -czf "/opt/1Panel/${PACKAGE_NAME}.tar.gz" -C /opt/1Panel "${PACKAGE_NAME}"; \
-        sha256sum "/opt/1Panel/${PACKAGE_NAME}.tar.gz" > "/opt/1Panel/dist/${PACKAGE_NAME}.tar.gz.sha256"; \
-        mv "/opt/1Panel/${PACKAGE_NAME}.tar.gz" /opt/1Panel/dist/; \
+        cp /opt/1Panel/build/1panel-core /opt/1Panel/build/1panel-agent "/opt/1Panel/${PACKAGE_NAME}/" || exit 1; \
+        cp /opt/1Panel/1pctl /opt/1Panel/install.sh "/opt/1Panel/${PACKAGE_NAME}/" || exit 1; \
+        if [ -f /opt/1Panel/1panel-core.service ]; then cp /opt/1Panel/1panel-core.service "/opt/1Panel/${PACKAGE_NAME}/"; fi; \
+        if [ -f /opt/1Panel/1panel-agent.service ]; then cp /opt/1Panel/1panel-agent.service "/opt/1Panel/${PACKAGE_NAME}/"; fi; \
+        if [ -f /opt/1Panel/GeoIP.mmdb ]; then cp /opt/1Panel/GeoIP.mmdb "/opt/1Panel/${PACKAGE_NAME}/"; fi; \
+        if [ -f /opt/1Panel/LICENSE ]; then cp /opt/1Panel/LICENSE "/opt/1Panel/${PACKAGE_NAME}/"; fi; \
+        if [ -f /opt/1Panel/README.md ]; then cp /opt/1Panel/README.md "/opt/1Panel/${PACKAGE_NAME}/"; fi; \
+        cp -r /opt/1Panel/initscript /opt/1Panel/lang "/opt/1Panel/${PACKAGE_NAME}/" || exit 1; \
+        tar -czf "/opt/1Panel/${PACKAGE_NAME}.tar.gz" -C /opt/1Panel "${PACKAGE_NAME}" || exit 1; \
+        sha256sum "/opt/1Panel/${PACKAGE_NAME}.tar.gz" > "/opt/1Panel/dist/${PACKAGE_NAME}.tar.gz.sha256" || exit 1; \
+        mv "/opt/1Panel/${PACKAGE_NAME}.tar.gz" /opt/1Panel/dist/ || exit 1; \
         rm -rf "/opt/1Panel/${PACKAGE_NAME}"; \
     done \
     && rm -rf build
