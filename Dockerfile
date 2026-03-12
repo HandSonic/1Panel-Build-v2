@@ -18,7 +18,10 @@ RUN git clone -b ${VERSION} --depth=1 https://github.com/1Panel-dev/1Panel /src
 
 WORKDIR /src/frontend
 
+COPY scripts/patch_frontend_xpack_compat.mjs /tmp/patch_frontend_xpack_compat.mjs
+
 RUN set -ex \
+    && node /tmp/patch_frontend_xpack_compat.mjs /src/frontend \
     && npm install \
     && npm run build:pro \
     && rm -rf node_modules ~/.npm
