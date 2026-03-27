@@ -90,7 +90,7 @@ Customize your build by passing `--build-arg` to the `docker build` command.
 | **`VERSION`** | `v2.0.13` | The Git tag or branch of 1Panel to build. |
 | **`TARGET_ARCHES`** | *All Supported* | Space-separated target architectures (e.g., `"amd64 arm64"`). |
 | **`INSTALLER_REF`** | `v2` | The branch/tag of the installer repository to use for scripts. |
-| **`GO_VERSION`** | `1.24` | Golang version (usually matches official requirement). |
+| **`GO_VERSION`** | `auto in CI` | Golang version. CI resolves it from upstream `core/agent` `go.mod`; manual builds may still override it explicitly. |
 | **`NODE_VERSION`** | `20` | Node.js version for frontend assets. |
 
 > **Note on Architectures**: Default list is `amd64 arm64 armv7 ppc64le s390x loong64 riscv64`.

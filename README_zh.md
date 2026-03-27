@@ -90,7 +90,7 @@ diyv2/
 | **`VERSION`** | `v2.0.13` | 要构建的 1Panel Git 标签或分支。 |
 | **`TARGET_ARCHES`** | *所有支持架构* | 空格分隔的目标架构列表 (例如: `"amd64 arm64"`)。 |
 | **`INSTALLER_REF`** | `v2` | 用于脚本的 installer 仓库分支/标签。 |
-| **`GO_VERSION`** | `1.24` | Golang 版本 (通常应匹配官方要求)。 |
+| **`GO_VERSION`** | `CI 自动解析` | Golang 版本。CI 会从上游 `core/agent` 的 `go.mod` 中解析；手动构建仍可显式覆盖。 |
 | **`NODE_VERSION`** | `20` | 用于前端资源的 Node.js 版本。 |
 
 > **架构说明**：默认列表为 `amd64 arm64 armv7 ppc64le s390x loong64 riscv64`。

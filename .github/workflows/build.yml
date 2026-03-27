@@ -24,7 +24,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      GO_VER: "1.24"
+      DEFAULT_GO_VERSION: "1.25.7"
       NODE_VER: "20"
     steps:
       - name: Checkout
@@ -51,10 +51,12 @@ jobs:
 
           ARCH_LIST=$(echo "${ARCH_INPUT:-"amd64 arm64 armv7 ppc64le s390x loong64 riscv64"}" | tr ',' ' ')
           ARCH_LABEL=$(echo "$ARCH_LIST" | tr ' ' '_' | tr ',' '_')
+          GO_VER=$(bash scripts/resolve_go_version.sh "$VERSION")
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "arch_list=${ARCH_LIST}" >> "$GITHUB_OUTPUT"
           echo "arch_label=${ARCH_LABEL}" >> "$GITHUB_OUTPUT"
+          echo "go_ver=${GO_VER}" >> "$GITHUB_OUTPUT"
 
       - name: Check release (skip if already built)
         id: check
@@ -80,6 +82,7 @@ jobs:
       version: ${{ steps.vars.outputs.version }}
       arch_list: ${{ steps.vars.outputs.arch_list }}
       arch_label: ${{ steps.vars.outputs.arch_label }}
+      go_ver: ${{ steps.vars.outputs.go_ver }}
       build: ${{ steps.check.outputs.build }}
 
   build:
@@ -87,7 +90,7 @@ jobs:
     if: needs.check.outputs.build == '1'
     runs-on: ubuntu-latest
     env:
-      GO_VER: "1.24"
+      GO_VER: ${{ needs.check.outputs.go_ver }}
       NODE_VER: "20"
       VERSION: ${{ needs.check.outputs.version }}
       ARCH_LIST: ${{ needs.check.outputs.arch_list }}
