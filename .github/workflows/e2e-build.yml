@@ -1,0 +1,68 @@
+name: Real source build verification
+on:
+  push:
+    branches: [fix/adaptive-offline-pipeline]
+    paths:
+      - Dockerfile
+      - scripts/**
+      - .github/workflows/e2e-build.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: real-source-build-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION_INPUT: v2.2.5
+      ARCH_INPUT: amd64 arm64 armv7 ppc64le s390x loong64 riscv64
+      BUILDKIT_PROGRESS: plain
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve source and toolchain
+        run: bash scripts/ci_build.sh prepare
+      - name: Compile actual frontend and seven backend architectures
+        shell: bash
+        run: |
+          source .ci/build.env
+          bash scripts/ci_build.sh build 2>&1 | tee source-build.log
+      - name: Export and verify actual artifacts
+        shell: bash
+        run: |
+          source .ci/build.env
+          bash scripts/ci_build.sh export
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          manifest = json.loads(Path('dist/build-manifest.json').read_text())
+          expected = set(os.environ['ARCH_LIST'].split())
+          built = {p['arch'] for p in manifest['packages'] if p['status'] == 'built'}
+          print(json.dumps(manifest, indent=2))
+          if built != expected or not manifest['complete']:
+              raise SystemExit(f'Real build missing architectures: {sorted(expected - built)}')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
+              report.write(f"Real source build: {manifest['version']}\n\n")
+              report.write('Verified architectures: ' + ', '.join(sorted(built)) + '\n')
+          PY
+      - name: Preserve actual source packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-source-dist
+          path: dist/*
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Preserve build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-source-build-logs
+          path: |
+            source-build.log
+            .ci/build.env
+          if-no-files-found: warn
+          retention-days: 14
