@@ -11,6 +11,8 @@ A **community-maintained, pure Docker-based build system** for [1Panel v2](https
 
 This project democratizes the build process of 1Panel, allowing developers and advanced users to compile the full 1Panel stack (Core + Agent + Frontend) from source without needing a complex local development environment.
 
+`e2e-build.yml` compiles the real upstream v2.2.5 frontend and all seven backend architectures, verifies exported packages, and retains Actions artifacts without publishing releases. The companion offline repository consumes these exact artifacts using `--custom_dist` for networkless Ubuntu amd64 installation and recovery checks. Production version discovery remains automatic; cross-compilation alone is not runtime validation of every architecture.
+
 ## 📖 Table of Contents
 
 - [Why use this?](#-why-use-this)
@@ -147,4 +149,3 @@ See the `LICENSE` file for more details.
 ---
 
 <p align="center">Made with ❤️ by the Open Source Community</p>
-

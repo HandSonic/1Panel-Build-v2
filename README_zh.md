@@ -139,6 +139,8 @@ bash scripts/test_resources.sh
 python3 scripts/test_release.py
 ```
 
+`e2e-build.yml` 另行从真实上游源码编译前端和七种后端架构，并校验导出的安装包与哈希。当前用 v2.2.5 固定验收样本；正式构建仍自动发现最新版本。此工作流仅保留 Actions 工件，不创建或修改 Release。配套离线仓库可用 `--custom_dist` 直接消费这些产物，并在移除网卡的 Ubuntu amd64 VM 中验证安装、跨版本升级和启动失败回滚。源码交叉编译通过不代表所有架构都已启动验证。
+
 ## 📄 许可证
 
 本项目基于 **Apache License 2.0** 开源。
@@ -147,4 +149,3 @@ python3 scripts/test_release.py
 ---
 
 <p align="center">Made with ❤️ by the Open Source Community</p>
-
