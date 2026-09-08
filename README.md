@@ -35,7 +35,7 @@ Use this if you:
 - **🐳 Zero Local Dependencies**: No Go, Node.js, or complex toolchains required on your host machine.
 - **🖥️ Multi-Architecture Ready**: Native cross-compilation for `amd64`, `arm64`, `armv7`, `ppc64le`, `s390x`, `loong64`, and `riscv64`.
 - **🔄 Cross-Version Compatible**: Smart dependency handling ensures you can build both the latest `v2.x` and older versions.
-- **📦 Standardized Output**: Produces artifacts identical in structure to official releases, ready for production use.
+- **📦 Standardized Output**: Produces standard installation tarballs with a machine-readable build manifest.
 
 ## 📂 Project Structure
 
@@ -57,8 +57,8 @@ diyv2/
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/your-repo/1panel-diy.git
-    cd 1panel-diy/diyv2
+    git clone https://github.com/HandSonic/1Panel-Build-v2.git
+    cd 1Panel-Build-v2
     ```
 
 2.  **Build the Builder Image**
@@ -87,7 +87,7 @@ Customize your build by passing `--build-arg` to the `docker build` command.
 
 | Build Argument | Default | Description |
 | :--- | :--- | :--- |
-| **`VERSION`** | `v2.0.13` | The Git tag or branch of 1Panel to build. |
+| **`VERSION`** | required | The Git tag or branch of 1Panel to build. |
 | **`TARGET_ARCHES`** | *All Supported* | Space-separated target architectures (e.g., `"amd64 arm64"`). |
 | **`INSTALLER_REF`** | `v2` | The branch/tag of the installer repository to use for scripts. |
 | **`GO_VERSION`** | `auto in CI` | Golang version. CI resolves it from upstream `core/agent` `go.mod`; manual builds may still override it explicitly. |
@@ -97,7 +97,7 @@ Customize your build by passing `--build-arg` to the `docker build` command.
 
 ## 📦 Output Artifacts
 
-The generator produces standard tarballs that look exactly like official releases:
+The generator produces standard installation tarballs:
 
 ```text
 dist/
@@ -116,8 +116,28 @@ dist/
 
 This project is CI-ready. The included `.github/workflows/build.yml`:
 1.  **Runs Daily**: Checks 1Panel official releases.
-2.  **Auto-Builds**: If a new official version is found that hasn't been built here, it triggers a build.
+2.  **Auto-Builds**: Builds new versions, changed build inputs and incomplete architecture sets.
 3.  **Releases**: Automatically creates a GitHub Release with the artifacts.
+
+## Compatibility and recovery
+
+Both CI providers call `scripts/ci_build.sh`. GitHub resolves the latest upstream version through the release API, then Git tags if the API is unavailable; it never silently builds an old hardcoded release. `INSTALLER_REF` defaults to `v2`. Resources are discovered from the installer repository, so added languages and init scripts do not require a local filename-list update. Valid cached resources and alternate download endpoints are tried before a required-resource failure. Optional init systems do not block packages for other systems.
+
+Runtime configuration is found by its `base` section rather than an exact text block. Release tags such as `v2.2.5` use `stable`; beta/alpha/rc tags use `beta`; development branches use `dev`. Set `CHANNEL=stable|beta|dev` (Docker: `--build-arg CHANNEL=...`) to override. GitHub manual runs expose `channel` and `installer_ref`; repository variables `GO_VERSION`, `NODE_VERSION`, `CHANNEL` and `INSTALLER_REF` also override defaults without editing workflows. The stock online updater continues to use upstream update sources; this builder does not run a custom update server. Use the companion offline installer with its custom package source to retain custom builds when upgrading. GoReleaser uses the same resource and runtime-configuration helpers, but its own multi-platform build semantics still apply.
+
+Architecture compilation failures are isolated. Usable packages are published with `build-manifest.json`, which lists `built`/`skipped` and `complete`; a partial release is labelled accordingly and retried on the next run. No usable package is a build failure. Required installer entry points, base language/service resources and GeoIP must be usable: packaging empty placeholders would produce a broken installer.
+
+GitHub skips a version only when its build-input fingerprint and expected artifacts match. Local script/toolchain changes and resolved upstream/installer commits invalidate that fingerprint. New releases remain drafts until their built attachments and manifest are verified; interrupted uploads and missing architectures are retried. CNB uses the same build inputs, never treats a Git tag as proof of completion, and currently rebuilds each invocation to recover missing uploads without depending on provider-specific attachment APIs. Tags are never force-moved. For mutable branch builds outside CI, use `--no-cache` or pass a fresh `BUILD_FINGERPRINT` so Docker does not reuse an old source checkout.
+
+Checksums contain only attachment filenames: download the `.tar.gz` and `.sha256` together and run `sha256sum -c 1panel-<version>-linux-<arch>.tar.gz.sha256` in that directory. Download failures retry; an upstream redesign that removes the runtime configuration or installer entry points requires an explicit error instead of silently claiming success. This reduces routine maintenance but cannot promise compatibility with every future upstream breaking change.
+
+Offline regression checks (no Go build or network required):
+
+```bash
+python3 scripts/test_build.py
+bash scripts/test_resources.sh
+python3 scripts/test_release.py
+```
 
 ## 📄 License
 
@@ -127,3 +147,4 @@ See the `LICENSE` file for more details.
 ---
 
 <p align="center">Made with ❤️ by the Open Source Community</p>
+

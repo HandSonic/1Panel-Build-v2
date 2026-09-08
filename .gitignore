@@ -2,6 +2,10 @@
 dist/
 build/
 *.tar.gz
+.ci/
+__pycache__/
+*.pyc
+.installer-resource-manifest
 
 # node
 node_modules/

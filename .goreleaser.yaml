@@ -5,8 +5,8 @@ version: 2
 before:
   hooks:
     - chmod +x ./scripts/download_resources.sh
-    - INSTALLER_REF=v2 ./scripts/download_resources.sh
-    - sed -i 's@ORIGINAL_VERSION=.*@ORIGINAL_VERSION=v{{ .Version }}@g' 1pctl
+    - ./scripts/download_resources.sh
+    - python3 ./scripts/configure_runtime.py . "{{ .Tag }}"
 
 builds:
   - id: agent
@@ -64,8 +64,8 @@ archives:
       - install.sh
       - 1panel-core.service
       - 1panel-agent.service
-      - initscript/*
-      - lang/*
+      - initscript/**
+      - lang/**
       - GeoIP.mmdb
 
 checksum:
@@ -77,3 +77,4 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+

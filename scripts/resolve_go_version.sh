@@ -13,13 +13,17 @@ fi
 
 fetch_go_mod() {
     local module_dir="$1"
-    local url=""
+    local url="" relative_path="go.mod"
     if [[ "${module_dir}" == "." ]]; then
         url="https://raw.githubusercontent.com/${UPSTREAM_REPO}/${VERSION}/go.mod"
     else
         url="https://raw.githubusercontent.com/${UPSTREAM_REPO}/${VERSION}/${module_dir}/go.mod"
+        relative_path="${module_dir}/go.mod"
     fi
-    curl -fsSL "${url}" 2>/dev/null || return 1
+    curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 "${url}" 2>/dev/null \
+        || curl -fsSL --retry 2 --connect-timeout 15 --max-time 60 \
+            "https://github.com/${UPSTREAM_REPO}/raw/${VERSION}/${relative_path}" 2>/dev/null \
+        || return 1
 }
 
 collect_versions_from_content() {
@@ -74,6 +78,7 @@ if [[ ${#versions[@]} -eq 0 ]] && command -v git >/dev/null 2>&1; then
 fi
 
 if [[ ${#versions[@]} -eq 0 ]]; then
+    echo "[WARN] Cannot resolve upstream Go requirement; using ${DEFAULT_GO_VERSION} with GOTOOLCHAIN=auto" >&2
     echo "${DEFAULT_GO_VERSION}"
     exit 0
 fi

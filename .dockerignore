@@ -3,4 +3,6 @@ build
 node_modules
 .git
 .gitignore
+.ci
+**/__pycache__
 *.tar.gz

@@ -35,7 +35,7 @@
 - **🐳 零本地依赖**：宿主机仅需 Docker 和 Git，无需 Go 或 Node.js 环境。
 - **🖥️ 多架构就绪**：原生支持 `amd64`, `arm64`, `armv7`, `ppc64le`, `s390x`, `loong64`, 和 `riscv64` 交叉编译。
 - **🔄 跨版本兼容**：智能依赖处理，确保既能构建最新的 `v2.x`，也能兼容旧版本。
-- **📦 标准化产出**：生成的产物结构与官方发行版完全一致，可直接用于生产环境。
+- **📦 标准化产出**：生成标准安装压缩包，并附带可机器读取的构建清单。
 
 ## 📂 项目结构
 
@@ -57,8 +57,8 @@ diyv2/
 
 1.  **克隆仓库**
     ```bash
-    git clone https://github.com/your-repo/1panel-diy.git
-    cd 1panel-diy/diyv2
+    git clone https://github.com/HandSonic/1Panel-Build-v2.git
+    cd 1Panel-Build-v2
     ```
 
 2.  **构建镜像**
@@ -87,7 +87,7 @@ diyv2/
 
 | 构建参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| **`VERSION`** | `v2.0.13` | 要构建的 1Panel Git 标签或分支。 |
+| **`VERSION`** | 必填 | 要构建的 1Panel Git 标签或分支。 |
 | **`TARGET_ARCHES`** | *所有支持架构* | 空格分隔的目标架构列表 (例如: `"amd64 arm64"`)。 |
 | **`INSTALLER_REF`** | `v2` | 用于脚本的 installer 仓库分支/标签。 |
 | **`GO_VERSION`** | `CI 自动解析` | Golang 版本。CI 会从上游 `core/agent` 的 `go.mod` 中解析；手动构建仍可显式覆盖。 |
@@ -97,7 +97,7 @@ diyv2/
 
 ## 📦 构建产物
 
-生成器会产出与官方发行版完全一致的标准 tar.gz 包：
+生成器会产出标准安装 tar.gz 包：
 
 ```text
 dist/
@@ -116,8 +116,28 @@ dist/
 
 本项目已就绪 CI。包含的 `.github/workflows/build.yml`：
 1.  **每日运行**：检查 1Panel 官方发布。
-2.  **自动构建**：如果发现尚未构建的新官方版本，自动触发构建。
+2.  **自动构建**：发现新版本、构建输入变化或架构产物不齐时，自动构建或补齐。
 3.  **发布**：自动创建包含构件产物的 GitHub Release。
+
+## 自适应与失败恢复
+
+GitHub Actions 和 CNB 共用 `scripts/ci_build.sh`。最新版本先查询上游 Release API，失败后查询 Git 标签，不会静默退回某个写死的旧版本。`INSTALLER_REF` 默认 `v2`。资源从 installer 仓库动态发现，新增语言、初始化脚本无需维护本地文件名清单；先复用有效缓存，再尝试备用下载入口。可选初始化系统文件缺失不会拖垮其他系统的安装包。
+
+后端配置按 `base` 配置节发现，不依赖完整文本块。`v2.2.5` 等稳定标签使用 `stable`，beta/alpha/rc 预发布标签使用 `beta`，开发分支使用 `dev`。可通过 `CHANNEL=stable|beta|dev`（Docker：`--build-arg CHANNEL=...`）覆盖。GitHub 手动运行提供 `channel`、`installer_ref` 输入，也可用仓库变量 `GO_VERSION`、`NODE_VERSION`、`CHANNEL`、`INSTALLER_REF` 调整默认值，无需修改工作流。内置在线更新仍使用上游更新源，本仓库不提供自定义更新服务器；要在升级后保留自编译产物，请使用配套离线安装仓库的 custom 包源。GoReleaser 共用资源和运行配置处理脚本，但仍遵循其自身的多架构构建行为。
+
+架构编译失败相互隔离。可用的包可以发布，`build-manifest.json` 明确记录各架构的 `built`/`skipped` 与整体 `complete`，部分发布会注明并在下次重试；所有架构都失败才终止。安装入口、基础语言与服务资源、GeoIP 等真正必要的内容必须有效，避免把空文件打成“成功”的安装包。
+
+GitHub 只有在构建输入指纹一致、预期附件齐全时才跳过。本地脚本、工具链和解析到的上游/installer 提交变化会更新指纹。新 Release 先保存草稿，上传并核对已构建附件及清单后才发布；中断上传或缺少架构会再次重试。CNB 使用相同构建输入，不再用 Git 标签判断构建完成；目前每次触发都重建，以恢复缺失附件，不依赖不确定的 CNB 附件查询接口。已有标签不会强制移动。CI 外手动构建可变分支时，请使用 `--no-cache` 或传入新的 `BUILD_FINGERPRINT`，避免 Docker 复用旧源码缓存。
+
+校验文件仅包含附件文件名；把 `.tar.gz` 和 `.sha256` 下载到同一目录后执行 `sha256sum -c 1panel-<版本>-linux-<架构>.tar.gz.sha256` 即可。网络波动会重试，但上游彻底移除配置或安装入口时仍会明确报错。此策略减少常规改动带来的维护，不能保证自动兼容所有未来的上游破坏性变更。
+
+隔离回归检查（无需实际 Go 编译或访问网络）：
+
+```bash
+python3 scripts/test_build.py
+bash scripts/test_resources.sh
+python3 scripts/test_release.py
+```
 
 ## 📄 许可证
 
@@ -127,3 +147,4 @@ dist/
 ---
 
 <p align="center">Made with ❤️ by the Open Source Community</p>
+

@@ -1,0 +1,27 @@
+name: script-regressions
+
+on:
+  pull_request:
+  push:
+    branches: [master, main, 'fix/**']
+    paths:
+      - scripts/**
+      - Dockerfile
+      - .github/workflows/**
+      - .cnb.yml
+      - .goreleaser.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  offline-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax and simulated failure paths
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 scripts/test_build.py
+          bash scripts/test_resources.sh
+          python3 scripts/test_release.py

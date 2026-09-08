@@ -10,140 +10,96 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "1Panel tag/branch (v2.x); empty to use ref name (for tag push)"
+        description: "1Panel tag/ref (single name without '/'); empty resolves latest v2 release"
         required: false
         default: ""
       arch:
-        description: "GOARCH list (space or comma separated, e.g. \"amd64 arm64 loong64\")"
+        description: "Architectures separated by spaces, commas or semicolons"
         required: false
         default: "amd64 arm64 armv7 ppc64le s390x loong64 riscv64"
+      force_build:
+        description: "Rebuild even when matching artifacts are already complete"
+        type: boolean
+        default: false
+      channel:
+        description: "Optional runtime channel override: stable, beta or dev"
+        required: false
+        default: ""
+      installer_ref:
+        description: "Optional installer branch/tag/commit; default v2"
+        required: false
+        default: ""
   schedule:
-    - cron: "0 7 * * *" # daily
+    - cron: "0 7 * * *"
 
 jobs:
-  check:
+  prepare:
     runs-on: ubuntu-latest
     env:
       DEFAULT_GO_VERSION: "1.25.7"
-      NODE_VER: "20"
+      NODE_VERSION: ${{ vars.NODE_VERSION || '20' }}
+      GO_VERSION: ${{ vars.GO_VERSION }}
+      CHANNEL: ${{ inputs.channel || vars.CHANNEL }}
+      INSTALLER_REF: ${{ inputs.installer_ref || vars.INSTALLER_REF }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set build variables
+      - uses: actions/checkout@v4
+      - name: Resolve upstream version and build inputs
         id: vars
-        run: |
-          set -e
-          VERSION_INPUT="${{ inputs.version }}"
-          ARCH_INPUT="${{ inputs.arch }}"
-
-          if [ -n "$VERSION_INPUT" ]; then
-            VERSION="$VERSION_INPUT"
-          elif [ "${GITHUB_REF##refs/tags/}" != "$GITHUB_REF" ]; then
-            VERSION="$GITHUB_REF_NAME"
-          else
-            VERSION=$(curl -s https://api.github.com/repos/1Panel-dev/1Panel/releases/latest | jq -r .tag_name)
-          fi
-
-          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-            VERSION="v2.0.13"
-          fi
-
-          ARCH_LIST=$(echo "${ARCH_INPUT:-"amd64 arm64 armv7 ppc64le s390x loong64 riscv64"}" | tr ',' ' ')
-          ARCH_LABEL=$(echo "$ARCH_LIST" | tr ' ' '_' | tr ',' '_')
-          GO_VER=$(bash scripts/resolve_go_version.sh "$VERSION")
-
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "arch_list=${ARCH_LIST}" >> "$GITHUB_OUTPUT"
-          echo "arch_label=${ARCH_LABEL}" >> "$GITHUB_OUTPUT"
-          echo "go_ver=${GO_VER}" >> "$GITHUB_OUTPUT"
-
-      - name: Check release (skip if already built)
-        id: check
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.vars.outputs.version }}"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "build=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
-            echo "build=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if gh release view "${VERSION}" -R "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "build=0" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=1" >> "$GITHUB_OUTPUT"
-          fi
-
+          VERSION_INPUT: ${{ inputs.version }}
+          ARCH_INPUT: ${{ inputs.arch }}
+        run: bash scripts/ci_build.sh prepare
     outputs:
-      version: ${{ steps.vars.outputs.version }}
-      arch_list: ${{ steps.vars.outputs.arch_list }}
-      arch_label: ${{ steps.vars.outputs.arch_label }}
-      go_ver: ${{ steps.vars.outputs.go_ver }}
-      build: ${{ steps.check.outputs.build }}
+      version: ${{ steps.vars.outputs.VERSION }}
+      arch_list: ${{ steps.vars.outputs.ARCH_LIST }}
+      arch_label: ${{ steps.vars.outputs.ARCH_LABEL }}
+      go_version: ${{ steps.vars.outputs.GO_VERSION }}
+      node_version: ${{ steps.vars.outputs.NODE_VERSION }}
+      channel: ${{ steps.vars.outputs.CHANNEL }}
+      installer_ref: ${{ steps.vars.outputs.INSTALLER_REF }}
+      fingerprint: ${{ steps.vars.outputs.BUILD_FINGERPRINT }}
+      refs_resolved: ${{ steps.vars.outputs.REFS_RESOLVED }}
 
   build:
-    needs: check
-    if: needs.check.outputs.build == '1'
+    needs: prepare
     runs-on: ubuntu-latest
+    concurrency:
+      group: build-release-${{ needs.prepare.outputs.version }}
+      cancel-in-progress: false
     env:
-      GO_VER: ${{ needs.check.outputs.go_ver }}
-      NODE_VER: "20"
-      VERSION: ${{ needs.check.outputs.version }}
-      ARCH_LIST: ${{ needs.check.outputs.arch_list }}
-      ARCH_LABEL: ${{ needs.check.outputs.arch_label }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ARCH_LIST: ${{ needs.prepare.outputs.arch_list }}
+      ARCH_LABEL: ${{ needs.prepare.outputs.arch_label }}
+      GO_VERSION: ${{ needs.prepare.outputs.go_version }}
+      NODE_VERSION: ${{ needs.prepare.outputs.node_version }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
+      INSTALLER_REF: ${{ needs.prepare.outputs.installer_ref }}
+      BUILD_FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+      REFS_RESOLVED: ${{ needs.prepare.outputs.refs_resolved }}
+      FORCE_BUILD: ${{ inputs.force_build && '1' || '0' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build builder image
-        run: |
-          docker build \
-            -f Dockerfile \
-            --build-arg VERSION="${VERSION}" \
-            --build-arg TARGET_ARCHES="${ARCH_LIST}" \
-            --build-arg GO_VERSION="${GO_VER}" \
-            --build-arg NODE_VERSION="${NODE_VER}" \
-            -t "1panel-v2-builder:${{ github.sha }}" \
-            .
-
-      - name: Export artifacts
-        run: |
-          mkdir -p dist
-          docker run --rm -v "$PWD/dist:/dist" "1panel-v2-builder:${{ github.sha }}"
-          ls -lh dist
-
-      - name: Create tag if missing
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        env:
-          VERSION: ${{ env.VERSION }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          if git rev-parse "${VERSION}" >/dev/null 2>&1; then
-            echo "Tag ${VERSION} already exists locally"
-          else
-            git tag -a "${VERSION}" -m "${VERSION}"
-          fi
-          git push origin "refs/tags/${VERSION}" || true
-
-      - name: Upload artifact
+      - uses: actions/checkout@v4
+      - name: Check manifest and requested release assets
+        id: check
+        run: python3 scripts/release_build.py check
+      - name: Build requested architectures
+        if: steps.check.outputs.build == '1'
+        run: bash scripts/ci_build.sh build
+      - name: Export and verify artifacts
+        if: steps.check.outputs.build == '1'
+        run: bash scripts/ci_build.sh export
+      - name: Preserve verified artifacts
+        if: steps.check.outputs.build == '1'
         uses: actions/upload-artifact@v4
         with:
           name: 1panel-${{ env.VERSION }}-${{ env.ARCH_LABEL }}
           path: dist/*
-
-      - name: Publish GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
-          artifacts: "dist/*"
-          allowUpdates: true
-          artifactErrorsFailBuild: true
-          generateReleaseNotes: false
-          body: "Automated offline build for ${{ env.VERSION }} (arches: ${{ env.ARCH_LIST }})"
+          if-no-files-found: error
+      - name: Create release tag only if missing
+        if: steps.check.outputs.build == '1'
+        run: bash scripts/ci_build.sh ensure-tag
+      - name: Upload, verify and publish release
+        if: steps.check.outputs.build == '1'
+        run: python3 scripts/release_build.py publish
