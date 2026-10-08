@@ -12,8 +12,8 @@ branch:
         inputs:
           VERSION:
             name: 1Panel版本
-            description: 指定版本号，留空则自动获取最新版本
-            placeholder: 如 v2.0.13，留空自动获取
+            description: 指定已审核的版本号，留空使用已审核默认版本 v2.3.2
+            placeholder: 如 v2.3.2；历史版本必须有对应审核输入锁
             type: input
             required: false
           TARGET_ARCHES:

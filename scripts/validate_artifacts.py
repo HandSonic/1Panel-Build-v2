@@ -2,6 +2,7 @@
 """Validate release bytes without executing packaged binaries or installer scripts."""
 import gzip,hashlib,json,pathlib,re,struct,sys,tarfile
 from resolve_inputs import resolve
+from embedded_configuration import validate_binary
 ARCHES={'amd64':(2,1,62),'arm64':(2,1,183),'armv7':(1,1,40),'ppc64le':(2,1,21),'s390x':(2,2,22),'loong64':(2,1,258),'riscv64':(2,1,243)}
 def architectures(value):
     arches=value.replace(',',' ').replace(';',' ').split()
@@ -40,7 +41,9 @@ def validate_package(path, version, arch):
         if set(manifest['files'])!=set(data): raise ValueError('Manifest file set mismatch')
         for rel,content in data.items():
             if manifest['files'][rel]!={'sha256':hashlib.sha256(content).hexdigest(),'size':len(content)}: raise ValueError(f'Manifest digest mismatch {rel}')
-        for binary in ('1panel-core','1panel-agent'): validate_elf(data[binary],arch)
+        for binary in ('1panel-core','1panel-agent'):
+            validate_elf(data[binary],arch)
+            validate_binary(data[binary],version,binary.removeprefix('1panel-'),entry['source_commit'])
         if hashlib.sha256(data['GeoIP.mmdb']).hexdigest()!=entry['geoip_sha256']: raise ValueError('GeoIP mismatch')
         for rel,digest in entry['installer_sha256'].items():
             if rel=='1pctl':

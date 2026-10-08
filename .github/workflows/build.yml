@@ -11,8 +11,25 @@ on:
         description: 'Reviewed upstream version from config/sources.json'
         default: 'v2.3.2'
       arch:
-        description: 'Architectures (space or comma separated)'
+        description: 'Normal-build architectures; existing-release promotion always requires all seven'
         default: 'amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
+      operation:
+        type: choice
+        options: [build, validate-promotion, promote-existing]
+        default: build
+        description: Normal build, read-only promotion validation, or explicit backed-up promotion
+      upstream_run_id:
+        description: Exact successful build run ID
+        default: ''
+      upstream_artifact_id:
+        description: Exact artifact ID from that run
+        default: ''
+      upstream_artifact_sha256:
+        description: Exact artifact ZIP SHA-256
+        default: ''
+      upstream_build_commit:
+        description: Exact built commit from manifests, possibly a PR merge commit
+        default: ''
       publish_candidate:
         type: boolean
         description: 'Create a new draft candidate after verification; never replace public assets'
@@ -29,6 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s tests -v
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build'
     needs: tests
     runs-on: ubuntu-latest
     outputs:
@@ -79,7 +97,7 @@ jobs:
           if-no-files-found: error
   candidate:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_candidate
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && inputs.publish_candidate
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -115,3 +133,86 @@ jobs:
           remote={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('remote-readback').iterdir() if p.is_file()}
           if local != remote: raise SystemExit('Remote readback differs from validated output')
           PY
+
+  publication_prepare:
+    needs: tests
+    permissions:
+      contents: read
+      actions: read
+    if: github.event_name == 'workflow_dispatch' && (inputs.operation == 'validate-promotion' || inputs.operation == 'promote-existing')
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      receipt_sha256: ${{ steps.receipt.outputs.sha256 }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.version }}
+      UPSTREAM_SOURCE: verified-ci
+      UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
+      UPSTREAM_ARTIFACT_ID: ${{ inputs.upstream_artifact_id }}
+      UPSTREAM_ARTIFACT_SHA256: ${{ inputs.upstream_artifact_sha256 }}
+      UPSTREAM_BUILD_COMMIT: ${{ inputs.upstream_build_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate selected inputs and prepare the complete contract
+        run: |
+          RELEASE_TAG=${RELEASE_TAG:-$VERSION}
+          python3 scripts/manual_publication.py prepare \
+            --repository "$GITHUB_REPOSITORY" --version "$VERSION" --tag "$RELEASE_TAG" --work publication-work \
+            --upstream-source "$UPSTREAM_SOURCE" --run-id "$UPSTREAM_RUN_ID" --artifact-id "$UPSTREAM_ARTIFACT_ID" \
+            --artifact-sha256 "$UPSTREAM_ARTIFACT_SHA256" --build-commit "$UPSTREAM_BUILD_COMMIT"
+      - name: Bind the exact validation receipt
+        id: receipt
+        run: |
+          receipt_sha=$(sha256sum publication-work/control/release-validation.json | cut -d' ' -f1)
+          echo "sha256=$receipt_sha" >> "$GITHUB_OUTPUT"
+          echo "VERIFIED_RELEASE_RECEIPT_SHA256=$receipt_sha"
+      - uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          name: verified-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            publication-work/release/
+            publication-work/control/
+          if-no-files-found: error
+          retention-days: 14
+  publication_repair:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote-existing'
+    needs: publication_prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.version }}
+      PUBLICATION_OPERATION: ${{ inputs.operation }}
+      EXPECTED_VALIDATION_RECEIPT_SHA256: ${{ needs.publication_prepare.outputs.receipt_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.publication_prepare.outputs.artifact_id }}
+          path: publication-work
+          merge-multiple: true
+      - name: Revalidate, stage, read back and repair recoverably
+        run: |
+          RELEASE_TAG=${RELEASE_TAG:-$VERSION}
+          python3 scripts/manual_publication.py publish \
+            --repository "$GITHUB_REPOSITORY" --version "$VERSION" --tag "$RELEASE_TAG" --work publication-work
+      - name: Preserve publication journal on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-journal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: publication-work/control/
+          if-no-files-found: warn
+          retention-days: 90
