@@ -108,3 +108,49 @@ rewritten control flow must report the specific unsupported behavior and diff.
 Discovery may propose a compatible contract; it must not silently bless changed
 source or count untested runtime behavior as safe. This future-version adapter
 work is pending and is not included in the current v2.3.2 completion claim.
+
+
+## Bounded upstream architecture matrix
+
+GitHub normal builds now use `prepare -> compile[arch] -> build` before the
+existing optional draft-candidate stage. `prepare` uses the same Dockerfile's
+`prepared-builder` target: the reviewed source commit, compatibility patches,
+locked Node/npm frontend build, exact per-version embedded configuration, and
+verified installer/GeoIP resources are prepared once. A SHA-256-bound source
+archive is downloaded by each compile job; it is not a release artifact.
+
+The compile matrix is limited to three concurrent runners and fails each shard
+independently. Each runner checks the shared archive digest, source commit,
+resolved input lock and exact Go version before using `GOTOOLCHAIN=local` to
+cross-compile the two binaries. Its cache key includes version, Go version,
+architecture, scripts, config and Go dependency locks; no broad restore prefix
+is allowed. Intermediate source/shard artifacts expire after three days.
+
+The aggregate job requires all requested shards from the same immutable preparation artifact,
+validates each shard's packages and build commit, and then reconstructs the
+original `verified-1panel-VERSION-COMMIT` contract. It validates the combined
+bytes again. A full seven-architecture run therefore checks all fourteen
+binaries twice. Subset development builds remain available, but promotion
+still requires the unchanged complete seven-architecture contract. Missing,
+extra, corrupt, mismatched-version or mismatched-commit shards fail closed.
+
+CNB and local Docker full builds retain their serial behavior. Existing-release
+promotion, its reviewed receipt, readback, backups, and single publication
+writer are unchanged. Neither push nor scheduled builds trigger repair.
+
+Performance must be measured on a new unpublished full build before adopting
+an expected speedup: frontend work is shared, but source download/extraction,
+runner queueing, seven Go environments and cold caches add overhead. Compare
+prepare, compile critical path and aggregate durations against a serial run
+with the same version/inputs. A first cold-cache run is not representative of
+warm-cache performance. This change has local unit/shell contract coverage;
+it does not itself establish that hosted CI builds or all historical versions
+have completed successfully.
+
+Failed-only and aggregate-only reruns retain successful dependency outputs.
+Compile downloads the exact preparation artifact ID; shard names are keyed by
+run ID plus that preparation ID, not the consumer's current run attempt. Each
+architecture may replace only its own intermediate shard on a failed-job rerun.
+A full preparation rerun gets a new artifact ID and isolated shard namespace.
+The final verified artifact remains immutable and is never overwritten; use a
+new workflow run when intentionally rebuilding an already successful aggregate.
