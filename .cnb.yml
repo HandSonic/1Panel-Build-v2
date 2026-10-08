@@ -1,218 +1,59 @@
-# CNB 配置文件 - 1Panel v2 源码编译
-# 对应 GitHub Actions: .github/workflows/build.yml
-#
-# 环境变量说明 (通过手动触发时可传入):
-#   VERSION: 1Panel版本 (如 v2.0.13, 留空则自动获取最新)
-#   TARGET_ARCHES: 目标架构列表 (空格分隔, 默认: amd64 arm64 armv7 ppc64le s390x loong64 riscv64)
-#   FORCE_BUILD: 设为1强制构建，即使版本已存在
-
-# 定义构建阶段模板
+# CNB uses the same immutable inputs and validation as GitHub.
+# Build outputs remain pipeline artifacts until a reviewed publication step is enabled.
 .build_stages: &build_stages
-  - name: Check Version
+  - name: Resolve immutable inputs and test
     script: |
-      set -e
-      apk add --no-cache curl jq git
-
+      set -eu
+      apk add --no-cache bash python3 curl jq git
       version="${VERSION:-}"
-      if [ -z "$version" ]; then
-        version=$(curl -s https://api.github.com/repos/1Panel-dev/1Panel/releases/latest | jq -r ".tag_name // empty")
-      fi
-      if [ -z "$version" ] || [ "$version" = "null" ]; then
-        version="v2.0.13"
-      fi
-
-      # 检查是否已构建过此版本 (通过检查release tag是否存在)
-      skip_build="0"
-      if [ "${FORCE_BUILD:-0}" != "1" ]; then
-        if git ls-remote --tags origin | grep -q "refs/tags/${version}$"; then
-          echo "Version ${version} already released (tag exists), skipping..."
-          skip_build="1"
-        fi
-      fi
-
-      # CNB多选用分号分隔，转换为空格分隔
-      arch_input="${TARGET_ARCHES:-amd64,arm64,armv7,ppc64le,s390x,loong64,riscv64}"
-      arch_list=$(echo "$arch_input" | tr ';,' ' ')
-      go_version=$(bash scripts/resolve_go_version.sh "$version")
-
-      echo "Version: ${version}, arches: ${arch_list}, go: ${go_version}, skip: ${skip_build}"
-
-      echo "##[set-output VERSION=${version}]"
-      echo "##[set-output ARCH_LIST=${arch_list}]"
-      echo "##[set-output GO_VERSION=${go_version}]"
-      echo "##[set-output SKIP_BUILD=${skip_build}]"
+      if [ -z "$version" ] && [ "${CNB_IS_TAG:-false}" = true ]; then version="$CNB_BRANCH"; fi
+      version="${version:-v2.3.2}"
+      arches=$(printf '%s' "${TARGET_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}" | tr ';,' ' ')
+      for arch in $arches; do
+        case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac
+      done
+      [ -n "$arches" ]
+      python3 scripts/resolve_inputs.py "$version" > build-inputs.env
+      python3 -m unittest discover -s tests -v
+      echo "##[set-output BUILD_VERSION=$version]"
+      echo "##[set-output BUILD_ARCHES=$arches]"
     exports:
-      VERSION: VERSION
-      ARCH_LIST: ARCH_LIST
-      GO_VERSION: GO_VERSION
-      SKIP_BUILD: SKIP_BUILD
-
-  - name: Build Docker Image
-    if: test "$SKIP_BUILD" != "1"
+      BUILD_VERSION: BUILD_VERSION
+      BUILD_ARCHES: BUILD_ARCHES
+  - name: Build requested architectures
     script: |
-      set -e
-      IMAGE_TAG="1panel-v2-builder:${CNB_PIPELINE_ID:-$(date +%s)}"
-      docker build \
-        -f Dockerfile \
-        --build-arg VERSION="${VERSION}" \
-        --build-arg TARGET_ARCHES="${ARCH_LIST}" \
-        --build-arg GO_VERSION="${GO_VERSION}" \
-        --build-arg NODE_VERSION="20" \
-        -t "$IMAGE_TAG" \
-        .
-      echo "##[set-output IMAGE_TAG=${IMAGE_TAG}]"
-    exports:
-      IMAGE_TAG: IMAGE_TAG
-
-  - name: Export Artifacts
-    if: test "$SKIP_BUILD" != "1"
-    script: |
-      set -e
-      mkdir -p dist
-      docker run --rm -v "$PWD/dist:/dist" "$IMAGE_TAG"
-      ls -lh dist/
-
-  - name: Create Tag and Release
-    if: test "$SKIP_BUILD" != "1"
-    script: |
-      set -e
-      apk add --no-cache git
-      git config --global user.name "CNB Bot"
-      git config --global user.email "bot@cnb.cool"
-      # 创建版本tag
-      git tag -f "${VERSION}" -m "Release ${VERSION}"
-      git push origin "refs/tags/${VERSION}" -f || true
-
-  - name: Create CNB Release
-    if: test "$SKIP_BUILD" != "1"
-    type: git:release
-    options:
-      tag: ${VERSION}
-      title: ${VERSION}
-      description: "1Panel v2 源码编译 (arches: ${ARCH_LIST})"
-      overlying: true
-
-  - name: Upload to CNB Release
-    if: test "$SKIP_BUILD" != "1"
+      set -eu
+      bash -euo pipefail -c '
+        source build-inputs.env
+        docker build -f Dockerfile --build-arg VERSION="$BUILD_VERSION" \
+          --build-arg TARGET_ARCHES="$BUILD_ARCHES" --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" \
+          --build-arg INSTALLER_REF="$INSTALLER_REF" --build-arg GO_VERSION="$GO_VERSION" \
+          --build-arg NODE_VERSION="$NODE_VERSION" --build-arg GEOIP_SHA256="$GEOIP_SHA256" \
+          --build-arg BUILD_REPOSITORY_COMMIT="$CNB_COMMIT" -t "1panel-build:$CNB_COMMIT" .
+        mkdir -p dist
+        docker run --rm -v "$PWD/dist:/dist" "1panel-build:$CNB_COMMIT"
+        python3 scripts/validate_artifacts.py dist "$BUILD_VERSION" "$BUILD_ARCHES"
+        cp build-inputs.env dist/build-inputs.env
+      '
+  - name: Preserve verified build artifacts
     image: cnbcool/attachments:latest
     settings:
-      tag: ${VERSION}
       attachments:
-        - dist/*.tar.gz
-        - dist/*.sha256
-
-# 定义构建流水线模板
+        - dist/**
 .build_pipeline: &build_pipeline
-  - name: Build 1Panel v2 from source
+  - name: Build and verify 1Panel community
     runner:
       tags: cnb:arch:amd64
       cpus: 8
     docker:
       image: docker:24-dind
-    services:
-      - docker
+    services: [docker]
     stages: *build_stages
-
-# ============================================
-# 触发规则配置
-# ============================================
-
-# Tag 触发 (v* 格式)
 "v*":
   push: *build_pipeline
-
-# master 分支配置
 master:
-  # 定时任务 - 每天 UTC 02:00
   "crontab: 0 2 * * *": *build_pipeline
-
-  # 手动触发 - 强制构建，不检查版本
-  web_trigger_build:
-    - name: Build 1Panel v2 from source (Manual)
-      runner:
-        tags: cnb:arch:amd64
-        cpus: 8
-      docker:
-        image: docker:24-dind
-      services:
-        - docker
-      stages:
-        - name: Check Version
-          script: |
-            set -e
-            apk add --no-cache curl jq git
-
-            version="${VERSION:-}"
-            if [ -z "$version" ]; then
-              version=$(curl -s https://api.github.com/repos/1Panel-dev/1Panel/releases/latest | jq -r ".tag_name // empty")
-            fi
-            if [ -z "$version" ] || [ "$version" = "null" ]; then
-              version="v2.0.13"
-            fi
-
-            # CNB多选用分号分隔，转换为空格分隔
-            arch_input="${TARGET_ARCHES:-amd64,arm64,armv7,ppc64le,s390x,loong64,riscv64}"
-            arch_list=$(echo "$arch_input" | tr ';,' ' ')
-            go_version=$(bash scripts/resolve_go_version.sh "$version")
-
-            echo "Manual build: ${version}, arches: ${arch_list}, go: ${go_version}"
-
-            echo "##[set-output VERSION=${version}]"
-            echo "##[set-output ARCH_LIST=${arch_list}]"
-            echo "##[set-output GO_VERSION=${go_version}]"
-          exports:
-            VERSION: VERSION
-            ARCH_LIST: ARCH_LIST
-            GO_VERSION: GO_VERSION
-
-        - name: Build Docker Image
-          script: |
-            set -e
-            IMAGE_TAG="1panel-v2-builder:${CNB_PIPELINE_ID:-$(date +%s)}"
-            docker build \
-              -f Dockerfile \
-              --build-arg VERSION="${VERSION}" \
-              --build-arg TARGET_ARCHES="${ARCH_LIST}" \
-              --build-arg GO_VERSION="${GO_VERSION}" \
-              --build-arg NODE_VERSION="20" \
-              -t "$IMAGE_TAG" \
-              .
-            echo "##[set-output IMAGE_TAG=${IMAGE_TAG}]"
-          exports:
-            IMAGE_TAG: IMAGE_TAG
-
-        - name: Export Artifacts
-          script: |
-            set -e
-            mkdir -p dist
-            docker run --rm -v "$PWD/dist:/dist" "$IMAGE_TAG"
-            ls -lh dist/
-
-        - name: Create Tag and Release
-          script: |
-            set -e
-            apk add --no-cache git
-            git config --global user.name "CNB Bot"
-            git config --global user.email "bot@cnb.cool"
-            git tag -f "${VERSION}" -m "Release ${VERSION}"
-            git push origin "refs/tags/${VERSION}" -f || true
-
-        - name: Create CNB Release
-          type: git:release
-          options:
-            tag: ${VERSION}
-            title: ${VERSION}
-            description: "1Panel v2 源码编译 (arches: ${ARCH_LIST})"
-            overlying: true
-
-        - name: Upload to CNB Release
-          image: cnbcool/attachments:latest
-          settings:
-            tag: ${VERSION}
-            attachments:
-              - dist/*.tar.gz
-              - dist/*.sha256
-
-# main 分支 (如果默认分支是 main)
+  web_trigger_build: *build_pipeline
 main:
   "crontab: 0 2 * * *": *build_pipeline
+  web_trigger_build: *build_pipeline

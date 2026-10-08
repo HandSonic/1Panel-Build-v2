@@ -2,11 +2,11 @@
 # vim: set ts=2 sw=2 tw=0 fo=jcroql
 version: 2
 
+# Legacy direct GoReleaser publication is intentionally blocked: it bypasses
+# locked frontend/configuration and the artifact/provenance gate. Use Docker CI.
 before:
   hooks:
-    - chmod +x ./scripts/download_resources.sh
-    - INSTALLER_REF=v2 ./scripts/download_resources.sh
-    - sed -i 's@ORIGINAL_VERSION=.*@ORIGINAL_VERSION=v{{ .Version }}@g' 1pctl
+    - sh -c 'echo "Use the verified Docker build workflow; direct GoReleaser is disabled" >&2; exit 1'
 
 builds:
   - id: agent

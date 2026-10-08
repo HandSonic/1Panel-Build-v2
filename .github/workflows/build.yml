@@ -1,149 +1,117 @@
 name: build-offline
-
 permissions:
-  contents: write
-
+  contents: read
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
     inputs:
       version:
-        description: "1Panel tag/branch (v2.x); empty to use ref name (for tag push)"
-        required: false
-        default: ""
+        description: 'Reviewed upstream version from config/sources.json'
+        default: 'v2.3.2'
       arch:
-        description: "GOARCH list (space or comma separated, e.g. \"amd64 arm64 loong64\")"
-        required: false
-        default: "amd64 arm64 armv7 ppc64le s390x loong64 riscv64"
+        description: 'Architectures (space or comma separated)'
+        default: 'amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
+      publish_candidate:
+        type: boolean
+        description: 'Create a new draft candidate after verification; never replace public assets'
+        default: false
   schedule:
-    - cron: "0 7 * * *" # daily
-
+    - cron: '0 7 * * *'
+concurrency:
+  group: upstream-build-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  check:
+  tests:
     runs-on: ubuntu-latest
-    env:
-      DEFAULT_GO_VERSION: "1.25.7"
-      NODE_VER: "20"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set build variables
-        id: vars
-        run: |
-          set -e
-          VERSION_INPUT="${{ inputs.version }}"
-          ARCH_INPUT="${{ inputs.arch }}"
-
-          if [ -n "$VERSION_INPUT" ]; then
-            VERSION="$VERSION_INPUT"
-          elif [ "${GITHUB_REF##refs/tags/}" != "$GITHUB_REF" ]; then
-            VERSION="$GITHUB_REF_NAME"
-          else
-            VERSION=$(curl -s https://api.github.com/repos/1Panel-dev/1Panel/releases/latest | jq -r .tag_name)
-          fi
-
-          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-            VERSION="v2.0.13"
-          fi
-
-          ARCH_LIST=$(echo "${ARCH_INPUT:-"amd64 arm64 armv7 ppc64le s390x loong64 riscv64"}" | tr ',' ' ')
-          ARCH_LABEL=$(echo "$ARCH_LIST" | tr ' ' '_' | tr ',' '_')
-          GO_VER=$(bash scripts/resolve_go_version.sh "$VERSION")
-
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "arch_list=${ARCH_LIST}" >> "$GITHUB_OUTPUT"
-          echo "arch_label=${ARCH_LABEL}" >> "$GITHUB_OUTPUT"
-          echo "go_ver=${GO_VER}" >> "$GITHUB_OUTPUT"
-
-      - name: Check release (skip if already built)
-        id: check
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.vars.outputs.version }}"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "build=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
-            echo "build=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if gh release view "${VERSION}" -R "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "build=0" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=1" >> "$GITHUB_OUTPUT"
-          fi
-
-    outputs:
-      version: ${{ steps.vars.outputs.version }}
-      arch_list: ${{ steps.vars.outputs.arch_list }}
-      arch_label: ${{ steps.vars.outputs.arch_label }}
-      go_ver: ${{ steps.vars.outputs.go_ver }}
-      build: ${{ steps.check.outputs.build }}
-
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -v
   build:
-    needs: check
-    if: needs.check.outputs.build == '1'
+    needs: tests
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.inputs.outputs.version }}
+      arches: ${{ steps.inputs.outputs.arches }}
+    permissions:
+      contents: read
     env:
-      GO_VER: ${{ needs.check.outputs.go_ver }}
-      NODE_VER: "20"
-      VERSION: ${{ needs.check.outputs.version }}
-      ARCH_LIST: ${{ needs.check.outputs.arch_list }}
-      ARCH_LABEL: ${{ needs.check.outputs.arch_label }}
+      INPUT_VERSION: ${{ inputs.version }}
+      INPUT_ARCHES: ${{ inputs.arch }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build builder image
+      - uses: actions/checkout@v4
+      - name: Resolve immutable build inputs
+        id: inputs
         run: |
-          docker build \
-            -f Dockerfile \
-            --build-arg VERSION="${VERSION}" \
-            --build-arg TARGET_ARCHES="${ARCH_LIST}" \
-            --build-arg GO_VERSION="${GO_VER}" \
-            --build-arg NODE_VERSION="${NODE_VER}" \
-            -t "1panel-v2-builder:${{ github.sha }}" \
-            .
-
-      - name: Export artifacts
+          set -euo pipefail
+          version=${INPUT_VERSION:-}
+          if [[ -z "$version" && "$GITHUB_REF" == refs/tags/* ]]; then version=$GITHUB_REF_NAME; fi
+          version=${version:-v2.3.2}
+          [[ "$version" =~ ^v2\.[0-9]+\.[0-9]+(-(alpha|beta|dev)\.[0-9]+)?$ ]]
+          arches=$(printf '%s' "${INPUT_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}" | tr ',;' ' ')
+          for arch in $arches; do
+            case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac
+          done
+          [[ -n "$arches" ]]
+          python3 scripts/resolve_inputs.py "$version" > build-inputs.env
+          printf 'VERSION=%s\nTARGET_ARCHES=%s\n' "$version" "$arches" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "arches=$arches" >> "$GITHUB_OUTPUT"
+      - name: Build and validate every requested architecture
         run: |
+          set -euo pipefail
+          source build-inputs.env
+          docker build -f Dockerfile \
+            --build-arg VERSION="$VERSION" --build-arg TARGET_ARCHES="$TARGET_ARCHES" \
+            --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" --build-arg INSTALLER_REF="$INSTALLER_REF" \
+            --build-arg GO_VERSION="$GO_VERSION" --build-arg NODE_VERSION="$NODE_VERSION" \
+            --build-arg GEOIP_SHA256="$GEOIP_SHA256" --build-arg BUILD_REPOSITORY_COMMIT="$GITHUB_SHA" \
+            -t "1panel-v2-builder:$GITHUB_SHA" .
           mkdir -p dist
-          docker run --rm -v "$PWD/dist:/dist" "1panel-v2-builder:${{ github.sha }}"
-          ls -lh dist
-
-      - name: Create tag if missing
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        env:
-          VERSION: ${{ env.VERSION }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          if git rev-parse "${VERSION}" >/dev/null 2>&1; then
-            echo "Tag ${VERSION} already exists locally"
-          else
-            git tag -a "${VERSION}" -m "${VERSION}"
-          fi
-          git push origin "refs/tags/${VERSION}" || true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          docker run --rm -v "$PWD/dist:/dist" "1panel-v2-builder:$GITHUB_SHA"
+          python3 scripts/validate_artifacts.py dist "$VERSION" "$TARGET_ARCHES"
+          cp build-inputs.env dist/build-inputs.env
+      - uses: actions/upload-artifact@v4
         with:
-          name: 1panel-${{ env.VERSION }}-${{ env.ARCH_LABEL }}
+          name: verified-1panel-${{ steps.inputs.outputs.version }}-${{ github.sha }}
           path: dist/*
-
-      - name: Publish GitHub Release
-        uses: ncipollo/release-action@v1
+          if-no-files-found: error
+  candidate:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.build.outputs.version }}
+      TARGET_ARCHES: ${{ needs.build.outputs.arches }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          tag: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
-          artifacts: "dist/*"
-          allowUpdates: true
-          artifactErrorsFailBuild: true
-          generateReleaseNotes: false
-          body: "Automated offline build for ${{ env.VERSION }} (arches: ${{ env.ARCH_LIST }})"
+          name: verified-1panel-${{ needs.build.outputs.version }}-${{ github.sha }}
+          path: dist
+      - name: Revalidate candidate artifact
+        run: python3 scripts/validate_artifacts.py dist "$VERSION" "$TARGET_ARCHES"
+      - name: Stage a new draft candidate and verify downloaded bytes
+        run: |
+          set -euo pipefail
+          tag="$VERSION-build-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo 'Candidate already exists; refusing overwrite.'; exit 1
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --draft --title "$tag" \
+            --notes 'Build candidate only. All requested architectures validated; pending promotion and downstream regression.'
+          gh release upload "$tag" dist/*
+          mkdir remote-readback
+          gh release download "$tag" --dir remote-readback
+          python3 scripts/validate_artifacts.py remote-readback "$VERSION" "$TARGET_ARCHES"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          local={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('dist').iterdir() if p.is_file()}
+          remote={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('remote-readback').iterdir() if p.is_file()}
+          if local != remote: raise SystemExit('Remote readback differs from validated output')
+          PY
