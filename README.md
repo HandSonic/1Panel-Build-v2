@@ -1,129 +1,86 @@
-# 1Panel v2 Builder (DIY Edition)
+# 1Panel v2 community builder
 
-<p align="center">
-  <a href="README_zh.md"><img src="https://img.shields.io/badge/Lang-中文-red" alt="中文"></a>
-  <a href="https://github.com/1Panel-dev/1Panel"><img src="https://img.shields.io/badge/Upstream-1Panel-blue?logo=github" alt="Upstream"></a>
-  <a href="https://hub.docker.com/"><img src="https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker" alt="Docker"></a>
-  <img src="https://img.shields.io/badge/License-Apache%202.0-green" alt="License">
-</p>
+Builds the public Core, Agent and frontend sources for Linux amd64, arm64,
+armv7, ppc64le, s390x, loong64 and riscv64. Missing proprietary XPack modules
+retain the existing community compatibility fallback. This is not an enterprise
+build and does not enable enterprise capabilities.
 
-A **community-maintained, pure Docker-based build system** for [1Panel v2](https://github.com/1Panel-dev/1Panel).
+## Reviewed inputs
 
-This project democratizes the build process of 1Panel, allowing developers and advanced users to compile the full 1Panel stack (Core + Agent + Frontend) from source without needing a complex local development environment.
+`config/sources.json` is the version-to-input lock. Currently only **v2.3.2** is
+reviewed. An unknown historical or newer version fails instead of silently using
+today's installer branch. To add a version, review its source SHA, compatible
+installer SHA, every resource hash, Go/Node/npm versions and release channel.
 
-## 📖 Table of Contents
+The v2.3.2 source is `65243c68c463cc055ab044093f641ea5d2e9e28b`.
+The installer is `aa4a6bbf24ae0fd938b32294672f5086f940e483`: its install.sh
+SHA256 matches the official v2.3.2 installer (`3faa744fd158283470b48b3a971dc98cc390c7f291d4287b170416ae862dd28f`).
+GeoIP comes from the official resource host with a locked hash. A host update
+requires an explicit reviewed lock change; a changed response fails closed.
 
-- [Why use this?](#-why-use-this)
-- [Key Features](#--key-features)
-- [Project Structure](#--project-structure)
-- [Quick Start](#--quick-start)
-- [Configuration](#️-configuration)
-- [Output Artifacts](#-output-artifacts)
-- [CI/CD Integration](#-cicd-integration)
-- [License](#-license)
+The source requires Go 1.26.1. Node 22.14.0 and npm 10.9.2 are pinned and checked
+at build time. Frontend dependencies use `npm ci` and the source lockfile.
+Release config is embedded before compiling: stable releases use `stable` and
+`info`; beta/dev versions require separately reviewed locks with their matching
+channel. Demo, enterprise and fxplay remain false. `is_offline` remains false:
+shipping offline installation resources is not the application's separate
+offline-feature/license mode. Upstream's stable mode selects Gin release mode
+and avoids dev-only external app.yaml override behavior.
 
-## ❓ Why use this?
+## Build and verify
 
-The official 1Panel build process involves multiple languages (Go, Node.js) and tools (GoReleaser). This repository wraps all that complexity into a single Dockerfile.
-Use this if you:
-*   Want to **customize** 1Panel (modify source code, change assets).
-*   Need to run 1Panel on **unsupported architectures** (e.g., specific RISC-V boards).
-*   Want to **verify** the build process for security auditing.
+Requires Docker, Git and Python 3. Run from a clean committed checkout so the
+recorded build-repository commit identifies the build scripts actually used.
 
-## ✨ Key Features
-
-- **🐳 Zero Local Dependencies**: No Go, Node.js, or complex toolchains required on your host machine.
-- **🖥️ Multi-Architecture Ready**: Native cross-compilation for `amd64`, `arm64`, `armv7`, `ppc64le`, `s390x`, `loong64`, and `riscv64`.
-- **🔄 Cross-Version Compatible**: Smart dependency handling ensures you can build both the latest `v2.x` and older versions.
-- **📦 Standardized Output**: Produces artifacts identical in structure to official releases, ready for production use.
-
-## 📂 Project Structure
-
-```text
-diyv2/
-├── Dockerfile                  # Master build definition
-├── scripts/
-│   └── download_resources.sh   # Universal resource fetcher (keeps build robust)
-└── README.md                   # Documentation
+```bash
+VERSION=v2.3.2
+TARGET_ARCHES='amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
+python3 -m unittest discover -s tests -v
+python3 scripts/resolve_inputs.py "$VERSION" > build-inputs.env
+source build-inputs.env
+docker build --build-arg VERSION="$VERSION" \
+  --build-arg GO_VERSION="$GO_VERSION" --build-arg NODE_VERSION="$NODE_VERSION" \
+  --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" --build-arg INSTALLER_REF="$INSTALLER_REF" \
+  --build-arg TARGET_ARCHES="$TARGET_ARCHES" \
+  --build-arg BUILD_REPOSITORY_COMMIT="$(git rev-parse HEAD)" \
+  -t 1panel-verified-builder .
+mkdir -p dist
+docker run --rm -v "$PWD/dist:/dist" 1panel-verified-builder
+python3 scripts/validate_artifacts.py dist "$VERSION" "$TARGET_ARCHES"
+(cd dist && sha256sum -c checksums.txt)
 ```
 
-## 🚀 Quick Start
+Use an empty output directory. Required downloads are fetched to temporary files,
+checked for nonzero size and pinned SHA256, then promoted only when the whole
+resource set passes. Existing files are never accepted merely because they exist.
+The build checks frontend embed output, compiles each architecture, then validates
+ELF class/endianness/machine without executing target binaries.
 
-### Prerequisites
-*   [Docker](https://docs.docker.com/get-docker/) installed and running.
-*   [Git](https://git-scm.com/) (to clone this repo).
+Each `1panel-VERSION-linux-ARCH.tar.gz` has one matching root directory and contains
+Core/Agent, install.sh, 1pctl, GeoIP, all eight init scripts, five language files,
+root systemd services, and `manifest.json`. The manifest records community edition,
+version/architecture, source/installer/build commits, toolchains, mode, and SHA256
+and size for every other regular file. Each archive has a relative-basename
+`.sha256` sidecar. `checksums.txt` and `build-manifest.json` cover the selected
+matrix. Archive traversal, symlinks, duplicate/missing/empty members, wrong ELF,
+wrong resource digests, stale extra outputs and checksum mismatches are rejected.
 
-### Step-by-Step Build
+Pinned inputs improve repeatability, but this does not promise bit-identical
+archives: base-image tags and OS package repositories are not digest/snapshot
+locked, and archive metadata is not normalized. ELF inspection and fixture tests
+do not replace real builds or installed-service runtime tests on each target.
 
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/your-repo/1panel-diy.git
-    cd 1panel-diy/diyv2
-    ```
+## CI and publication
 
-2.  **Build the Builder Image**
-    Replace `v2.0.13` with your desired version.
-    ```bash
-    docker build -f Dockerfile \
-      --build-arg VERSION=v2.0.13 \
-      -t 1panel-v2-builder .
-    ```
+GitHub Actions runs regression tests, builds the requested matrix and preserves
+verified pipeline artifacts. Existing tags/releases do not suppress validation.
+An explicit `publish_candidate` dispatch creates a **new draft** tag/release,
+downloads its assets again and verifies exact byte identity. It never overwrites
+public release assets. Promotion requires separate review after downstream
+regression. Scheduled builds use the reviewed default version, never floating
+latest. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
+and preserves pipeline artifacts. CNB automatic publication is intentionally
+removed until a provider-specific verified staging/promote flow is reviewed.
 
-3.  **Run Build & Export Artifacts**
-    This command compiles the code inside a container and saves the results to `dist/`.
-    ```bash
-    docker run --rm -v "$(pwd)/dist:/dist" 1panel-v2-builder
-    ```
-
-4.  **Verify Output**
-    Your packages are now ready in `dist/`:
-    ```bash
-    ls -lh dist/
-    ```
-
-## ⚙️ Configuration
-
-Customize your build by passing `--build-arg` to the `docker build` command.
-
-| Build Argument | Default | Description |
-| :--- | :--- | :--- |
-| **`VERSION`** | `v2.0.13` | The Git tag or branch of 1Panel to build. |
-| **`TARGET_ARCHES`** | *All Supported* | Space-separated target architectures (e.g., `"amd64 arm64"`). |
-| **`INSTALLER_REF`** | `v2` | The branch/tag of the installer repository to use for scripts. |
-| **`GO_VERSION`** | `auto in CI` | Golang version. CI resolves it from upstream `core/agent` `go.mod`; manual builds may still override it explicitly. |
-| **`NODE_VERSION`** | `20` | Node.js version for frontend assets. |
-
-> **Note on Architectures**: Default list is `amd64 arm64 armv7 ppc64le s390x loong64 riscv64`.
-
-## 📦 Output Artifacts
-
-The generator produces standard tarballs that look exactly like official releases:
-
-```text
-dist/
-├── 1panel-v2.0.13-linux-amd64.tar.gz  # The installation package
-└── 1panel-v2.0.13-linux-amd64.tar.gz.sha256
-```
-
-**Inside the tarball:**
-*   `/1panel-core`: Backend server binary.
-*   `/1panel-agent`: Agent binary.
-*   `/1pctl`: CLI management tool.
-*   `/install.sh`: Standard install script.
-*   And all necessary service files/language packs.
-
-## 🤖 CI/CD Integration
-
-This project is CI-ready. The included `.github/workflows/build.yml`:
-1.  **Runs Daily**: Checks 1Panel official releases.
-2.  **Auto-Builds**: If a new official version is found that hasn't been built here, it triggers a build.
-3.  **Releases**: Automatically creates a GitHub Release with the artifacts.
-
-## 📄 License
-
-This project is open-sourced under the **Apache License 2.0**.
-See the `LICENSE` file for more details.
-
----
-
-<p align="center">Made with ❤️ by the Open Source Community</p>
+The legacy direct GoReleaser entry point is disabled because it bypasses the
+frontend, production configuration and manifest gates. Use the Docker workflow.
