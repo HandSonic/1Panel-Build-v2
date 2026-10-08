@@ -2,6 +2,7 @@ import hashlib,io,json,os,pathlib,struct,subprocess,sys,tarfile,tempfile,unittes
 from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
 import configure_release,download_resources,package_release,resolve_inputs,validate_artifacts
+from embedded_configuration import expected_bytes
 
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
@@ -26,7 +27,7 @@ class ReleaseTests(unittest.TestCase):
         cls,end,machine=validate_artifacts.ARCHES[arch]
         data=bytearray(64);data[:6]=b'\x7fELF'+bytes((cls,end));data[18:20]=machine.to_bytes(2,'little' if end==1 else 'big')
         for part in ('core','agent'):
-            p=self.root/'build'/f'1panel-{part}';p.write_bytes(data);p.chmod(0o755)
+            p=self.root/'build'/f'1panel-{part}';p.write_bytes(data+expected_bytes('v2.3.2',part)[1]);p.chmod(0o755)
     def build(self,arches):
         for arch in arches:self.binaries(arch);package_release.package(self.root,'v2.3.2',arch)
         package_release.finalize(self.root,'v2.3.2',arches)
@@ -128,8 +129,23 @@ class ReleaseTests(unittest.TestCase):
         for part in ('core','agent'):
             p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True)
             p.write_text('base:\n  mode: dev\n  is_demo: false\n  is_offline: false\n  is_fxplay: false\n  is_enterprise: false\nlog:\n  level: debug\n')
-        with self.assertRaisesRegex(ValueError,'expected exactly one version, found 0'):
+        with self.assertRaisesRegex(ValueError,'source YAML differs'):
             configure_release.configure(self.root,'v2.3.2')
+    def test_embedded_dev_configuration_rejected_despite_valid_manifest(self):
+        self.binaries('amd64')
+        path=self.root/'build/1panel-core';header=path.read_bytes()[:64]
+        path.write_bytes(header+expected_bytes('v2.3.2','core')[0])
+        package_release.package(self.root,'v2.3.2','amd64')
+        with self.assertRaisesRegex(ValueError,'normalized production configuration'):
+            package_release.finalize(self.root,'v2.3.2',['amd64'])
+    def test_historical_schema_does_not_inject_new_flags(self):
+        for version in ['v2.0.14','v2.1.5','v2.2.5']:
+            for part in ['core','agent']:
+                p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(expected_bytes(version,part)[0])
+            with patch.object(configure_release,'resolve',return_value={'source_commit':expected_bytes(version,'core')[2],'mode':'stable'}):
+                configure_release.configure(self.root,version)
+            for part in ['core','agent']:
+                self.assertEqual((self.root/part/'cmd/server/conf/app.yaml').read_bytes(),expected_bytes(version,part)[1])
     def test_stale_files_rejected(self):
         self.build(['amd64']);(self.root/'dist/stale').write_text('stale')
         with self.assertRaisesRegex(ValueError,'Unexpected'):validate_artifacts.validate_dist(self.root/'dist','v2.3.2',['amd64'])

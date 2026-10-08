@@ -17,3 +17,6 @@ bin/
 
 __pycache__/
 *.pyc
+
+# Generated manual-publication payloads and journals
+publication-work/
