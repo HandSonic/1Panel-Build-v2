@@ -31,7 +31,7 @@
           --build-arg NODE_VERSION="$NODE_VERSION" --build-arg GEOIP_SHA256="$GEOIP_SHA256" \
           --build-arg BUILD_REPOSITORY_COMMIT="$CNB_COMMIT" -t "1panel-build:$CNB_COMMIT" .
         mkdir -p dist
-        docker run --rm -v "$PWD/dist:/dist" "1panel-build:$CNB_COMMIT"
+        docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/dist:/dist" "1panel-build:$CNB_COMMIT"
         python3 scripts/validate_artifacts.py dist "$BUILD_VERSION" "$BUILD_ARCHES"
         cp build-inputs.env dist/build-inputs.env
       '

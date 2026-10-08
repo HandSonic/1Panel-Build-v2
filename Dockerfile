@@ -46,5 +46,9 @@ RUN /bin/bash /opt/build-tools/scripts/build_release.sh
 FROM debian:bookworm-slim
 WORKDIR /opt/1Panel
 COPY --from=builder /opt/1Panel/dist /opt/1Panel/dist
+# The exporting container may run as the unprivileged host runner UID.
+RUN chmod 755 /opt/1Panel/dist && chmod 644 /opt/1Panel/dist/*
 VOLUME /dist
-CMD ["/bin/sh", "-c", "cp -a dist/. /dist/"]
+# Copy files only: cp -a dist/. also changes the bind mount directory ownership,
+# preventing an unprivileged CI runner from adding provenance after export.
+CMD ["/bin/sh", "-c", "cp dist/* /dist/"]

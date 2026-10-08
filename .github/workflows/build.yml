@@ -69,7 +69,7 @@ jobs:
             --build-arg GEOIP_SHA256="$GEOIP_SHA256" --build-arg BUILD_REPOSITORY_COMMIT="$GITHUB_SHA" \
             -t "1panel-v2-builder:$GITHUB_SHA" .
           mkdir -p dist
-          docker run --rm -v "$PWD/dist:/dist" "1panel-v2-builder:$GITHUB_SHA"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/dist:/dist" "1panel-v2-builder:$GITHUB_SHA"
           python3 scripts/validate_artifacts.py dist "$VERSION" "$TARGET_ARCHES"
           cp build-inputs.env dist/build-inputs.env
       - uses: actions/upload-artifact@v4

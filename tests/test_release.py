@@ -1,4 +1,4 @@
-import hashlib,io,json,os,pathlib,struct,sys,tarfile,tempfile,unittest
+import hashlib,io,json,os,pathlib,struct,subprocess,sys,tarfile,tempfile,unittest
 from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
 import configure_release,download_resources,package_release,resolve_inputs,validate_artifacts
@@ -33,6 +33,19 @@ class ReleaseTests(unittest.TestCase):
     def test_seven_architecture_matrix(self):
         arches=list(validate_artifacts.ARCHES);self.build(arches)
         self.assertEqual(len(validate_artifacts.validate_dist(self.root/'dist','v2.3.2',arches)),7)
+    def test_export_preserves_destination_directory(self):
+        source=self.root/'export-source';source.mkdir();(source/'dist').mkdir()
+        (source/'dist/artifact').write_bytes(b'verified')
+        destination=self.root/'export-destination';destination.mkdir();destination.chmod(0o750)
+        before=destination.stat()
+        dockerfile=(pathlib.Path(__file__).resolve().parents[1]/'Dockerfile').read_text()
+        command=json.loads(next(line[4:] for line in dockerfile.splitlines() if line.startswith('CMD ')))
+        command[-1]=command[-1].replace('/dist/',str(destination)+'/')
+        subprocess.run(command,cwd=source,check=True)
+        after=destination.stat()
+        self.assertEqual((before.st_uid,before.st_gid,before.st_mode),(after.st_uid,after.st_gid,after.st_mode))
+        (destination/'build-inputs.env').write_text('SOURCE_COMMIT=fixture\n')
+        self.assertEqual((destination/'artifact').read_bytes(),b'verified')
     def test_download_success_replaces_zero_files(self):
         destination=self.root/'new-resources';destination.mkdir();(destination/'install.sh').write_bytes(b'')
         def fake(url,path,digest):
