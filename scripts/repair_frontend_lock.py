@@ -15,10 +15,34 @@ def repair(root, version):
     recipe = config['versions'].get(version)
     if recipe is None:
         return
+    target = root / 'package-lock.json'
+    if recipe.get('original_absent'):
+        if entry.get('source_files_absent') != ['frontend/package-lock.json']:
+            raise ValueError('Repair lock requires reviewed source absence')
+        if recipe['derived_sha256'] != entry.get('frontend_repair_lock_sha256'):
+            raise ValueError('Repair lock is not bound to reviewed source inputs')
+        package = root / 'package.json'
+        if package.is_symlink() or not package.is_file() or hashlib.sha256(package.read_bytes()).hexdigest() != entry['source_files_sha256']['frontend/package.json']:
+            raise ValueError('Repair lock package manifest checksum mismatch')
+        if target.exists() or target.is_symlink():
+            raise ValueError('Refusing to replace an existing source lock')
+        expected_path = 'frontend-locks/' + version + '.package-lock.json'
+        if recipe['reviewed_lock_file'] != expected_path:
+            raise ValueError('Unexpected reviewed repair lock path')
+        source = REPAIRS.parent / expected_path
+        if source.is_symlink() or not source.is_file():
+            raise ValueError('Missing or linked reviewed repair lock')
+        derived = source.read_bytes()
+        if hashlib.sha256(derived).hexdigest() != recipe['derived_sha256']:
+            raise ValueError('Reviewed repair lock checksum mismatch')
+        # Exclusive creation also rejects a lock introduced after the absence check.
+        with target.open('xb') as handle:
+            handle.write(derived)
+        print(f"Applied reviewed absent-lock repair: {version} {recipe['derived_sha256']}")
+        return
     original_hash = recipe['original_sha256']
     if original_hash != entry['source_files_sha256']['frontend/package-lock.json']:
         raise ValueError('Repair is not bound to the reviewed source lock')
-    target = root / 'package-lock.json'
     if target.is_symlink() or not target.is_file():
         raise ValueError('Missing or linked frontend lock')
     original = target.read_bytes()

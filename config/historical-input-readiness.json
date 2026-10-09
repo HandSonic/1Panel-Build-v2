@@ -11,7 +11,8 @@
     "v2.2.1",
     "v2.1.13",
     "v2.1.12",
-    "v2.1.11"
+    "v2.1.11",
+    "v2.1.10"
   ],
   "versions": [
     {
@@ -204,27 +205,20 @@
     },
     {
       "version": "v2.1.10",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "4c396d68caa77fb7fa266de45def936b8f05a97a",
-      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
       "original_checkout_provenance": "not_established",
       "installer_candidate_commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
-      "installer_byte_proven_commit": null,
-      "minimum_go_requirement": null,
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins",
-        "core_go_mod_requirement",
-        "agent_go_mod_requirement",
-        "frontend_package_json"
-      ],
+      "installer_byte_proven_commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
+      "minimum_go_requirement": "1.25.7",
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"
-      ]
+      ],
+      "frontend_lock_kind": "explicit_derived_repair_input_original_absent"
     },
     {
       "version": "v2.1.9",

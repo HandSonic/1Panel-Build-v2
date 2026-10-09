@@ -105,3 +105,25 @@ class HistoricalInputCohorts(unittest.TestCase):
                 self.assertEqual(reviewed_commit, entry['source_commit'], (name, component))
                 self.assertTrue(original)
                 self.assertTrue(normalized)
+
+class AbsentSourceLock(unittest.TestCase):
+    def test_only_reviewed_lock_absence_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry = {'source_files_sha256': {}, 'source_files_absent': ['frontend/package-lock.json']}
+            for name in source.SOURCE_FILES - {'frontend/package-lock.json'}:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
+                entry['source_files_sha256'][name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            with patch.object(source, 'resolve', return_value=entry):
+                source.verify(root, 'v2.1.10')
+                lock = root / 'frontend/package-lock.json'
+                lock.write_text('unexpected')
+                with self.assertRaises(ValueError): source.verify(root, 'v2.1.10')
+                lock.unlink()
+                lock.symlink_to(root / 'missing')
+                with self.assertRaises(ValueError): source.verify(root, 'v2.1.10')
+                lock.unlink()
+                entry['source_files_absent'] = ['core/go.mod']
+                with self.assertRaises(ValueError): source.verify(root, 'v2.1.10')
