@@ -23,7 +23,7 @@ RUN node /opt/build-tools/scripts/patch_backend_xpack_compat.mjs /src \
     && test -s /src/core/cmd/server/web/index.html \
     && rm -rf node_modules /root/.npm
 
-FROM golang:${GO_VERSION} AS builder
+FROM golang:${GO_VERSION} AS prepared-builder
 ARG VERSION
 ARG GO_VERSION
 ARG INSTALLER_REF=aa4a6bbf24ae0fd938b32294672f5086f940e483
@@ -41,6 +41,7 @@ RUN set -eu; eval "$(python3 /opt/build-tools/scripts/resolve_inputs.py "$VERSIO
     python3 /opt/build-tools/scripts/configure_release.py /opt/1Panel "$VERSION"; \
     /bin/bash /opt/build-tools/scripts/download_resources.sh; \
     sed -i "s@^ORIGINAL_VERSION=.*@ORIGINAL_VERSION=${VERSION}@" 1pctl
+FROM prepared-builder AS builder
 RUN /bin/bash /opt/build-tools/scripts/build_release.sh
 
 FROM debian:bookworm-slim
