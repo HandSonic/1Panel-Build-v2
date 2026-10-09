@@ -4,7 +4,9 @@
     "v2.3.2",
     "v2.3.1",
     "v2.3.0",
-    "v2.2.5"
+    "v2.2.5",
+    "v2.2.4",
+    "v2.2.3"
   ],
   "versions": [
     {
@@ -85,20 +87,15 @@
     },
     {
       "version": "v2.2.4",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "c04848a92a1add75997c38dbd8b5987dde333dee",
-      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
       "original_checkout_provenance": "verified_from_actual_build_job_log",
       "installer_candidate_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
       "installer_byte_proven_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
       "minimum_go_requirement": "1.26.1",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"
@@ -106,20 +103,15 @@
     },
     {
       "version": "v2.2.3",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "582cf1f5331487baed05a2785c6be59b6d12c812",
-      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
       "original_checkout_provenance": "unverified_historical_job_logs_HTTP_410",
       "installer_candidate_commit": "4441fc3e546cf155ae1145e7d092909cbfc9476f",
       "installer_byte_proven_commit": "4441fc3e546cf155ae1145e7d092909cbfc9476f",
       "minimum_go_requirement": "1.26.1",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"

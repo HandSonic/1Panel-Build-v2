@@ -182,8 +182,8 @@ profiles retain their original source and normalized hashes.
 
 `config/historical-input-readiness.json` enumerates all 40 historical/current
 versions. It is planning metadata, never an input fallback. The enabled source
-locks are v2.3.2, v2.3.1, v2.3.0, and v2.2.5, as detailed in the first batch
-below. Other historical versions still need their frontend package-lock bytes,
+locks are v2.3.2, v2.3.1, v2.3.0, v2.2.5, v2.2.4, and v2.2.3, as detailed
+in the input batches below. Other historical versions still need their frontend package-lock bytes,
 exact Node/npm compatibility, a reviewed exact Go compiler
 satisfying BOTH Core and Agent module requirements, and complete reviewed
 installer/GeoIP pins. Available source and installer candidates are not silently
@@ -211,3 +211,21 @@ publish_candidate false, explicit version, and all seven architectures. Build
 v2.3.1, v2.3.0, then v2.2.5 separately; do not publish a historical release until
 its complete verified upstream artifact and downstream runtime gate succeed.
 Existing release assets are unchanged by selecting these candidate inputs.
+
+## Second historical immutable-input batch
+
+v2.2.4 and v2.2.3 use their verified version-tag commits and byte-equivalent
+reviewed installers. Both require Go 1.26.1 for Core and Go 1.25.10 for Agent;
+the selected Go 1.26.1 satisfies both. Their committed frontend lockfiles
+accept Node 22.22.1 with bundled npm 10.9.4. These added contracts still require
+real seven-architecture build and downstream installation/upgrade validation.
+
+v2.2.3 original build logs have expired (HTTP 410). Its source pin describes a
+repair build from the verified version tag, not proof of the original checkout
+or bit-for-bit reproduction. v2.2.4 source checkout has matching historical log
+evidence. In both cases all 15 selected installer resources match historical
+package members after the expected 1pctl version substitution.
+
+v2.2.2 and v2.2.1 remain disabled. Their Core and Agent Go minima differ
+(1.25.7 and 1.25.10), and their interactive-only installers need separate
+source/resource contract and downstream compatibility review.
