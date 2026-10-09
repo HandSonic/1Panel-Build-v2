@@ -1,0 +1,213 @@
+name: acceptance-partial-architecture
+permissions:
+  contents: read
+on:
+  push:
+    branches: ['test/partial-architecture-acceptance']
+concurrency:
+  # Read-only builds/validation may overlap without replacing another pending run.
+  group: upstream-run-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -v
+  prepare:
+    needs: tests
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.inputs.outputs.version }}
+      arches: ${{ steps.inputs.outputs.arches }}
+      matrix: ${{ steps.inputs.outputs.matrix }}
+      go_version: ${{ steps.inputs.outputs.go_version }}
+      resolved_contract_sha256: ${{ steps.inputs.outputs.resolved_contract_sha256 }}
+      source_sha256: ${{ steps.prepare.outputs.sha256 }}
+      artifact_id: ${{ steps.source_upload.outputs.artifact-id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      INPUT_VERSION: 'v2.1.4'
+      INPUT_CHANNEL: 'stable'
+      INPUT_ARCHES: 'amd64 arm64'
+    steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.1'
+      - name: Resolve immutable build inputs
+        id: inputs
+        run: |
+          set -euo pipefail
+          arches=$(printf '%s' "${INPUT_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}" | tr ',;' ' ')
+          for arch in $arches; do
+            case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac
+          done
+          [[ -n "$arches" ]]
+          version=${INPUT_VERSION:-}
+          if [[ -z "$version" && "$GITHUB_REF" == refs/tags/* ]]; then version=$GITHUB_REF_NAME; fi
+          if [[ -z "$version" ]]; then
+            version=$(python3 scripts/discover_inputs.py --latest --mode "$INPUT_CHANNEL")
+          fi
+          contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
+          python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
+          echo "resolved_contract_sha256=$contract_sha" >> "$GITHUB_OUTPUT"
+          python3 scripts/resolve_inputs.py "$version" > build-inputs.env
+          matrix=$(python3 -c 'import json,sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(json.dumps({"arch":architectures(sys.argv[1])}))' "$arches")
+          source build-inputs.env
+          printf 'VERSION=%s\nTARGET_ARCHES=%s\n' "$version" "$arches" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "arches=$arches" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "go_version=$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Prepare pinned source and frontend once
+        id: prepare
+        run: |
+          set -euo pipefail
+          source build-inputs.env
+          docker build -f Dockerfile --target prepared-builder \
+            --build-arg VERSION="$VERSION" --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" \
+            --build-arg INSTALLER_REF="$INSTALLER_REF" --build-arg GO_VERSION="$GO_VERSION" \
+            --build-arg NODE_VERSION="$NODE_VERSION" --build-arg GEOIP_SHA256="$GEOIP_SHA256" \
+            --build-arg BUILD_REPOSITORY_COMMIT="$GITHUB_SHA" -t "1panel-prepared:$GITHUB_SHA" .
+          container=$(docker create "1panel-prepared:$GITHUB_SHA" true)
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          docker cp "$container:/opt/1Panel" prepared-source
+          sudo chown -R "$(id -u):$(id -g)" prepared-source
+          test -s prepared-source/core/cmd/server/web/index.html
+          test "$(git -C prepared-source rev-parse HEAD)" = "$SOURCE_COMMIT"
+          extra=()
+          if [[ -f resolved-source.json ]]; then extra+=(resolved-source.json); fi
+          tar -czf prepared-source.tar.gz prepared-source build-inputs.env "${extra[@]}"
+          echo "sha256=$(sha256sum prepared-source.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        id: source_upload
+        with:
+          name: prepared-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: prepared-source.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+  compile:
+    name: compile (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TARGET_ARCHES: ${{ matrix.arch }}
+      BUILD_REPOSITORY_COMMIT: ${{ github.sha }}
+      GOTOOLCHAIN: local
+      PREPARED_SHA256: ${{ needs.prepare.outputs.source_sha256 }}
+      RESOLVED_CONTRACT_SHA256: ${{ needs.prepare.outputs.resolved_contract_sha256 }}
+    steps:
+      - name: Controlled acceptance failure for arm64
+        if: matrix.arch == 'arm64'
+        run: |
+          echo '::error::Expected isolated acceptance failure; this run cannot publish'
+          exit 1
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+      - name: Verify shared source before use
+        run: |
+          set -euo pipefail
+          echo "$PREPARED_SHA256  prepared-source.tar.gz" | sha256sum -c -
+          tar -xzf prepared-source.tar.gz
+          if [[ -n "$RESOLVED_CONTRACT_SHA256" ]]; then
+            python3 scripts/resolved_contract.py apply resolved-source.json "$VERSION" --sha256 "$RESOLVED_CONTRACT_SHA256"
+          elif [[ -e resolved-source.json ]]; then
+            echo "Unexpected generated source contract"; exit 1
+          fi
+          source build-inputs.env
+          test "$(git -C prepared-source rev-parse HEAD)" = "$SOURCE_COMMIT"
+          python3 scripts/resolve_inputs.py "$VERSION" | cmp - build-inputs.env
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.prepare.outputs.go_version }}
+          cache: false
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: upstream-${{ runner.os }}-${{ needs.prepare.outputs.version }}-go${{ needs.prepare.outputs.go_version }}-${{ matrix.arch }}-${{ hashFiles('config/**', 'scripts/**', 'prepared-source/core/go.sum', 'prepared-source/agent/go.sum') }}
+      - name: Build and validate every requested architecture
+        run: |
+          set -euo pipefail
+          source build-inputs.env
+          test "$(go env GOVERSION)" = "go$GO_VERSION"
+          tools="$PWD/scripts"
+          (cd prepared-source; bash "$tools/build_release.sh")
+          python3 scripts/validate_artifacts.py prepared-source/dist "$VERSION" "$TARGET_ARCHES"
+          cp build-inputs.env prepared-source/dist/build-inputs.env
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.arch }}-${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
+          # A failed-only rerun replaces just its own intermediate shard.
+          overwrite: true
+          path: prepared-source/dist/*
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+  build:
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    needs: [prepare, compile]
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.prepare.outputs.version }}
+      arches: ${{ needs.prepare.outputs.arches }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TARGET_ARCHES: ${{ needs.prepare.outputs.arches }}
+      BUILD_REPOSITORY_COMMIT: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+      PRODUCER_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SHARD_GENERATION: ${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
+      RESOLVED_CONTRACT_SHA256: ${{ needs.prepare.outputs.resolved_contract_sha256 }}
+    steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*-${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
+          path: shards
+      - name: Independently validate and aggregate all architecture shards
+        run: |
+          set -euo pipefail
+          python3 scripts/aggregate_shards.py shards dist "$VERSION" "$TARGET_ARCHES" "$SHARD_GENERATION"
+          python3 scripts/resolved_contract.py activate dist "$VERSION"
+          python3 scripts/validate_artifacts.py dist "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("dist/build-manifest.json"))["artifacts"]))')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-only-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
