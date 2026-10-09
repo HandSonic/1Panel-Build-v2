@@ -494,6 +494,444 @@
       "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is separately checked in installer-verified-hashes.json",
       "state": "proposed_engine_compatible_pin_not_built",
       "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9/"
+    },
+    "v2.2.4": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.26.1"
+        },
+        "agent/go.mod": {
+          "go": "1.25.10"
+        }
+      },
+      "source_identity": {
+        "version": "v2.2.4",
+        "status": "source_checkout_verified_from_actual_build_job_log",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "current_source_tag_commit": "c04848a92a1add75997c38dbd8b5987dde333dee",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/c04848a92a1add75997c38dbd8b5987dde333dee",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.2.4",
+        "verified_equivalent_installer_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+        "installer_provenance_note": "15 actual published resource bytes match pinned installer after only expected 1pctl version substitution; actual legacy retrieval used mutable ref.",
+        "installer_features": {
+          "non_interactive_cli": true,
+          "edition_selection": true,
+          "appstore_install": false,
+          "builtin_docker_tree_helper": true,
+          "interactive_reads": 7
+        },
+        "source_commit": "c04848a92a1add75997c38dbd8b5987dde333dee",
+        "source_commit_matches_current_tag": true,
+        "actual_checkout_provenance": "verified_from_actual_build_job_log",
+        "go_version": "1.26.1",
+        "verified_architectures": [
+          "ppc64le",
+          "s390x",
+          "arm64",
+          "armv7",
+          "amd64",
+          "riscv64",
+          "loong64"
+        ],
+        "rebuild_required": "development_config_embedded_in_published_binaries",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "actual_matching_workflow_metadata_and_build_logs",
+        "upstream_asset_created_dates": [
+          "2026-07-27"
+        ],
+        "release_original_published_at": "2026-07-27T10:56:43Z",
+        "asset_rebuild_date_warning": false
+      },
+      "frontend": {
+        "version": "v2.2.4",
+        "source_commit": "c04848a92a1add75997c38dbd8b5987dde333dee",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "91f9b0dca75371bd508e718b82af41970db7028e",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/c04848a92a1add75997c38dbd8b5987dde333dee/core/go.mod",
+            "sha256": "4759f37ef778347852a80f03480d48d21f47b84f6e544e7c7cebe5e3f765e325",
+            "bytes": 5558
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "b6f0e6577bc7c9845f1682ec8de0869f75258680",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/c04848a92a1add75997c38dbd8b5987dde333dee/agent/go.mod",
+            "sha256": "9349e96a09e7afa1729399bc5d9564d3408e73d6fc12aec6be4768cd85281a76",
+            "bytes": 11010
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "de120e78d13110b5dd0a8ed6c84b9c15568aa30c",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/c04848a92a1add75997c38dbd8b5987dde333dee/frontend/package.json",
+            "sha256": "eab5b051ce2388645a38e13716ec6e0940fae390a53e2c64aa72c461ac6f7b4d",
+            "bytes": 3663
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "2b1692d5bea5befe79f1af4b066fad6545ce5ddf",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/c04848a92a1add75997c38dbd8b5987dde333dee/frontend/package-lock.json",
+            "sha256": "1c3432e2a8869f9afc9296cba683a8fce8c9100da9b759fc47ac885f6c893d3e",
+            "bytes": 463810
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "riscv64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is checked against 15 archived member hashes",
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9/",
+      "installer_published_member_comparison": {
+        "commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+        "members": [
+          {
+            "path": "1pctl",
+            "sha256": "e56ddf1006d3d690ee44314602cae3df27dd4e7cf0bfd18860651e017b697e9d",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "6ca9e09b597d02bf48c26ad4fe8a886dcefbdcc0e1194aafeac2321f73e8e901",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ]
+      },
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
+      "tag_reverified_at_utc": "2026-10-09T02:34:41Z",
+      "node_engine_validation": {
+        "node_version": "22.22.1",
+        "npm_version": "10.9.4",
+        "lockfile_engine_entries_checked": 487,
+        "violations": [],
+        "status": "declared_engines_only_actual_build_pending"
+      },
+      "state": "proposed_engine_compatible_pin_not_built"
+    },
+    "v2.2.3": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.26.1"
+        },
+        "agent/go.mod": {
+          "go": "1.25.10"
+        }
+      },
+      "source_identity": {
+        "version": "v2.2.3",
+        "status": "current_tag_resolved_actual_build_provenance_pending",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "current_source_tag_commit": "582cf1f5331487baed05a2785c6be59b6d12c812",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/582cf1f5331487baed05a2785c6be59b6d12c812",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.2.3",
+        "actual_checkout_provenance": "unverified_historical_job_logs_HTTP_410",
+        "verified_architectures": [
+          "ppc64le",
+          "s390x",
+          "arm64",
+          "armv7",
+          "amd64",
+          "riscv64",
+          "loong64"
+        ],
+        "rebuild_required": "development_config_embedded_in_published_binaries",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "tag_target_only_not_proof_of_actual_asset_build",
+        "upstream_asset_created_dates": [
+          "2026-07-07"
+        ],
+        "release_original_published_at": "2026-07-07T10:39:58Z",
+        "asset_rebuild_date_warning": false
+      },
+      "frontend": {
+        "version": "v2.2.3",
+        "source_commit": "582cf1f5331487baed05a2785c6be59b6d12c812",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "aada5b0048779479e495215f405b9ec947aaea98",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/582cf1f5331487baed05a2785c6be59b6d12c812/core/go.mod",
+            "sha256": "571e069edcf2aaca497e3e8194de7812d04df77d6470467bfdd657de4038e256",
+            "bytes": 5118
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "953c2bc8172f68447c2d9fc8bb32650648890161",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/582cf1f5331487baed05a2785c6be59b6d12c812/agent/go.mod",
+            "sha256": "c665105f4a0c90d4e3c232337b47af97bf4bfcbd54da2a4c1ade320b22667c6a",
+            "bytes": 10982
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "da157824494c54358b8fbee18734a3f6b8776bc9",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/582cf1f5331487baed05a2785c6be59b6d12c812/frontend/package.json",
+            "sha256": "b05b8d8dc8e510ab542699adecfe3b7acd11c1c95e1e4e3d153f4f6ed6e7a3d0",
+            "bytes": 3662
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "92e8fbeb02bb255ae913903833a893e35c93b2c6",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/582cf1f5331487baed05a2785c6be59b6d12c812/frontend/package-lock.json",
+            "sha256": "ad31398bfe583e12e6ea213a928a3f4372e3b3fa8ee3887a4cd6704ffc3555fd",
+            "bytes": 454457
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "riscv64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is checked against 15 archived member hashes",
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/4441fc3e546cf155ae1145e7d092909cbfc9476f/",
+      "installer_published_member_comparison": {
+        "commit": "4441fc3e546cf155ae1145e7d092909cbfc9476f",
+        "members": [
+          {
+            "path": "1pctl",
+            "sha256": "a995d8f44899258b5d9b32f28ef1bd681d835250d134b9469873df6b9b79cc44",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "5d9425446777720821246cabc3e6c9e1877d85448e6291a4e2f1db484f517cbb",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ]
+      },
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
+      "tag_reverified_at_utc": "2026-10-09T02:34:41Z",
+      "node_engine_validation": {
+        "node_version": "22.22.1",
+        "npm_version": "10.9.4",
+        "lockfile_engine_entries_checked": 478,
+        "violations": [],
+        "status": "declared_engines_only_actual_build_pending"
+      },
+      "state": "proposed_engine_compatible_pin_not_built"
     }
   }
 }

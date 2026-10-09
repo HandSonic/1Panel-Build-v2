@@ -79,3 +79,29 @@ class ReviewedLocks(unittest.TestCase):
                 path.write_text(json.dumps(data))
                 with patch.object(resolve_inputs, 'LOCK', path):
                     with self.assertRaises(ValueError): resolve_inputs.resolve('v2.3.2')
+
+class HistoricalInputCohorts(unittest.TestCase):
+    def test_enabled_go_versions_satisfy_both_components(self):
+        import json
+        import resolve_inputs
+        root = Path(__file__).resolve().parents[1]
+        evidence = json.loads((root / 'config/source-input-evidence.json').read_text())
+        def version(value):
+            return tuple(int(part) for part in value.removeprefix('go').split('.'))
+        for name in json.loads(resolve_inputs.LOCK.read_text()):
+            selected = version(resolve_inputs.resolve(name)['go_version'])
+            for component, requirements in evidence['versions'][name]['go_requirements'].items():
+                self.assertGreaterEqual(selected, version(requirements['go']), (name, component))
+                if requirements.get('toolchain', 'default') != 'default':
+                    self.assertGreaterEqual(selected, version(requirements['toolchain']), (name, component))
+
+    def test_enabled_configs_bind_same_source_commit(self):
+        import json
+        import resolve_inputs
+        import embedded_configuration
+        for name, entry in json.loads(resolve_inputs.LOCK.read_text()).items():
+            for component in ('core', 'agent'):
+                original, normalized, reviewed_commit = embedded_configuration.expected_bytes(name, component)
+                self.assertEqual(reviewed_commit, entry['source_commit'], (name, component))
+                self.assertTrue(original)
+                self.assertTrue(normalized)
