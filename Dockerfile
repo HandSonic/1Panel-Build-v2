@@ -35,7 +35,9 @@ COPY scripts /opt/build-tools/scripts
 COPY config /opt/build-tools/config
 COPY --from=frontend-builder /src /opt/1Panel
 WORKDIR /opt/1Panel
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 python3-venv && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/build-python/bin:$PATH"
+RUN /usr/bin/python3 -m venv /opt/build-python && python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
 RUN set -eu; eval "$(python3 /opt/build-tools/scripts/resolve_inputs.py "$VERSION")"; \
     test "$(go env GOVERSION)" = "go$GO_VERSION"; \
     python3 /opt/build-tools/scripts/configure_release.py /opt/1Panel "$VERSION"; \

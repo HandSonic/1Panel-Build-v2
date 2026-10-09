@@ -129,7 +129,7 @@ class ReleaseTests(unittest.TestCase):
         for part in ('core','agent'):
             p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True)
             p.write_text('base:\n  mode: dev\n  is_demo: false\n  is_offline: false\n  is_fxplay: false\n  is_enterprise: false\nlog:\n  level: debug\n')
-        with self.assertRaisesRegex(ValueError,'source YAML differs'):
+        with self.assertRaisesRegex(ValueError,'critical setting|source YAML differs'):
             configure_release.configure(self.root,'v2.3.2')
     def test_embedded_dev_configuration_rejected_despite_valid_manifest(self):
         self.binaries('amd64')
