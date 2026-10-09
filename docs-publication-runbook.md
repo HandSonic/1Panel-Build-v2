@@ -262,3 +262,9 @@ required before enabling release promotion.
 ### Historical frontend lock repair
 
 The v2.1.13, v2.1.12 and v2.1.11 source locks omit cosmiconfig even though their locked @commitlint/load requires it. The original source and dependency hashes remain pinned. After verifying those inputs, the shared Docker build applies the explicit recipe in config/frontend-lock-repairs.json: add only cosmiconfig 9.0.2 with its registry resolution and verified integrity. Existing dependency entries are preserved. Both the original and derived lock SHA-256 must match before writing, then npm ci --engine-strict remains mandatory. These are derived repair builds, not reproductions of an established original checkout. All three hosted builds and current-version regression must pass before publication.
+
+## v2.1.10 absent-lock repair input
+
+v2.1.10 has no committed frontend lock. Its exact package.json is byte-identical to v2.1.11, with no workspaces, package-manager override, root package.json, or repository/frontend npmrc/shrinkwrap. Reuse the exact reviewed v2.1.11 derived lock already built successfully with Node 22.22.1/npm 10.9.4; do not resolve dependencies during CI. This file is explicitly a repair input, not an original v2.1.10 source file. Verify the three original dependency inputs and the required absence first; reject any unexpected existing lock, then create only the pinned repair lock and retain npm ci --engine-strict. Both Go modules require 1.25.7.
+
+All 15 installer resources match the actual historical amd64 archive after version substitution. This evidence does not establish other historical architectures or the original source checkout. The interactive installer still needs the downstream offline Docker adapter and native runtime checks. Fresh v2.1.10 seven-architecture and current-version builds remain mandatory before merge or promotion.

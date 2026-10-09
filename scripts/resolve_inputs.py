@@ -13,7 +13,12 @@ def resolve(version):
     for key in ('source_commit', 'installer_commit'):
         if not re.fullmatch('[0-9a-f]{40}', entry[key]): raise ValueError(f'Unpinned {key}')
     hashes = entry.get('source_files_sha256', {})
-    if set(hashes) != SOURCE_FILES or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value) for value in hashes.values()):
+    absent = entry.get('source_files_absent', [])
+    if absent not in ([], ['frontend/package-lock.json']):
+        raise ValueError('Unsupported absent source input')
+    if absent and not re.fullmatch('[0-9a-f]{64}', entry.get('frontend_repair_lock_sha256', '')):
+        raise ValueError('Missing pinned repair lock for absent source lock')
+    if set(hashes) != SOURCE_FILES - set(absent) or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value) for value in hashes.values()):
         raise ValueError('Incomplete reviewed dependency input hashes')
     for key in ('go_version', 'node_version', 'npm_version'):
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', entry[key]): raise ValueError(f'Unpinned {key}')

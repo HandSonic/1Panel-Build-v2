@@ -65,3 +65,56 @@ class FrontendLockRepair(unittest.TestCase):
         text = (Path(__file__).resolve().parents[1] / 'Dockerfile').read_text()
         self.assertLess(text.index('verify_source_inputs.py'), text.index('repair_frontend_lock.py'))
         self.assertLess(text.index('repair_frontend_lock.py'), text.index('npm ci --engine-strict'))
+
+
+class AbsentFrontendLockRepair(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.front = self.root / 'frontend'
+        self.front.mkdir()
+        self.target = self.front / 'package-lock.json'
+        self.package = b'{"name":"test","version":"1"}'
+        (self.front / 'package.json').write_bytes(self.package)
+        self.derived = b'{"lockfileVersion":3,"packages":{}}\n'
+        self.lock = self.root / 'frontend-locks/v2.1.10.package-lock.json'
+        self.lock.parent.mkdir()
+        self.lock.write_bytes(self.derived)
+        digest = lambda data: hashlib.sha256(data).hexdigest()
+        self.recipe = {'original_absent': True, 'derived_sha256': digest(self.derived), 'reviewed_lock_file': 'frontend-locks/v2.1.10.package-lock.json'}
+        self.config = {'versions': {'v2.1.10': self.recipe}, 'additions': {}}
+        self.path = self.root / 'repairs.json'
+        self.path.write_text(json.dumps(self.config))
+        self.entry = {'source_files_absent': ['frontend/package-lock.json'], 'frontend_repair_lock_sha256': digest(self.derived), 'source_files_sha256': {'frontend/package.json': digest(self.package)}}
+        for handle in [patch.object(subject, 'REPAIRS', self.path), patch.object(subject, 'resolve', return_value=self.entry)]:
+            handle.start()
+            self.addCleanup(handle.stop)
+
+    def test_creates_exact_pinned_lock_once(self):
+        subject.repair(self.front, 'v2.1.10')
+        self.assertEqual(self.target.read_bytes(), self.derived)
+        with self.assertRaises(ValueError): subject.repair(self.front, 'v2.1.10')
+        self.assertEqual(self.target.read_bytes(), self.derived)
+
+    def test_manifest_and_derived_integrity_before_create(self):
+        for case in ('manifest', 'derived', 'binding', 'absence', 'path'):
+            with self.subTest(case=case):
+                (self.front / 'package.json').write_bytes(self.package)
+                self.lock.write_bytes(self.derived)
+                entry = json.loads(json.dumps(self.entry))
+                config = json.loads(json.dumps(self.config))
+                if case == 'manifest': (self.front / 'package.json').write_bytes(b'changed')
+                if case == 'derived': self.lock.write_bytes(b'changed')
+                if case == 'binding': entry['frontend_repair_lock_sha256'] = '0' * 64
+                if case == 'absence': entry['source_files_absent'] = []
+                if case == 'path': config['versions']['v2.1.10']['reviewed_lock_file'] = '../outside'
+                self.path.write_text(json.dumps(config))
+                with patch.object(subject, 'resolve', return_value=entry), self.assertRaises(ValueError):
+                    subject.repair(self.front, 'v2.1.10')
+                self.assertFalse(self.target.exists())
+
+    def test_dangling_existing_lock_is_rejected(self):
+        self.target.symlink_to(self.root / 'nonexistent')
+        with self.assertRaises(ValueError): subject.repair(self.front, 'v2.1.10')
+        self.assertTrue(self.target.is_symlink())
