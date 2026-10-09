@@ -19,6 +19,7 @@ RUN set -eu; eval "$(python3 /opt/build-tools/scripts/resolve_inputs.py "$VERSIO
 WORKDIR /src/frontend
 RUN node /opt/build-tools/scripts/patch_backend_xpack_compat.mjs /src \
     && node /opt/build-tools/scripts/patch_frontend_xpack_compat.mjs /src/frontend \
+    && python3 /opt/build-tools/scripts/repair_frontend_lock.py /src/frontend "$VERSION" \
     && npm ci --engine-strict --no-audit --no-fund \
     && npm run build:pro \
     && test -s /src/core/cmd/server/web/index.html \

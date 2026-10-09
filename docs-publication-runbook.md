@@ -258,3 +258,7 @@ Downstream must apply its reviewed historical Docker adapter and run installatio
 and upgrade tests; upstream source/build validation alone does not establish that
 an offline installer package works. Full seven-architecture repair builds remain
 required before enabling release promotion.
+
+### Historical frontend lock repair
+
+The v2.1.13, v2.1.12 and v2.1.11 source locks omit cosmiconfig even though their locked @commitlint/load requires it. The original source and dependency hashes remain pinned. After verifying those inputs, the shared Docker build applies the explicit recipe in config/frontend-lock-repairs.json: add only cosmiconfig 9.0.2 with its registry resolution and verified integrity. Existing dependency entries are preserved. Both the original and derived lock SHA-256 must match before writing, then npm ci --engine-strict remains mandatory. These are derived repair builds, not reproductions of an established original checkout. All three hosted builds and current-version regression must pass before publication.
