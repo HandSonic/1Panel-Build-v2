@@ -21,6 +21,15 @@ class LockProbeTests(unittest.TestCase):
         for forbidden in ['contents: write','pull_request_target','gh release','npm publish','publish_candidate','secrets.']:
             self.assertNotIn(forbidden,text)
 
+    def test_shared_manifest_probe_changes_only_fixed_identity(self):
+        original=(ROOT/'.github/workflows/probe-v218-lock.yml').read_text()
+        shared=(ROOT/'.github/workflows/probe-v217-lock.yml').read_text()
+        expected=(original.replace('v218','v217').replace('v2.1.8','v2.1.7')
+                  .replace('6ea07421acf1e396606a892f44d76af9d5e8a7b2','6e052b8ef265dedbe2a50316159ee2b47fefb9ed')
+                  .replace('d5a914e32b8f3bd931c56b4ed48752484656bc7ae6bd14c36b54b1996683fffa','136f560604df9d40d22efd9ca3344c0098d5afbaf20af13573afe990843e07f5')
+                  .replace('tests/test_v217_lock_probe.py','tests/test_v218_lock_probe.py'))
+        self.assertEqual(shared,expected)
+
     def test_legacy_and_object_engines_reach_the_same_version_gate(self):
         text=(ROOT/'.github/workflows/probe-v218-lock.yml').read_text()
         function=textwrap.dedent(text.split('// ENGINE_CHECK_BEGIN\n',1)[1].split('          // ENGINE_CHECK_END',1)[0])
