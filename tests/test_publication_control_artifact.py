@@ -21,6 +21,7 @@ class PublicationControlArtifact(unittest.TestCase):
             'publication-work/release/checksums.txt',
             'publication-work/release/build-manifest.json',
             'publication-work/release/build-inputs.env',
+            'publication-work/release/resolved-source.json',
         ])
         self.assertEqual(args['if-no-files-found'], 'error')
         self.assertEqual(args['retention-days'], 14)

@@ -2,28 +2,22 @@
 """Resolve reviewed immutable inputs; never substitute latest for historical releases."""
 import json, pathlib, re, shlex, sys
 SOURCE_FILES = frozenset(('core/go.mod', 'agent/go.mod', 'frontend/package.json', 'frontend/package-lock.json'))
-LOCK = pathlib.Path(__file__).resolve().parents[1] / 'config/sources.json'
 def resolve(version):
-    if not re.fullmatch(r'v2\.\d+\.\d+(?:-(?:beta|dev)\.[0-9]+)?', version):
-        raise ValueError('Expected an explicit supported v2 release version')
-    data = json.loads(LOCK.read_text())
-    if version not in data:
-        raise ValueError(f'{version} has no reviewed input lock; add compatible immutable inputs first')
-    entry = data[version]
-    for key in ('source_commit', 'installer_commit'):
-        if not re.fullmatch('[0-9a-f]{40}', entry[key]): raise ValueError(f'Unpinned {key}')
-    hashes = entry.get('source_files_sha256', {})
-    absent = entry.get('source_files_absent', [])
-    if absent not in ([], ['frontend/package-lock.json']):
-        raise ValueError('Unsupported absent source input')
-    if absent and not re.fullmatch('[0-9a-f]{64}', entry.get('frontend_repair_lock_sha256', '')):
-        raise ValueError('Missing pinned repair lock for absent source lock')
-    if set(hashes) != SOURCE_FILES - set(absent) or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value) for value in hashes.values()):
-        raise ValueError('Incomplete reviewed dependency input hashes')
-    for key in ('go_version', 'node_version', 'npm_version'):
-        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', entry[key]): raise ValueError(f'Unpinned {key}')
-    expected = 'beta' if '-beta.' in version else 'dev' if '-dev.' in version else 'stable'
-    if entry['mode'] != expected: raise ValueError('Version/channel mismatch')
+    from resolved_contract import runtime_contract, digest
+    contract = runtime_contract(version)
+    source, tools, installer = contract['source'], contract['toolchain'], contract['installer']
+    entry = {'source_commit': source['commit'], 'installer_commit': installer['commit'],
+             'go_version': tools['go'], 'node_version': tools['node'], 'npm_version': tools['npm'],
+             'mode': contract['mode'], 'geoip_sha256': contract['resources']['geoip']['sha256'],
+             'geoip_bytes': contract['resources']['geoip']['bytes'],
+             'installer_sha256': {p: row['sha256'] for p, row in installer['resources'].items()},
+             'installer_original_version': installer['original_version'],
+             'source_files_sha256': {p: row['sha256'] for p, row in source['files'].items() if p in SOURCE_FILES},
+             'source_files_absent': source['absent'], 'resolved_contract_sha256': digest(contract)}
+    geoip = contract['resources']['geoip']
+    entry['geoip_archive' if 'archive' in geoip else 'geoip_url'] = geoip.get('archive', geoip.get('url'))
+    if contract['frontend_lock']['kind'] == 'derived':
+        entry['frontend_repair_lock_sha256'] = contract['frontend_lock']['sha256']
     return entry
 if __name__ == '__main__':
     try:

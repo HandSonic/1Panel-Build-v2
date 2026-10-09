@@ -40,15 +40,17 @@ def check_asset_names(assets,expected):
         if not any(re.fullmatch(re.escape(base)+r'\.(backup|staged)-[0-9a-f]{12}',name) for base in expected):
             raise ValueError(f'Unexpected canonical asset requires review: {name}')
 
-def repair(client, files, journal_path):
+def repair(client, files, journal_path, retire=()):
     before=client.release();assets={a['name']:a for a in before['assets']}
     if len(assets)!=len(before['assets']):raise ValueError('Duplicate remote asset names')
     expected={p.name:digest(p) for p in files}
     if len(expected)!=len(files):raise ValueError('Duplicate local publication filenames')
-    check_asset_names(before['assets'],expected)
+    if set(retire) & set(expected) or len(set(retire)) != len(retire):raise ValueError('Invalid retired artifact names')
+    allowed=set(expected)|set(retire)
+    check_asset_names(before['assets'],allowed)
     token=uuid.uuid4().hex[:12]
     state={'repo':client.repo,'tag':client.tag,'phase':'staging','old_notes':before.get('body') or '',
-           'operations':[],'rollback_errors':[],'warning':'GitHub multi-asset changes are not atomic; a brief naming transition can occur.'}
+           'operations':[],'retirements':[],'rollback_errors':[],'warning':'GitHub multi-asset changes are not atomic; a brief naming transition can occur.'}
     journal=Journal(journal_path,state)
     try:
         with tempfile.TemporaryDirectory() as temporary:
@@ -87,7 +89,29 @@ def repair(client, files, journal_path):
                            'old_renamed':False,'new_renamed':False}
                 state['operations'].append(operation);state.pop('staging_intent',None);journal.save()
                 (readback/staged_name).unlink();stage.unlink()
+            # Failed branches lose their canonical names, but their old bytes remain recoverable.
+            for name in retire:
+                old=assets.get(name)
+                if old is None:continue
+                old_readback=temp/('retire-'+str(old['id']));old_readback.mkdir()
+                client.download(name,old_readback)
+                facts=digest(old_readback/name)
+                if facts['bytes']!=old['size'] or (old.get('digest') and old['digest']!='sha256:'+facts['sha256']):
+                    raise ValueError('Retired original failed readback verification')
+                (old_readback/name).unlink()
+                backup=f'{name}.backup-{token}'
+                if backup in assets:raise ValueError('Retirement backup collision')
+                state['retirements'].append({'canonical':name,'backup':backup,'old_id':old['id'],
+                                            'old_size':old['size'],'old_digest':'sha256:'+facts['sha256'],'renamed':False})
+                journal.save()
             state['phase']='switching';journal.save()
+            for retirement in state['retirements']:
+                current={a['id']:a for a in client.release()['assets']}
+                old=current.get(retirement['old_id'])
+                if not old or old['name']!=retirement['canonical'] or old['size']!=retirement['old_size'] or (old.get('digest') and old['digest']!=retirement['old_digest']):
+                    raise ValueError('Retired asset identity changed before switch')
+                state['pending']={'asset_id':old['id'],'name':retirement['backup']};journal.save()
+                client.rename(old['id'],retirement['backup']);retirement['renamed']=True;journal.save()
             for operation in state['operations']:
                 current={a['id']:a for a in client.release()['assets']}
                 staged=current.get(operation['new_id'])
@@ -110,8 +134,13 @@ def repair(client, files, journal_path):
             state.pop('pending',None)
             state['phase']='verifying';journal.save()
             final_assets=client.release()['assets']
-            check_asset_names(final_assets,expected)
+            check_asset_names(final_assets,allowed)
             after={a['name']:a for a in final_assets}
+            if set(retire) & set(after):
+                raise ValueError('A failed branch canonical asset appeared concurrently')
+            for retirement in state['retirements']:
+                if retirement['canonical'] in after or after.get(retirement['backup'],{}).get('id')!=retirement['old_id']:
+                    raise ValueError('Failed branch retirement verification failed')
             for operation in state['operations']:
                 if after[operation['canonical']]['id']!=operation['new_id'] or after[operation['canonical']].get('digest')!=operation['new_digest']:
                     raise ValueError('Canonical asset verification failed')
@@ -122,20 +151,14 @@ def repair(client, files, journal_path):
                 asset=after.get(name)
                 if not asset or asset.get('digest')!='sha256:'+facts['sha256'] or asset['size']!=facts['bytes']:
                     raise ValueError(f'Final canonical matrix/digest mismatch: {name}')
-            if state['operations']:
-                note='\n\nRelease asset repair: verified replacements uploaded; previous bytes remain as recoverable .backup assets and are not endorsed as validated installations.\n'
-                note+='\n'.join(f"- {op['canonical']}: {op['new_digest']}; " + (f"backup {op['backup']} ({op['old_digest']})" if op['old_id'] is not None else 'new asset') for op in state['operations'])
-                if (client.release().get('body') or '') != state['old_notes']:
-                    raise ValueError('Release notes changed concurrently; refusing to overwrite')
-                state['intended_notes']=state['old_notes']+note
-                state['notes_update_attempted']=True;journal.save()
-                client.notes(state['intended_notes'])
             state['phase']='complete';journal.save()
     except Exception as error:
         state['failure']=str(error);state['phase']='rolling_back';journal.save()
         # Resolve uncertain PATCH outcomes by reading current asset IDs before rollback.
         try:
             observed={a['id']:a['name'] for a in client.release()['assets']}
+            for retirement in state['retirements']:
+                retirement['renamed']=observed.get(retirement['old_id'])==retirement['backup']
             for operation in state['operations']:
                 operation['new_renamed']=observed.get(operation['new_id'])==operation['canonical']
                 operation['old_renamed']=observed.get(operation['old_id'])==operation['backup']
@@ -151,6 +174,11 @@ def repair(client, files, journal_path):
                 journal.save()
             except Exception as rollback_error:
                 state['rollback_errors'].append(str(rollback_error));journal.save()
+        for retirement in reversed(state['retirements']):
+            try:
+                if retirement['renamed']:client.rename(retirement['old_id'],retirement['canonical']);retirement['renamed']=False
+                journal.save()
+            except Exception as rollback_error:state['rollback_errors'].append(str(rollback_error));journal.save()
         if state.get('notes_update_attempted'):
             try:
                 current_notes=client.release().get('body') or ''

@@ -17,7 +17,7 @@ class MatrixTests(unittest.TestCase):
     build = test_release.ReleaseTests.build
 
     def shards(self, arches):
-        inputs = subprocess.check_output([sys.executable, str(ROOT/'scripts/resolve_inputs.py'), 'v2.3.2'])
+        inputs = b'SOURCE_COMMIT=synthetic\n'
         shards = self.root/'shards'
         shards.mkdir()
         for arch in arches:
@@ -27,7 +27,8 @@ class MatrixTests(unittest.TestCase):
         return shards
 
     def aggregate(self, shards, arches):
-        aggregate_shards.aggregate(shards, self.root/'result/dist', 'v2.3.2', arches, '123-1')
+        with patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'):
+            aggregate_shards.aggregate(shards, self.root/'result/dist', 'v2.3.2', arches, '123-1')
 
     def test_full_matrix_validates_fourteen_binaries(self):
         arches = list(validate_artifacts.ARCHES)
@@ -70,6 +71,22 @@ class MatrixTests(unittest.TestCase):
             self.aggregate(shards, ['amd64'])
         self.assertFalse((self.root/'result/dist').exists())
 
+    def test_failed_branch_omitted_with_explicit_outcome(self):
+        import json
+        shards=self.shards(['amd64','arm64'])
+        # A failed-attempt branch may leave an earlier shard; it must never be promoted.
+        outcomes=[{'architecture':a,'status':'success' if a=='amd64' else 'failure',
+                   'stage':'compile','reason':'' if a=='amd64' else 'GitHub job failure',
+                   'job_id':i,'job_url':f'https://github.com/HandSonic/1Panel-Build-v2/actions/runs/123/job/{i}'}
+                  for i,a in enumerate(['amd64','arm64'],1)]
+        with patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'),patch.dict(os.environ,GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',PRODUCER_HEAD_SHA='a'*40):
+            aggregate_shards.aggregate(shards,self.root/'result/dist','v2.3.2',['amd64','arm64'],'123-1',outcomes)
+        manifest=json.loads((self.root/'result/dist/build-manifest.json').read_text())
+        self.assertEqual(manifest['requested_architectures'],['amd64','arm64'])
+        self.assertEqual([r['architecture'] for r in manifest['artifacts']],['amd64'])
+        self.assertFalse((self.root/'result/dist/1panel-v2.3.2-linux-arm64.tar.gz').exists())
+        self.assertEqual(len(validate_artifacts.validate_dist(self.root/'result/dist','v2.3.2',['amd64'])),1)
+
     def test_workflow_gates_and_pinned_cache(self):
         workflow = (ROOT/'.github/workflows/build.yml').read_text()
         self.assertIn('max-parallel: 3', workflow)
@@ -84,7 +101,7 @@ class MatrixTests(unittest.TestCase):
         build_section = workflow.split('  prepare:\n')[1].split('  candidate:\n')[0]
         self.assertNotIn('contents: write', build_section)
 
-    def test_partial_reruns_use_producer_generation(self):
+    def test_shard_transport_names_bind_the_prepared_generation(self):
         workflow = (ROOT/'.github/workflows/build.yml').read_text()
         prepare = workflow.split('  prepare:\n')[1].split('  compile:\n')[0]
         compile_job = workflow.split('  compile:\n')[1].split('  build:\n')[0]
@@ -95,8 +112,8 @@ class MatrixTests(unittest.TestCase):
         self.assertNotIn('github.run_attempt', aggregate_job)
         self.assertIn('overwrite: true', compile_job)
         self.assertNotIn('overwrite: true', aggregate_job)
-        # Producer artifact 1 survives consumer retries 2 and 3. Both consumers
-        # resolve the same generation; rerunning preparation itself changes it.
+        # Transfer names retain the prepared-source generation. This does not
+        # assert that API provenance accepts inherited jobs from another attempt.
         producer = {'artifact_id': '1'}
         def render(value, attempt):
             return (value.replace('${{ github.run_id }}', '123')

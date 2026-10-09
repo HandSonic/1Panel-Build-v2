@@ -17,7 +17,14 @@ def main(version, destination):
         for rel, digest in entry['installer_sha256'].items():
             target=stage/rel; target.parent.mkdir(parents=True,exist_ok=True)
             download(f"https://raw.githubusercontent.com/1Panel-dev/installer/{entry['installer_commit']}/{rel}",target,digest)
-        download(entry['geoip_url'],stage/'GeoIP.mmdb',entry['geoip_sha256'])
+        if 'geoip_archive' in entry:
+            from discover_inputs import Vendor, official_archive
+            with (stage/'GeoIP.mmdb').open('wb') as output:
+                _, geoip = official_archive(Vendor(), version, entry['mode'], expected=entry['geoip_archive'], geoip_destination=output)
+            if geoip['sha256'] != entry['geoip_sha256'] or geoip['bytes'] != entry['geoip_bytes']:
+                raise ValueError('Version-bound GeoIP member mismatch')
+        else:
+            download(entry['geoip_url'],stage/'GeoIP.mmdb',entry['geoip_sha256'])
         for part in ('core','agent'): shutil.copy2(stage/f'initscript/1panel-{part}.service',stage/f'1panel-{part}.service')
         for file in stage.rglob('*'):
             if file.is_file():

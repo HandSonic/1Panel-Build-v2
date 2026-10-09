@@ -35,6 +35,7 @@ def validate_package(path, version, arch):
         if not required<=data.keys(): raise ValueError(f'Missing files: {required-data.keys()}')
         manifest=json.loads(data.pop('manifest.json'))
         expected={'schema_version':1,'version':version,'architecture':arch,'edition':'community','source_commit':entry['source_commit'],'installer_commit':entry['installer_commit'],'mode':entry['mode'],'go_version':entry['go_version'],'node_version':entry['node_version'],'npm_version':entry['npm_version']}
+        if entry.get('resolved_contract_sha256'): expected['resolved_contract_sha256']=entry['resolved_contract_sha256']
         for key,value in expected.items():
             if manifest.get(key)!=value: raise ValueError(f'Manifest mismatch {key}')
         if not re.fullmatch('[0-9a-f]{40}',manifest.get('build_repository_commit','')): raise ValueError('Missing build commit')
@@ -64,13 +65,25 @@ def validate_dist(dist,version,arches):
         if (dist/(name+'.sha256')).read_text()!=f'{digest}  {name}\n': raise ValueError('Checksum must match bytes and relative basename')
         manifest=validate_package(path,version,arch)
         records.append({'architecture':arch,'file':name,'sha256':digest,'size':path.stat().st_size,'source_commit':manifest['source_commit'],'installer_commit':manifest['installer_commit'],'build_repository_commit':manifest['build_repository_commit']})
+    entry=resolve(version)
+    if entry.get('resolved_contract_sha256'):
+        for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
+        contract_file=dist/'resolved-source.json'
+        if hashlib.sha256(contract_file.read_bytes()).hexdigest()!=entry['resolved_contract_sha256']: raise ValueError('Resolved contract bytes mismatch')
+        expected.add('resolved-source.json')
     expected|={'checksums.txt','build-manifest.json'}
     # CI may attach the resolved inputs alongside the immutable manifests.
     if (dist/'build-inputs.env').is_file(): expected.add('build-inputs.env')
     if {p.name for p in dist.iterdir()}!=expected: raise ValueError('Unexpected or missing release files')
     aggregate=''.join((dist/(r['file']+'.sha256')).read_text() for r in records)
     if (dist/'checksums.txt').read_text()!=aggregate: raise ValueError('Aggregate checksums mismatch')
-    if json.loads((dist/'build-manifest.json').read_text())!={'schema_version':1,'version':version,'artifacts':records}: raise ValueError('Release manifest mismatch')
+    aggregate_manifest = json.loads((dist/'build-manifest.json').read_text())
+    if aggregate_manifest.get('schema_version') == 2:
+        from matrix_contract import validate
+        if validate(aggregate_manifest, version) != list(arches) or aggregate_manifest['artifacts'] != records:
+            raise ValueError('Partial release manifest mismatch')
+    elif aggregate_manifest != {'schema_version':1,'version':version,'artifacts':records}:
+        raise ValueError('Release manifest mismatch')
     return records
 if __name__=='__main__':
     validate_dist(pathlib.Path(sys.argv[1]),sys.argv[2],architectures(' '.join(sys.argv[3:])))

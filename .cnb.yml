@@ -4,18 +4,18 @@
   - name: Resolve immutable inputs and test
     script: |
       set -eu
-      apk add --no-cache bash python3 py3-pip curl jq git
+      rm -f -- cnb-verified-artifacts
+      apk add --no-cache bash python3 py3-pip curl jq git nodejs npm
       python3 -m venv /tmp/build-python
       . /tmp/build-python/bin/activate
       python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
       version="${VERSION:-}"
       if [ -z "$version" ] && [ "${CNB_IS_TAG:-false}" = true ]; then version="$CNB_BRANCH"; fi
-      version="${version:-v2.3.2}"
-      arches=$(printf '%s' "${TARGET_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}" | tr ';,' ' ')
-      for arch in $arches; do
-        case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac
-      done
-      [ -n "$arches" ]
+      if [ -z "$version" ]; then version=$(python3 scripts/discover_inputs.py --latest --mode "${CHANNEL:-stable}"); fi
+      arches="${TARGET_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}"
+      arches=$(python3 -c 'import sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(" ".join(architectures(sys.argv[1])))' "$arches")
+      contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
+      python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
       python3 scripts/resolve_inputs.py "$version" > build-inputs.env
       python3 -m unittest discover -s tests -v
       echo "##[set-output BUILD_VERSION=$version]"
@@ -27,19 +27,10 @@
     script: |
       set -eu
       . /tmp/build-python/bin/activate
-      bash -euo pipefail -c '
-        source build-inputs.env
-        docker build -f Dockerfile --build-arg VERSION="$BUILD_VERSION" \
-          --build-arg TARGET_ARCHES="$BUILD_ARCHES" --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" \
-          --build-arg INSTALLER_REF="$INSTALLER_REF" --build-arg GO_VERSION="$GO_VERSION" \
-          --build-arg NODE_VERSION="$NODE_VERSION" --build-arg GEOIP_SHA256="$GEOIP_SHA256" \
-          --build-arg BUILD_REPOSITORY_COMMIT="$CNB_COMMIT" -t "1panel-build:$CNB_COMMIT" .
-        mkdir -p dist
-        docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/dist:/dist" "1panel-build:$CNB_COMMIT"
-        python3 scripts/validate_artifacts.py dist "$BUILD_VERSION" "$BUILD_ARCHES"
-        cp build-inputs.env dist/build-inputs.env
-      '
-  - name: Preserve verified build artifacts
+      bash scripts/build_cnb_matrix.sh
+  - &preserve_artifacts
+    name: Preserve verified build artifacts
+    if: test -n "${CNB_BUILD_ID:-}" && test -n "${CNB_PIPELINE_ID:-}" && test "$(cat cnb-verified-artifacts 2>/dev/null)" = "$CNB_BUILD_ID:$CNB_PIPELINE_ID:$CNB_COMMIT"
     image: cnbcool/attachments:latest
     settings:
       attachments:
@@ -53,8 +44,10 @@
       image: docker:24-dind
     services: [docker]
     stages: *build_stages
+    failStages:
+      - *preserve_artifacts
 "v*":
-  push: *build_pipeline
+  tag_push: *build_pipeline
 master:
   "crontab: 0 2 * * *": *build_pipeline
   web_trigger_build: *build_pipeline

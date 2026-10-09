@@ -7,23 +7,40 @@ build and does not enable enterprise capabilities.
 
 ## Reviewed inputs
 
-`config/sources.json` contains the supported immutable historical build inputs.
-Each entry pins the source and installer commits, resource hashes, compatible
-Go/Node/npm versions, and release channel. Shared frontend repair locks are
-stored once by SHA-256 and remain bound to each source manifest. Unknown input
-contracts fail before building or publishing.
+Every version follows the same discovery path. There is no version allowlist or
+checked-in per-version source/configuration map. Scheduled builds select the
+official stable release; manual runs may select a channel or an explicit version.
+The generated `resolved-source.json` artifact pins source/installer commits,
+Go/Node/npm versions, resources, dependency inputs and embedded configuration.
+Subsequent jobs authenticate that exact contract rather than rediscovering inputs.
 
-The v2.3.2 source is `65243c68c463cc055ab044093f641ea5d2e9e28b`.
-The installer is `aa4a6bbf24ae0fd938b32294672f5086f940e483`: its install.sh
-SHA256 matches the official v2.3.2 installer (`3faa744fd158283470b48b3a971dc98cc390c7f291d4287b170416ae862dd28f`).
-GeoIP comes from the official resource host with a locked hash. A host update
-requires an explicit reviewed lock change; a changed response fails closed.
+Discovery compares installer resources against the matching official archive.
+It checks the resolved installer tip and up to 300
+commits of official history anchored to that tip. Unmatched or unavailable
+history fails explicitly. GeoIP is bound to the same version archive, with full
+compressed size/hash and member size/hash checks, so later updates to the
+standalone GeoIP URL do not change the resolved build. Discovery also
+selects toolchains satisfying both Go modules and every declared npm engine,
+and retains `npm ci --engine-strict`, archive integrity and all architecture gates.
+A source without a lock can reuse only an exact-manifest-bound verified repair
+lock. An unsupported workspace, package manager, dependency source, missing new
+lock or incompatible installer fails clearly before publication. Such failures
+need a compatibility repair; they are never silently accepted. The source
+contract digest follows every shard, package, aggregate and publication receipt.
 
-The source requires Go 1.26.1. Node 22.14.0 and npm 10.9.2 are pinned and checked
-at build time. Frontend dependencies use `npm ci` and the source lockfile.
+The custom source build remains community-only. Enterprise packages use the
+separate downstream official-package path and installation gates. Builds alone
+do not imply a published or installation-verified release.
+
+Dependency repairs are selected by exact package-manifest and original-lock
+hashes in `config/repair-locks.json`, including an explicit absent-lock selector.
+The three stored lock payloads are content-addressed and shared across matching
+source manifests. Repairs never upgrade arbitrary existing dependencies or
+resolve floating versions during replay. Unknown missing-lock inputs stop with
+an actionable compatibility error until a suitable repair is reviewed.
+
 Release config is embedded before compiling: stable releases use `stable` and
-`info`; beta/dev versions require separately reviewed locks with their matching
-channel. Demo, enterprise and fxplay remain false. `is_offline` remains false:
+`info`; beta/dev versions use their matching channel and the same discovery gates. Demo, enterprise and fxplay remain false. `is_offline` remains false:
 shipping offline installation resources is not the application's separate
 offline-feature/license mode. Upstream's stable mode selects Gin release mode
 and avoids dev-only external app.yaml override behavior.
@@ -37,6 +54,8 @@ recorded build-repository commit identifies the build scripts actually used.
 VERSION=v2.3.2
 TARGET_ARCHES='amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
 python3 -m unittest discover -s tests -v
+contract_sha=$(python3 scripts/discover_inputs.py --version "$VERSION" --output resolved-source.json)
+python3 scripts/resolved_contract.py apply resolved-source.json "$VERSION" --sha256 "$contract_sha"
 python3 scripts/resolve_inputs.py "$VERSION" > build-inputs.env
 source build-inputs.env
 docker build --build-arg VERSION="$VERSION" \
@@ -75,12 +94,23 @@ do not replace real builds or installed-service runtime tests on each target.
 
 GitHub Actions runs regression tests, builds the requested matrix and preserves
 verified pipeline artifacts. Existing tags/releases do not suppress validation.
+Matrix jobs use `fail-fast: false`. A failed architecture is omitted while successful
+branches are independently validated and aggregated. The schema-2 manifest records
+every requested architecture, its exact producer attempt/job identity, and its
+terminal result. Replay requires a complete exact-attempt job inventory; if a
+failed-only retry omits inherited successful jobs, rerun the full workflow. Shared source/preparation/validation failures block all dependent
+artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs,
+warnings and summaries, never Release notes. A failed branch's previous canonical
+assets are moved to recoverable backup names during an explicitly selected repair;
+checksum/receipt updates include only validated successful payloads.
 An explicit `publish_candidate` dispatch creates a **new draft** tag/release,
 downloads its assets again and verifies exact byte identity. It never overwrites
 public release assets. Promotion requires separate review after downstream
-regression. Scheduled builds use the reviewed default version, never floating
-latest. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
-and preserves pipeline artifacts. CNB automatic publication is intentionally
+regression. Scheduled builds discover the official channel version and immediately
+pin its immutable inputs. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
+and runs each architecture independently from a shared prepared image. Its failure
+stage preserves only the final validated subset while retaining a failed pipeline
+status. CNB automatic publication is intentionally
 removed until a provider-specific verified staging/promote flow is reviewed.
 
 The legacy direct GoReleaser entry point is disabled because it bypasses the

@@ -62,32 +62,53 @@ class SourceInputs(unittest.TestCase):
         self.assertLess(text.index('verify_source_inputs.py'), text.index('patch_backend_xpack_compat.mjs'))
         self.assertIn('npm ci --engine-strict', text)
 
-class ReviewedLocks(unittest.TestCase):
-    def test_all_enabled_sources_resolve_exact_operational_inputs(self):
-        import json
+class RuntimeInputs(unittest.TestCase):
+    def test_unlisted_contract_resolves_exact_operational_inputs(self):
         import resolve_inputs
-        for version, expected in json.loads(resolve_inputs.LOCK.read_text()).items():
-            with self.subTest(version=version):
-                entry = resolve_inputs.resolve(version)
-                self.assertEqual(entry, expected)
-                self.assertEqual(set(entry['source_files_sha256']) | set(entry.get('source_files_absent', [])), source.SOURCE_FILES)
+        import resolved_contract
+        from test_discovered_inputs import fixture, synthetic_runtime
+        value = fixture()
+        with tempfile.TemporaryDirectory() as directory, synthetic_runtime(Path(directory), value):
+            entry = resolve_inputs.resolve(value['version'])
+            self.assertEqual(entry, {
+                'source_commit': value['source']['commit'],
+                'installer_commit': value['installer']['commit'],
+                'go_version': value['toolchain']['go'],
+                'node_version': value['toolchain']['node'],
+                'npm_version': value['toolchain']['npm'],
+                'mode': value['mode'],
+                'geoip_sha256': value['resources']['geoip']['sha256'],
+                'geoip_bytes': value['resources']['geoip']['bytes'],
+                'geoip_url': value['resources']['geoip']['url'],
+                'installer_sha256': {key: row['sha256'] for key, row in value['installer']['resources'].items()},
+                'installer_original_version': value['installer']['original_version'],
+                'source_files_sha256': {key: row['sha256'] for key, row in value['source']['files'].items() if key in source.SOURCE_FILES},
+                'source_files_absent': [],
+                'resolved_contract_sha256': resolved_contract.digest(value),
+            })
+            self.assertEqual(set(entry['source_files_sha256']), source.SOURCE_FILES)
+            with self.assertRaises(ValueError): resolve_inputs.resolve('v2.98.0')
 
     def test_incomplete_hashes_and_nonexact_toolchain_rejected(self):
-        import json
         import resolve_inputs
-        original = json.loads(resolve_inputs.LOCK.read_text())
+        from test_discovered_inputs import fixture, synthetic_runtime
         for case in ('missing', 'digest', 'node', 'npm', 'go', 'source_commit', 'installer_commit'):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
-                data = json.loads(json.dumps(original))
-                entry = data['v2.3.2']
-                if case == 'missing': del entry['source_files_sha256']['core/go.mod']
-                elif case == 'digest': entry['source_files_sha256']['core/go.mod'] = 'bad'
-                elif case.endswith('_commit'): entry[case] = 'latest'
-                else: entry[case + '_version'] = 'latest'
-                path = Path(directory) / 'sources.json'
-                path.write_text(json.dumps(data))
-                with patch.object(resolve_inputs, 'LOCK', path):
-                    with self.assertRaises(ValueError): resolve_inputs.resolve('v2.3.2')
+                value = fixture()
+                if case == 'missing': del value['source']['files']['core/go.mod']
+                elif case == 'digest': value['source']['files']['core/go.mod']['sha256'] = 'bad'
+                elif case.endswith('_commit'): value[case.split('_')[0]]['commit'] = 'latest'
+                else: value['toolchain'][case] = 'latest'
+                with synthetic_runtime(Path(directory), value), self.assertRaises(ValueError):
+                    resolve_inputs.resolve(value['version'])
+
+    def test_authenticated_digest_rejects_changed_contract(self):
+        import os
+        import resolve_inputs
+        from test_discovered_inputs import fixture, synthetic_runtime
+        with tempfile.TemporaryDirectory() as directory, synthetic_runtime(Path(directory), fixture()):
+            with patch.dict(os.environ, {'RESOLVED_CONTRACT_SHA256': '0' * 64}), self.assertRaises(ValueError):
+                resolve_inputs.resolve('v2.99.0')
 
 class HistoricalInputCohorts(unittest.TestCase):
     def test_go_requirements_are_checked_from_actual_hashed_modules(self):
@@ -110,16 +131,19 @@ class HistoricalInputCohorts(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             source.verify_go_requirements(text.encode(), selected, component)
 
-    def test_enabled_configs_bind_same_source_commit(self):
-        import json
+    def test_source_shapes_bind_both_configs_to_one_commit(self):
         import resolve_inputs
         import embedded_configuration
-        for name, entry in json.loads(resolve_inputs.LOCK.read_text()).items():
-            for component in ('core', 'agent'):
-                original, normalized, reviewed_commit = embedded_configuration.expected_bytes(name, component)
-                self.assertEqual(reviewed_commit, entry['source_commit'], (name, component))
-                self.assertTrue(original)
-                self.assertTrue(normalized)
+        from test_discovered_inputs import fixture, synthetic_runtime, configuration_shapes
+        for shape, vendor in configuration_shapes():
+            value = fixture(vendor=vendor)
+            with self.subTest(shape=shape), tempfile.TemporaryDirectory() as directory, synthetic_runtime(Path(directory), value, vendor):
+                entry = resolve_inputs.resolve(value['version'])
+                for component in ('core', 'agent'):
+                    original, normalized, commit = embedded_configuration.expected_bytes(value['version'], component)
+                    self.assertEqual(commit, entry['source_commit'])
+                    self.assertEqual(original, vendor.files[f'{component}/cmd/server/conf/app.yaml'])
+                    self.assertTrue(normalized)
 
 class AbsentSourceLock(unittest.TestCase):
     def test_only_reviewed_lock_absence_is_accepted(self):
