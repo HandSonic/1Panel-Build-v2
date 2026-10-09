@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Resolve reviewed immutable inputs; never substitute latest for historical releases."""
 import json, pathlib, re, shlex, sys
+SOURCE_FILES = frozenset(('core/go.mod', 'agent/go.mod', 'frontend/package.json', 'frontend/package-lock.json'))
 LOCK = pathlib.Path(__file__).resolve().parents[1] / 'config/sources.json'
 def resolve(version):
     if not re.fullmatch(r'v2\.\d+\.\d+(?:-(?:beta|dev)\.[0-9]+)?', version):
@@ -11,6 +12,11 @@ def resolve(version):
     entry = data[version]
     for key in ('source_commit', 'installer_commit'):
         if not re.fullmatch('[0-9a-f]{40}', entry[key]): raise ValueError(f'Unpinned {key}')
+    hashes = entry.get('source_files_sha256', {})
+    if set(hashes) != SOURCE_FILES or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value) for value in hashes.values()):
+        raise ValueError('Incomplete reviewed dependency input hashes')
+    for key in ('go_version', 'node_version', 'npm_version'):
+        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', entry[key]): raise ValueError(f'Unpinned {key}')
     expected = 'beta' if '-beta.' in version else 'dev' if '-dev.' in version else 'stable'
     if entry['mode'] != expected: raise ValueError('Version/channel mismatch')
     return entry

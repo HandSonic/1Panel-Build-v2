@@ -1,7 +1,10 @@
 {
-  "scope": "40 released versions; candidate metadata only, not a build input lock",
+  "scope": "40 released versions; enabled immutable input candidates are not evidence of successful builds or publication",
   "enabled_versions": [
-    "v2.3.2"
+    "v2.3.2",
+    "v2.3.1",
+    "v2.3.0",
+    "v2.2.5"
   ],
   "versions": [
     {
@@ -15,11 +18,17 @@
       "installer_byte_proven_commit": null,
       "minimum_go_requirement": "1.26.1",
       "missing_review_inputs": [],
-      "required_validation": []
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ],
+      "candidate_state": "reviewed_immutable_inputs_pending_hosted_build",
+      "node_version": "22.22.1",
+      "npm_version": "10.9.4"
     },
     {
       "version": "v2.3.1",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "0bad1b471f001ab6f3387ce6f8f0988a44d36d62",
       "source_pin_meaning": "current_tag_snapshot_for_rebuild",
@@ -27,20 +36,18 @@
       "installer_candidate_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
       "installer_byte_proven_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
       "minimum_go_requirement": "1.26.1",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"
-      ]
+      ],
+      "candidate_state": "reviewed_immutable_inputs_pending_hosted_build",
+      "node_version": "22.22.1",
+      "npm_version": "10.9.4"
     },
     {
       "version": "v2.3.0",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "2485b0aa5e166891fb351477cb43045e432a1339",
       "source_pin_meaning": "current_tag_snapshot_for_rebuild",
@@ -48,20 +55,18 @@
       "installer_candidate_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
       "installer_byte_proven_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
       "minimum_go_requirement": "1.26.1",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"
-      ]
+      ],
+      "candidate_state": "reviewed_immutable_inputs_pending_hosted_build",
+      "node_version": "22.22.1",
+      "npm_version": "10.9.4"
     },
     {
       "version": "v2.2.5",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "e7ef35740ccd5ea026e091ee15168a2ba35ab923",
       "source_pin_meaning": "current_tag_snapshot_for_rebuild",
@@ -69,16 +74,14 @@
       "installer_candidate_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
       "installer_byte_proven_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
       "minimum_go_requirement": "1.26.1",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"
-      ]
+      ],
+      "candidate_state": "reviewed_immutable_inputs_pending_hosted_build",
+      "node_version": "22.22.1",
+      "npm_version": "10.9.4"
     },
     {
       "version": "v2.2.4",
