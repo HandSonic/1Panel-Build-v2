@@ -1,0 +1,499 @@
+{
+  "toolchain": {
+    "node_version": "22.22.1",
+    "npm_version": "10.9.4",
+    "node_source_commit": "b4acf0c9393e4b31c4937564f059c672967161d8",
+    "node_npm_package_url": "https://github.com/nodejs/node/blob/b4acf0c9393e4b31c4937564f059c672967161d8/deps/npm/package.json",
+    "node_npm_package_blob": "8210328523bdbe26f9312590588a26dbacfc4ec2",
+    "dockerfile_url": "https://github.com/nodejs/docker-node/blob/93f059c10df5489314e1aae1ccf937d54b750249/22/bookworm/Dockerfile",
+    "dockerfile_blob": "d6cb74abca837e634df82ed11eb388ff6f0e3023",
+    "docker_image_candidate": "node:22.22.1-bookworm",
+    "docker_image_digest": "not_resolved_or_pulled_by_read_only_audit",
+    "status": "all_declared_node_engines_match_candidate_not_build_validation"
+  },
+  "versions": {
+    "v2.3.2": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.26.1"
+        },
+        "agent/go.mod": {
+          "go": "1.26.1"
+        }
+      },
+      "source_identity": {
+        "original_checkout_provenance": "not_established"
+      },
+      "frontend": {
+        "version": "v2.3.2",
+        "source_commit": "65243c68c463cc055ab044093f641ea5d2e9e28b",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "4afda1d06e6eec18271147e37c184e420e382a80",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/65243c68c463cc055ab044093f641ea5d2e9e28b/core/go.mod",
+            "sha256": "49cff6422f27051f5373b0367c09507362821a47ae01adb6569422e55bffd7bd",
+            "bytes": 5991
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "f29b74b29e68ade89ffdc32aa999a95ed53c07a9",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/65243c68c463cc055ab044093f641ea5d2e9e28b/agent/go.mod",
+            "sha256": "5ebb8a1af8fd1ae2507eb032ddc64ba035568f98984ab2e139aacc79b21c5029",
+            "bytes": 11069
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "17f4adc6795bca0d1d3ad9da605fe5bb6e4e7468",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/65243c68c463cc055ab044093f641ea5d2e9e28b/frontend/package.json",
+            "sha256": "fc15b6a81d3b8e876e67afeffc487091eee45f599a27aca44d37923a897eadd9",
+            "bytes": 3759
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "3d61d0797e67b343b8db3855c45073e5e2f86e83",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/65243c68c463cc055ab044093f641ea5d2e9e28b/frontend/package-lock.json",
+            "sha256": "329509193fee641c221e29a64c1b640ac40ab3bd1604de60dab4076a00340e1e",
+            "bytes": 492747
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {},
+      "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is separately checked in installer-verified-hashes.json",
+      "state": "proposed_engine_compatible_pin_not_built",
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/aa4a6bbf24ae0fd938b32294672f5086f940e483/"
+    },
+    "v2.3.1": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.26.1"
+        },
+        "agent/go.mod": {
+          "go": "1.26.1"
+        }
+      },
+      "source_identity": {
+        "version": "v2.3.1",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "source_ref": "v2.3.1",
+        "source_commit": "0bad1b471f001ab6f3387ce6f8f0988a44d36d62",
+        "installer_ref": "v2",
+        "installer_commit": "not_pinned",
+        "geoip_sha256": "not_pinned",
+        "status": "source_and_resource_contract_traced_rebuild_required",
+        "build_run_id": 35342715180,
+        "build_job_id": 105592119008,
+        "build_run_url": "https://github.com/HandSonic/1Panel-Build-v2/actions/runs/35342715180",
+        "go_version": "1.26.1",
+        "current_source_tag_commit": "0bad1b471f001ab6f3387ce6f8f0988a44d36d62",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/0bad1b471f001ab6f3387ce6f8f0988a44d36d62",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.3.1",
+        "verified_equivalent_installer_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+        "installer_provenance_note": "15 actual published resource bytes match pinned installer after only expected 1pctl version substitution; actual legacy retrieval used mutable ref.",
+        "confirmed_configuration_defect": "Exact source dev/debug YAML embedded in binaries; Core version v2.0.0",
+        "installer_features": {
+          "non_interactive_cli": true,
+          "edition_selection": true,
+          "appstore_install": true,
+          "builtin_docker_tree_helper": true,
+          "interactive_reads": 7
+        },
+        "source_commit_matches_current_tag": true,
+        "actual_checkout_provenance": "verified_from_actual_build_job_log",
+        "verified_architectures": [
+          "ppc64le",
+          "s390x",
+          "arm64",
+          "armv7",
+          "amd64",
+          "riscv64",
+          "loong64"
+        ],
+        "rebuild_required": "development_config_embedded_in_published_binaries",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "actual_matching_workflow_metadata_and_build_logs",
+        "upstream_asset_created_dates": [
+          "2026-09-18"
+        ],
+        "release_original_published_at": "2026-09-18T12:15:33Z",
+        "asset_rebuild_date_warning": false
+      },
+      "frontend": {
+        "version": "v2.3.1",
+        "source_commit": "0bad1b471f001ab6f3387ce6f8f0988a44d36d62",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "4afda1d06e6eec18271147e37c184e420e382a80",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/0bad1b471f001ab6f3387ce6f8f0988a44d36d62/core/go.mod",
+            "sha256": "49cff6422f27051f5373b0367c09507362821a47ae01adb6569422e55bffd7bd",
+            "bytes": 5991
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "f29b74b29e68ade89ffdc32aa999a95ed53c07a9",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/0bad1b471f001ab6f3387ce6f8f0988a44d36d62/agent/go.mod",
+            "sha256": "5ebb8a1af8fd1ae2507eb032ddc64ba035568f98984ab2e139aacc79b21c5029",
+            "bytes": 11069
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "17f4adc6795bca0d1d3ad9da605fe5bb6e4e7468",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/0bad1b471f001ab6f3387ce6f8f0988a44d36d62/frontend/package.json",
+            "sha256": "fc15b6a81d3b8e876e67afeffc487091eee45f599a27aca44d37923a897eadd9",
+            "bytes": 3759
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "3d61d0797e67b343b8db3855c45073e5e2f86e83",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/0bad1b471f001ab6f3387ce6f8f0988a44d36d62/frontend/package-lock.json",
+            "sha256": "329509193fee641c221e29a64c1b640ac40ab3bd1604de60dab4076a00340e1e",
+            "bytes": 492747
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "riscv64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is separately checked in installer-verified-hashes.json",
+      "state": "proposed_engine_compatible_pin_not_built",
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/aa4a6bbf24ae0fd938b32294672f5086f940e483/"
+    },
+    "v2.3.0": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.26.1"
+        },
+        "agent/go.mod": {
+          "go": "1.26.1"
+        }
+      },
+      "source_identity": {
+        "version": "v2.3.0",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "source_ref": "v2.3.0",
+        "source_commit": "2485b0aa5e166891fb351477cb43045e432a1339",
+        "installer_ref": "v2",
+        "installer_commit": "not_pinned",
+        "geoip_sha256": "not_pinned",
+        "status": "source_and_resource_contract_traced_rebuild_required",
+        "build_run_id": 34850514717,
+        "build_job_id": 103997020001,
+        "build_run_url": "https://github.com/HandSonic/1Panel-Build-v2/actions/runs/34850514717",
+        "go_version": "1.26.1",
+        "current_source_tag_commit": "2485b0aa5e166891fb351477cb43045e432a1339",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/2485b0aa5e166891fb351477cb43045e432a1339",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.3.0",
+        "verified_equivalent_installer_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+        "installer_provenance_note": "15 actual published resource bytes match pinned installer after only expected 1pctl version substitution; actual legacy retrieval used mutable ref.",
+        "confirmed_configuration_defect": "Exact source dev/debug YAML embedded in binaries; Core version v2.0.0",
+        "installer_features": {
+          "non_interactive_cli": true,
+          "edition_selection": true,
+          "appstore_install": true,
+          "builtin_docker_tree_helper": true,
+          "interactive_reads": 7
+        },
+        "source_commit_matches_current_tag": true,
+        "actual_checkout_provenance": "verified_from_actual_build_job_log",
+        "verified_architectures": [
+          "ppc64le",
+          "s390x",
+          "arm64",
+          "armv7",
+          "amd64",
+          "riscv64",
+          "loong64"
+        ],
+        "rebuild_required": "development_config_embedded_in_published_binaries",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "actual_matching_workflow_metadata_and_build_logs",
+        "upstream_asset_created_dates": [
+          "2026-09-14"
+        ],
+        "release_original_published_at": "2026-09-14T13:59:51Z",
+        "asset_rebuild_date_warning": false
+      },
+      "frontend": {
+        "version": "v2.3.0",
+        "source_commit": "2485b0aa5e166891fb351477cb43045e432a1339",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "5f163ca80d88432299076d02fe4428ad5258ca89",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/2485b0aa5e166891fb351477cb43045e432a1339/core/go.mod",
+            "sha256": "7418c7086d0b99c171631c8284fad0f30b3f3932d62f46e4535ca3fa7989132c",
+            "bytes": 5931
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "f29b74b29e68ade89ffdc32aa999a95ed53c07a9",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/2485b0aa5e166891fb351477cb43045e432a1339/agent/go.mod",
+            "sha256": "5ebb8a1af8fd1ae2507eb032ddc64ba035568f98984ab2e139aacc79b21c5029",
+            "bytes": 11069
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "17f4adc6795bca0d1d3ad9da605fe5bb6e4e7468",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/2485b0aa5e166891fb351477cb43045e432a1339/frontend/package.json",
+            "sha256": "fc15b6a81d3b8e876e67afeffc487091eee45f599a27aca44d37923a897eadd9",
+            "bytes": 3759
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "3d61d0797e67b343b8db3855c45073e5e2f86e83",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/2485b0aa5e166891fb351477cb43045e432a1339/frontend/package-lock.json",
+            "sha256": "329509193fee641c221e29a64c1b640ac40ab3bd1604de60dab4076a00340e1e",
+            "bytes": 492747
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "riscv64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is separately checked in installer-verified-hashes.json",
+      "state": "proposed_engine_compatible_pin_not_built",
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/aa4a6bbf24ae0fd938b32294672f5086f940e483/"
+    },
+    "v2.2.5": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.26.1"
+        },
+        "agent/go.mod": {
+          "go": "1.25.10"
+        }
+      },
+      "source_identity": {
+        "version": "v2.2.5",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "source_ref": "v2.2.5",
+        "source_commit": "e7ef35740ccd5ea026e091ee15168a2ba35ab923",
+        "installer_ref": "v2",
+        "installer_commit": "not_pinned",
+        "geoip_sha256": "not_pinned",
+        "status": "source_and_resource_contract_traced_rebuild_required",
+        "build_run_id": 31160695162,
+        "build_job_id": 92810151460,
+        "build_run_url": "https://github.com/HandSonic/1Panel-Build-v2/actions/runs/31160695162",
+        "go_version": "1.26.1",
+        "current_source_tag_commit": "e7ef35740ccd5ea026e091ee15168a2ba35ab923",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/e7ef35740ccd5ea026e091ee15168a2ba35ab923",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.2.5",
+        "verified_equivalent_installer_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+        "installer_provenance_note": "15 actual published resource bytes match pinned installer after only expected 1pctl version substitution; actual legacy retrieval used mutable ref.",
+        "confirmed_configuration_defect": "Exact source dev/debug YAML embedded in binaries; Core version v2.0.0",
+        "installer_features": {
+          "non_interactive_cli": true,
+          "edition_selection": true,
+          "appstore_install": false,
+          "builtin_docker_tree_helper": true,
+          "interactive_reads": 7
+        },
+        "source_commit_matches_current_tag": true,
+        "actual_checkout_provenance": "verified_from_actual_build_job_log",
+        "verified_architectures": [
+          "ppc64le",
+          "s390x",
+          "arm64",
+          "armv7",
+          "amd64",
+          "riscv64",
+          "loong64"
+        ],
+        "rebuild_required": "development_config_embedded_in_published_binaries",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "actual_matching_workflow_metadata_and_build_logs",
+        "upstream_asset_created_dates": [
+          "2026-08-07"
+        ],
+        "release_original_published_at": "2026-08-07T08:22:35Z",
+        "asset_rebuild_date_warning": false
+      },
+      "frontend": {
+        "version": "v2.2.5",
+        "source_commit": "e7ef35740ccd5ea026e091ee15168a2ba35ab923",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "1dc17157e8aac44a0c847fc44c709dc5747c9407",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/e7ef35740ccd5ea026e091ee15168a2ba35ab923/core/go.mod",
+            "sha256": "9668c942baa1b8d76c58f613955bccd092b1e094b34d0684d58c2aa32791e78d",
+            "bytes": 6061
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "6733e3aafd5102ea62ed1a97ed540e637119bacc",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/e7ef35740ccd5ea026e091ee15168a2ba35ab923/agent/go.mod",
+            "sha256": "b49df61914c7f9f477e5fcfbe449a4e5bd8e6be2e427504105899e14be77b5ab",
+            "bytes": 10996
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "a04c7ee10be67c5c4715fed754ce7c0c13ee2820",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/e7ef35740ccd5ea026e091ee15168a2ba35ab923/frontend/package.json",
+            "sha256": "7212627230452f26f10e88976f6cff890990a52dde8c851f94ae793bc9a19107",
+            "bytes": 3662
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "61ffe7a844f645ec2069af6cb8094ea668152a7b",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/e7ef35740ccd5ea026e091ee15168a2ba35ab923/frontend/package-lock.json",
+            "sha256": "8efbd2ac3de2b32544d10cfb21d33fe98f7aa3eb83f5414517dc13f62716296a",
+            "bytes": 486724
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "riscv64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_hash_meaning": "raw upstream resources, before ORIGINAL_VERSION substitution; historical published resource identity is separately checked in installer-verified-hashes.json",
+      "state": "proposed_engine_compatible_pin_not_built",
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9/"
+    }
+  }
+}

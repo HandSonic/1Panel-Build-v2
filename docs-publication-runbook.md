@@ -181,11 +181,33 @@ claim those commits produced an original historical release. Existing reviewed
 profiles retain their original source and normalized hashes.
 
 `config/historical-input-readiness.json` enumerates all 40 historical/current
-versions. It is planning metadata, never an input fallback. Only v2.3.2 currently
-has a complete enabled source lock. Older versions still need their frontend
-package-lock bytes, exact Node/npm compatibility, a reviewed exact Go compiler
+versions. It is planning metadata, never an input fallback. The enabled source
+locks are v2.3.2, v2.3.1, v2.3.0, and v2.2.5, as detailed in the first batch
+below. Other historical versions still need their frontend package-lock bytes,
+exact Node/npm compatibility, a reviewed exact Go compiler
 satisfying BOTH Core and Agent module requirements, and complete reviewed
 installer/GeoIP pins. Available source and installer candidates are not silently
 promoted to trusted build inputs. Every newly enabled version still requires an
 unpublished full seven-architecture build and downstream install/upgrade checks.
 No historical rebuild or runtime result is implied by parser fixture coverage.
+
+## First historical immutable-input batch
+
+The source lock now includes v2.3.1, v2.3.0, and v2.2.5, with the existing
+v2.3.2 contract. These are reviewed build candidates, not rebuilt releases.
+`config/source-input-evidence.json` records immutable source file hashes, both
+Go module requirements, historical resource comparisons, and official Node/npm
+provenance. Raw installer hashes precede the expected 1pctl version substitution.
+
+Node 22.14.0 built the previous frontend but did not satisfy all declared
+lockfile engines. This batch uses Node 22.22.1 and its bundled npm 10.9.4;
+`npm ci --engine-strict` now rejects unsupported dependency engines. Before any
+compatibility patch or package installation, `verify_source_inputs.py` verifies
+both go.mod files and the exact frontend package and lockfile. The immutable
+source commit additionally covers all remaining source files and Go checksums.
+
+Run the existing build workflow on the reviewed branch with operation `build`,
+publish_candidate false, explicit version, and all seven architectures. Build
+v2.3.1, v2.3.0, then v2.2.5 separately; do not publish a historical release until
+its complete verified upstream artifact and downstream runtime gate succeed.
+Existing release assets are unchanged by selecting these candidate inputs.

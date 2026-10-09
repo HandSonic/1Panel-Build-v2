@@ -1,5 +1,5 @@
 ARG GO_VERSION=1.26.1
-ARG NODE_VERSION=22.14.0
+ARG NODE_VERSION=22.22.1
 ARG VERSION=v2.3.2
 
 FROM node:${NODE_VERSION}-bookworm AS frontend-builder
@@ -14,11 +14,12 @@ RUN set -eu; eval "$(python3 /opt/build-tools/scripts/resolve_inputs.py "$VERSIO
     test "$(node --version)" = "v$NODE_VERSION"; test "$(npm --version)" = "$NPM_VERSION"; \
     git init /src; cd /src; git remote add origin https://github.com/1Panel-dev/1Panel.git; \
     git fetch --depth=1 origin "$SOURCE_COMMIT"; git checkout --detach FETCH_HEAD; \
-    test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+    test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"; \
+    python3 /opt/build-tools/scripts/verify_source_inputs.py /src "$VERSION"
 WORKDIR /src/frontend
 RUN node /opt/build-tools/scripts/patch_backend_xpack_compat.mjs /src \
     && node /opt/build-tools/scripts/patch_frontend_xpack_compat.mjs /src/frontend \
-    && npm ci --no-audit --no-fund \
+    && npm ci --engine-strict --no-audit --no-fund \
     && npm run build:pro \
     && test -s /src/core/cmd/server/web/index.html \
     && rm -rf node_modules /root/.npm
