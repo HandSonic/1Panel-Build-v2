@@ -305,6 +305,17 @@ jobs:
             publication-work/control/
           if-no-files-found: error
           retention-days: 14
+      - name: Upload small publication control evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            publication-work/control/release-validation.json
+            publication-work/release/checksums.txt
+            publication-work/release/build-manifest.json
+            publication-work/release/build-inputs.env
+          if-no-files-found: error
+          retention-days: 14
   publication_repair:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote-existing'
     needs: publication_prepare
