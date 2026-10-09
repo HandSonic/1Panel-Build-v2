@@ -6,7 +6,9 @@
     "v2.3.0",
     "v2.2.5",
     "v2.2.4",
-    "v2.2.3"
+    "v2.2.3",
+    "v2.2.2",
+    "v2.2.1"
   ],
   "versions": [
     {
@@ -119,20 +121,15 @@
     },
     {
       "version": "v2.2.2",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "439c4794b7c34510c84a512926d49565e0b855ce",
-      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
       "original_checkout_provenance": "not_established",
       "installer_candidate_commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
-      "installer_byte_proven_commit": null,
+      "installer_byte_proven_commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
       "minimum_go_requirement": "1.25.10",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"
@@ -140,20 +137,15 @@
     },
     {
       "version": "v2.2.1",
-      "source_lock_enabled": false,
+      "source_lock_enabled": true,
       "embedded_config_profile": true,
       "source_commit_candidate": "209c12644543fba6afbc1a7088df2f7a7d320599",
-      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
       "original_checkout_provenance": "not_established",
       "installer_candidate_commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
-      "installer_byte_proven_commit": null,
+      "installer_byte_proven_commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
       "minimum_go_requirement": "1.25.10",
-      "missing_review_inputs": [
-        "frontend_package_lock_json",
-        "reviewed_exact_node_npm_compatibility",
-        "reviewed_exact_go_selection_from_both_modules",
-        "complete_reviewed_geoip_and_installer_resource_pins"
-      ],
+      "missing_review_inputs": [],
       "required_validation": [
         "unpublished_full_seven_architecture_build",
         "downstream_install_upgrade_runtime"

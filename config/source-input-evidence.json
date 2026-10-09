@@ -932,6 +932,1462 @@
         "status": "declared_engines_only_actual_build_pending"
       },
       "state": "proposed_engine_compatible_pin_not_built"
+    },
+    "v2.2.2": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.25.7"
+        },
+        "agent/go.mod": {
+          "go": "1.25.10"
+        }
+      },
+      "source_identity": {
+        "version": "v2.2.2",
+        "status": "verified_version_tag_for_repair_original_checkout_unproven",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "current_source_tag_commit": "439c4794b7c34510c84a512926d49565e0b855ce",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/439c4794b7c34510c84a512926d49565e0b855ce",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.2.2",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "tag_target_only_not_proof_of_actual_asset_build",
+        "upstream_asset_created_dates": [
+          "2026-06-16"
+        ],
+        "release_original_published_at": "2026-06-16T12:23:17Z",
+        "asset_rebuild_date_warning": false,
+        "actual_checkout_provenance": "not_established"
+      },
+      "frontend": {
+        "version": "v2.2.2",
+        "source_commit": "439c4794b7c34510c84a512926d49565e0b855ce",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "151e481ef8b608271ab1a001f7de6772a0b34b66",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/439c4794b7c34510c84a512926d49565e0b855ce/core/go.mod",
+            "sha256": "e9f470cf27c30c9e268c45e130a09d2e57d96eed585b097f975ca7e39caca98b",
+            "bytes": 4711
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "8ecd3976a310415fc52ff312b02023e649edd9a6",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/439c4794b7c34510c84a512926d49565e0b855ce/agent/go.mod",
+            "sha256": "a221f441c70479a83536cdf90d3d44e598ec86728184ae2bc009f27c8ceea66b",
+            "bytes": 10982
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "839c40e73f661cb59a6146af0e5c561895c70191",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/439c4794b7c34510c84a512926d49565e0b855ce/frontend/package.json",
+            "sha256": "f5d636f0a74a5aadc41b416a67288a5a93eda92fea300980c93c3724d38e3079",
+            "bytes": 3627
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "f715befe0c155bd2835a04a9a63c6b30ac09e64c",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/439c4794b7c34510c84a512926d49565e0b855ce/frontend/package-lock.json",
+            "sha256": "3f761b54cc0c29b378fb3690c78337285323d31fc64ff943daba81bcd11a5ef8",
+            "bytes": 447077
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "riscv64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/",
+      "installer_raw_git_blob_evidence": {
+        "commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
+        "tree_truncated": false,
+        "files": [
+          {
+            "path": "1pctl",
+            "git_blob_sha": "2cc29824ede6008cab28d456279741918d46376f",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/1pctl"
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "git_blob_sha": "4ddfb176e3c672dfb93243f3c35a900cae8e700f",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.init"
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "git_blob_sha": "8b73654d14a53c92def736c4cca788c428aae996",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.openrc"
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "git_blob_sha": "36babb9648939bf5a342ecdf21bcdea11794c961",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.procd"
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "git_blob_sha": "9049bcb7592294ded414266eeb9ff779c020bccd",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.service"
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "git_blob_sha": "1c037063cd09557db8add85bfb09143a50934c57",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.init"
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "git_blob_sha": "29a68391d233c28ed5518fab66223d88c2477da7",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.openrc"
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "git_blob_sha": "8f2fade1ac9fcb3129424155375c7800606544af",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.procd"
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "git_blob_sha": "3074e968aa8cd0bfe8ce03767629774d654795a5",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.service"
+          },
+          {
+            "path": "install.sh",
+            "git_blob_sha": "9f3d8f8d7ad58cb7bc4d50fe3a23bf6ec15b129e",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/install.sh"
+          },
+          {
+            "path": "lang/en.sh",
+            "git_blob_sha": "422129496bc641046bb8f267f55dbff946987bdf",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/en.sh"
+          },
+          {
+            "path": "lang/fa.sh",
+            "git_blob_sha": "fa3cd991063e8d9c5ddebaee56c3f66d0d9b40ef",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/fa.sh"
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "git_blob_sha": "35d757b02716bbfcc5973a6d5fd799dd24b7f2da",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/pt-BR.sh"
+          },
+          {
+            "path": "lang/ru.sh",
+            "git_blob_sha": "92374cb611a6af619b85e780760d62c1c3cc8849",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/ru.sh"
+          },
+          {
+            "path": "lang/zh.sh",
+            "git_blob_sha": "85f642e6f9db59269483f82e8bc8aa67a5e30c8c",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/zh.sh"
+          }
+        ]
+      },
+      "installer_transport_normalization": "In-memory removal of one transport-added trailing newline only when required to match immutable Git blob SHA; original cache unchanged.",
+      "installer_transport_normalized_paths": [
+        "1pctl",
+        "initscript/1panel-agent.init",
+        "initscript/1panel-agent.openrc",
+        "initscript/1panel-agent.procd",
+        "initscript/1panel-agent.service",
+        "initscript/1panel-core.init",
+        "initscript/1panel-core.openrc",
+        "initscript/1panel-core.procd",
+        "initscript/1panel-core.service",
+        "install.sh",
+        "lang/en.sh",
+        "lang/fa.sh",
+        "lang/pt-BR.sh",
+        "lang/ru.sh",
+        "lang/zh.sh"
+      ],
+      "installer_published_member_comparison": {
+        "ppc64le": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "s390x": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "arm64": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "armv7": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "amd64": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "riscv64": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "loong64": [
+          {
+            "path": "1pctl",
+            "sha256": "4de6d8a6337341cfd1aa23cb10b5fddcaa55f30d25a81045fc3ca38ff38ad1bc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ]
+      },
+      "installer_hash_meaning": "Exact immutable Git blob bytes before expected 1pctl ORIGINAL_VERSION substitution. All cached architecture resource member SHA comparisons passed.",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
+      "tag_reverified_at_utc": "2026-10-09T03:54:16Z",
+      "go_toolchain_provenance": {
+        "selected": "1.25.10",
+        "official_tag_commit": "5053df5b6ff006dfc96df442fddddee49f5250eb",
+        "url": "https://github.com/golang/go/tree/go1.25.10"
+      },
+      "node_engine_validation": {
+        "node_version": "22.22.1",
+        "npm_version": "10.9.4",
+        "status": "declared_engines_compatible_actual_build_pending"
+      },
+      "installer_features": {
+        "non_interactive_cli": false,
+        "builtin_docker_tree_helper": true
+      },
+      "state": "proposed_engine_compatible_pin_not_built"
+    },
+    "v2.2.1": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.25.7"
+        },
+        "agent/go.mod": {
+          "go": "1.25.10"
+        }
+      },
+      "source_identity": {
+        "version": "v2.2.1",
+        "status": "verified_version_tag_for_repair_original_checkout_unproven",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "current_source_tag_commit": "209c12644543fba6afbc1a7088df2f7a7d320599",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/209c12644543fba6afbc1a7088df2f7a7d320599",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.2.1",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "tag_target_only_not_proof_of_actual_asset_build",
+        "upstream_asset_created_dates": [
+          "2026-06-11"
+        ],
+        "release_original_published_at": "2026-06-11T11:35:55Z",
+        "asset_rebuild_date_warning": false,
+        "actual_checkout_provenance": "not_established"
+      },
+      "frontend": {
+        "version": "v2.2.1",
+        "source_commit": "209c12644543fba6afbc1a7088df2f7a7d320599",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "151e481ef8b608271ab1a001f7de6772a0b34b66",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/209c12644543fba6afbc1a7088df2f7a7d320599/core/go.mod",
+            "sha256": "e9f470cf27c30c9e268c45e130a09d2e57d96eed585b097f975ca7e39caca98b",
+            "bytes": 4711
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "8ecd3976a310415fc52ff312b02023e649edd9a6",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/209c12644543fba6afbc1a7088df2f7a7d320599/agent/go.mod",
+            "sha256": "a221f441c70479a83536cdf90d3d44e598ec86728184ae2bc009f27c8ceea66b",
+            "bytes": 10982
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "839c40e73f661cb59a6146af0e5c561895c70191",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/209c12644543fba6afbc1a7088df2f7a7d320599/frontend/package.json",
+            "sha256": "f5d636f0a74a5aadc41b416a67288a5a93eda92fea300980c93c3724d38e3079",
+            "bytes": 3627
+          },
+          {
+            "path": "frontend/package-lock.json",
+            "git_blob_sha": "f715befe0c155bd2835a04a9a63c6b30ac09e64c",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/209c12644543fba6afbc1a7088df2f7a7d320599/frontend/package-lock.json",
+            "sha256": "3f761b54cc0c29b378fb3690c78337285323d31fc64ff943daba81bcd11a5ef8",
+            "bytes": 447077
+          }
+        ]
+      },
+      "geoip_cached_archive_evidence": {
+        "ppc64le": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "s390x": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "arm64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "armv7": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "amd64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "loong64": [
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ]
+      },
+      "installer_resource_url_prefix": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/",
+      "installer_raw_git_blob_evidence": {
+        "commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
+        "tree_truncated": false,
+        "files": [
+          {
+            "path": "1pctl",
+            "git_blob_sha": "2cc29824ede6008cab28d456279741918d46376f",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/1pctl"
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "git_blob_sha": "4ddfb176e3c672dfb93243f3c35a900cae8e700f",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.init"
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "git_blob_sha": "8b73654d14a53c92def736c4cca788c428aae996",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.openrc"
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "git_blob_sha": "36babb9648939bf5a342ecdf21bcdea11794c961",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.procd"
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "git_blob_sha": "9049bcb7592294ded414266eeb9ff779c020bccd",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-agent.service"
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "git_blob_sha": "1c037063cd09557db8add85bfb09143a50934c57",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.init"
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "git_blob_sha": "29a68391d233c28ed5518fab66223d88c2477da7",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.openrc"
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "git_blob_sha": "8f2fade1ac9fcb3129424155375c7800606544af",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.procd"
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "git_blob_sha": "3074e968aa8cd0bfe8ce03767629774d654795a5",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/initscript/1panel-core.service"
+          },
+          {
+            "path": "install.sh",
+            "git_blob_sha": "9f3d8f8d7ad58cb7bc4d50fe3a23bf6ec15b129e",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/install.sh"
+          },
+          {
+            "path": "lang/en.sh",
+            "git_blob_sha": "422129496bc641046bb8f267f55dbff946987bdf",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/en.sh"
+          },
+          {
+            "path": "lang/fa.sh",
+            "git_blob_sha": "fa3cd991063e8d9c5ddebaee56c3f66d0d9b40ef",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/fa.sh"
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "git_blob_sha": "35d757b02716bbfcc5973a6d5fd799dd24b7f2da",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/pt-BR.sh"
+          },
+          {
+            "path": "lang/ru.sh",
+            "git_blob_sha": "92374cb611a6af619b85e780760d62c1c3cc8849",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/ru.sh"
+          },
+          {
+            "path": "lang/zh.sh",
+            "git_blob_sha": "85f642e6f9db59269483f82e8bc8aa67a5e30c8c",
+            "url": "https://github.com/1Panel-dev/installer/blob/2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c/lang/zh.sh"
+          }
+        ]
+      },
+      "installer_transport_normalization": "In-memory removal of one transport-added trailing newline only when required to match immutable Git blob SHA; original cache unchanged.",
+      "installer_transport_normalized_paths": [
+        "1pctl",
+        "initscript/1panel-agent.init",
+        "initscript/1panel-agent.openrc",
+        "initscript/1panel-agent.procd",
+        "initscript/1panel-agent.service",
+        "initscript/1panel-core.init",
+        "initscript/1panel-core.openrc",
+        "initscript/1panel-core.procd",
+        "initscript/1panel-core.service",
+        "install.sh",
+        "lang/en.sh",
+        "lang/fa.sh",
+        "lang/pt-BR.sh",
+        "lang/ru.sh",
+        "lang/zh.sh"
+      ],
+      "installer_published_member_comparison": {
+        "ppc64le": [
+          {
+            "path": "1pctl",
+            "sha256": "53e2f380879dafc389aabe738aceba6fdce70bef66b36acd02ac97d73ad41fc1",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "s390x": [
+          {
+            "path": "1pctl",
+            "sha256": "53e2f380879dafc389aabe738aceba6fdce70bef66b36acd02ac97d73ad41fc1",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "arm64": [
+          {
+            "path": "1pctl",
+            "sha256": "53e2f380879dafc389aabe738aceba6fdce70bef66b36acd02ac97d73ad41fc1",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "armv7": [
+          {
+            "path": "1pctl",
+            "sha256": "53e2f380879dafc389aabe738aceba6fdce70bef66b36acd02ac97d73ad41fc1",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "amd64": [
+          {
+            "path": "1pctl",
+            "sha256": "53e2f380879dafc389aabe738aceba6fdce70bef66b36acd02ac97d73ad41fc1",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ],
+        "loong64": [
+          {
+            "path": "1pctl",
+            "sha256": "53e2f380879dafc389aabe738aceba6fdce70bef66b36acd02ac97d73ad41fc1",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+            "matches_published": true
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+            "matches_published": true
+          },
+          {
+            "path": "install.sh",
+            "sha256": "51dd2cac7fee2f7aeae8fa646329d740bb861b1dae504ba83360221bf7fe865e",
+            "matches_published": true
+          },
+          {
+            "path": "lang/en.sh",
+            "sha256": "de00843fa26df692ff9a460ea4ed8843c2339b13badc81ab757ad23627eec605",
+            "matches_published": true
+          },
+          {
+            "path": "lang/fa.sh",
+            "sha256": "00b485a70d0e791792f6783a5ab42ab4e5074f3dc1b1762defffec1bac490905",
+            "matches_published": true
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "sha256": "0dd2a870ddf2605af310e933910ea7d3aa2bc0ab1130a77b54050636d3765e8a",
+            "matches_published": true
+          },
+          {
+            "path": "lang/ru.sh",
+            "sha256": "663bb7a0be881f78f425fab0cb345b869af403265aeb9b6f309129e769ef8e68",
+            "matches_published": true
+          },
+          {
+            "path": "lang/zh.sh",
+            "sha256": "b596673cba4e374c444815f23764967386ebaf4c150f196f4a6df2179cd8c5de",
+            "matches_published": true
+          }
+        ]
+      },
+      "installer_hash_meaning": "Exact immutable Git blob bytes before expected 1pctl ORIGINAL_VERSION substitution. All cached architecture resource member SHA comparisons passed.",
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
+      "tag_reverified_at_utc": "2026-10-09T03:54:16Z",
+      "go_toolchain_provenance": {
+        "selected": "1.25.10",
+        "official_tag_commit": "5053df5b6ff006dfc96df442fddddee49f5250eb",
+        "url": "https://github.com/golang/go/tree/go1.25.10"
+      },
+      "node_engine_validation": {
+        "node_version": "22.22.1",
+        "npm_version": "10.9.4",
+        "status": "declared_engines_compatible_actual_build_pending"
+      },
+      "installer_features": {
+        "non_interactive_cli": false,
+        "builtin_docker_tree_helper": true
+      },
+      "state": "proposed_engine_compatible_pin_not_built"
     }
   }
 }
