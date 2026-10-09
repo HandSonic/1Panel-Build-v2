@@ -118,3 +118,20 @@ class AbsentFrontendLockRepair(unittest.TestCase):
         self.target.symlink_to(self.root / 'nonexistent')
         with self.assertRaises(ValueError): subject.repair(self.front, 'v2.1.10')
         self.assertTrue(self.target.is_symlink())
+
+    def test_content_addressed_lock_reuses_exact_bytes(self):
+        name = 'frontend-locks/' + self.recipe['derived_sha256'] + '.package-lock.json'
+        self.lock.rename(self.root / name)
+        self.recipe['reviewed_lock_file'] = name
+        self.path.write_text(json.dumps(self.config))
+        subject.repair(self.front, 'v2.1.10')
+        self.assertEqual(self.target.read_bytes(), self.derived)
+
+    def test_content_addressed_wrong_digest_path_rejected(self):
+        name = 'frontend-locks/' + '0' * 64 + '.package-lock.json'
+        self.lock.rename(self.root / name)
+        self.recipe['reviewed_lock_file'] = name
+        self.path.write_text(json.dumps(self.config))
+        with self.assertRaises(ValueError):
+            subject.repair(self.front, 'v2.1.10')
+        self.assertFalse(self.target.exists())

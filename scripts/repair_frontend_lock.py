@@ -26,8 +26,12 @@ def repair(root, version):
             raise ValueError('Repair lock package manifest checksum mismatch')
         if target.exists() or target.is_symlink():
             raise ValueError('Refusing to replace an existing source lock')
-        expected_path = 'frontend-locks/' + version + '.package-lock.json'
-        if recipe['reviewed_lock_file'] != expected_path:
+        expected_path = recipe['reviewed_lock_file']
+        allowed_paths = {
+            'frontend-locks/' + version + '.package-lock.json',
+            'frontend-locks/' + recipe['derived_sha256'] + '.package-lock.json',
+        }
+        if expected_path not in allowed_paths:
             raise ValueError('Unexpected reviewed repair lock path')
         source = REPAIRS.parent / expected_path
         if source.is_symlink() or not source.is_file():

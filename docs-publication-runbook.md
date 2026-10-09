@@ -180,24 +180,20 @@ profiles use current-tag snapshots for future reproducible rebuilds; they do not
 claim those commits produced an original historical release. Existing reviewed
 profiles retain their original source and normalized hashes.
 
-`config/historical-input-readiness.json` enumerates all 40 historical/current
-versions. It is planning metadata, never an input fallback. The enabled source
-locks are listed in `enabled_versions`, including v2.3.2 through v2.2.1
-and the v2.1.13/v2.1.12/v2.1.11 batch described below. Other historical versions still need their frontend package-lock bytes,
-exact Node/npm compatibility, a reviewed exact Go compiler
-satisfying BOTH Core and Agent module requirements, and complete reviewed
-installer/GeoIP pins. Available source and installer candidates are not silently
-promoted to trusted build inputs. Every newly enabled version still requires an
-unpublished full seven-architecture build and downstream install/upgrade checks.
-No historical rebuild or runtime result is implied by parser fixture coverage.
+The supported historical input contracts are the entries in `config/sources.json`.
+Planning and one-off audit reports are not runtime inputs and are kept outside
+the build repository. A compatible immutable source contract still requires
+verified dependency inputs, toolchains satisfying both Go modules, installer
+resources, and GeoIP hashes. Every release must pass its own full architecture
+build and downstream install/upgrade checks before publication.
 
 ## First historical immutable-input batch
 
 The source lock now includes v2.3.1, v2.3.0, and v2.2.5, with the existing
 v2.3.2 contract. These are reviewed build candidates, not rebuilt releases.
-`config/source-input-evidence.json` records immutable source file hashes, both
-Go module requirements, historical resource comparisons, and official Node/npm
-provenance. Raw installer hashes precede the expected 1pctl version substitution.
+The operational source contract pins immutable dependency file hashes, compatible
+toolchains, and installer resources. Raw installer hashes precede the expected
+1pctl version substitution. Detailed audit records are retained outside this repository.
 
 Node 22.14.0 built the previous frontend but did not satisfy all declared
 lockfile engines. This batch uses Node 22.22.1 and its bundled npm 10.9.4;

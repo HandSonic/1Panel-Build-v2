@@ -7,10 +7,11 @@ build and does not enable enterprise capabilities.
 
 ## Reviewed inputs
 
-`config/sources.json` is the version-to-input lock. Currently only **v2.3.2** is
-reviewed. An unknown historical or newer version fails instead of silently using
-today's installer branch. To add a version, review its source SHA, compatible
-installer SHA, every resource hash, Go/Node/npm versions and release channel.
+`config/sources.json` contains the supported immutable historical build inputs.
+Each entry pins the source and installer commits, resource hashes, compatible
+Go/Node/npm versions, and release channel. Shared frontend repair locks are
+stored once by SHA-256 and remain bound to each source manifest. Unknown input
+contracts fail before building or publishing.
 
 The v2.3.2 source is `65243c68c463cc055ab044093f641ea5d2e9e28b`.
 The installer is `aa4a6bbf24ae0fd938b32294672f5086f940e483`: its install.sh

@@ -44,34 +44,34 @@
     "v2.1.10": {
       "original_absent": true,
       "derived_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1",
-      "reviewed_lock_file": "frontend-locks/v2.1.10.package-lock.json",
+      "reviewed_lock_file": "frontend-locks/19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1.package-lock.json",
       "provenance": "Reused exact tested v2.1.11 derived repair lock; package.json bytes identical; no original v2.1.10 lock exists."
     },
     "v2.1.9": {
       "original_absent": true,
       "derived_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1",
-      "reviewed_lock_file": "frontend-locks/v2.1.9.package-lock.json",
+      "reviewed_lock_file": "frontend-locks/19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1.package-lock.json",
       "provenance": "Reused exact tested v2.1.11 derived repair lock; package.json bytes identical; no original v2.1.9 lock exists."
     },
     "v2.1.8": {
       "original_absent": true,
       "derived_sha256": "d75e189262869e69873ca817878f825fe28e3297d775077db8f1db5401294039",
-      "reviewed_lock_file": "frontend-locks/v2.1.8.package-lock.json",
+      "reviewed_lock_file": "frontend-locks/d75e189262869e69873ca817878f825fe28e3297d775077db8f1db5401294039.package-lock.json",
       "provenance": "Derived from this exact immutable package.json using Node22.22.1/npm10.9.4 in hosted probe37925311837; original source lock absent; no lifecycle scripts; full review/build gates required."
     },
     "v2.1.7": {
       "original_absent": true,
-      "reviewed_lock_file": "frontend-locks/v2.1.7.package-lock.json",
+      "reviewed_lock_file": "frontend-locks/a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426.package-lock.json",
       "derived_sha256": "a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426"
     },
     "v2.1.6": {
       "original_absent": true,
-      "reviewed_lock_file": "frontend-locks/v2.1.6.package-lock.json",
+      "reviewed_lock_file": "frontend-locks/a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426.package-lock.json",
       "derived_sha256": "a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426"
     },
     "v2.1.5": {
       "original_absent": true,
-      "reviewed_lock_file": "frontend-locks/v2.1.5.package-lock.json",
+      "reviewed_lock_file": "frontend-locks/a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426.package-lock.json",
       "derived_sha256": "a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426"
     }
   }
