@@ -1,0 +1,190 @@
+name: probe-manifest-repair-lock
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact immutable official source commit
+        required: true
+      manifest_sha256:
+        description: Independently verified frontend package.json SHA-256
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manifest-lock-probe-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_OPTIONS: ''
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+      - name: Verify the exact generator and immutable input
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(node --version)" = v22.22.1
+          test "$(npm --version)" = 10.9.4
+          mkdir -p "$RUNNER_TEMP/manifest-lock-probe"
+          cd "$RUNNER_TEMP/manifest-lock-probe"
+          touch empty-user.npmrc empty-global.npmrc
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 --max-filesize 65536 \
+            "https://raw.githubusercontent.com/1Panel-dev/1Panel/${SOURCE_COMMIT}/frontend/package.json" \
+            --output package.json
+          printf '%s  package.json\n' "$MANIFEST_SHA256" | sha256sum --check --strict
+      - name: Resolve a candidate lock without lifecycle scripts
+        shell: bash
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/manifest-lock-probe/empty-user.npmrc
+          NPM_CONFIG_GLOBALCONFIG: ${{ runner.temp }}/manifest-lock-probe/empty-global.npmrc
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+          NPM_CONFIG_AUDIT: 'false'
+          NPM_CONFIG_FUND: 'false'
+          NPM_CONFIG_ENGINE_STRICT: 'true'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/manifest-lock-probe"
+          export PROBE_NPM_ROOT="$(npm root -g)"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const npa = require(process.env.PROBE_NPM_ROOT + '/npm/node_modules/npm-package-arg');
+          // MANIFEST_PREFLIGHT_BEGIN
+          function checkManifest(manifest) {
+            for (const key of ['workspaces', 'bundleDependencies', 'bundledDependencies', 'devEngines']) {
+              if (manifest[key] !== undefined) throw new Error('Unsupported source field: ' + key);
+            }
+            if (manifest.packageManager !== undefined && manifest.packageManager !== 'npm@10.9.4') throw new Error('Unsupported packageManager');
+            const direct = {...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies};
+            function registrySpec(name, value) {
+              if (typeof value !== 'string') throw new Error('Non-string dependency spec');
+              const spec = npa.resolve(name, value);
+              if (!spec.registry || (spec.type === 'alias' && !spec.subSpec?.registry)) {
+                throw new Error('Non-registry dependency source: ' + name);
+              }
+            }
+            for (const key of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+              if (manifest[key] !== undefined && (manifest[key] === null || typeof manifest[key] !== 'object' || Array.isArray(manifest[key]))) throw new Error('Invalid dependency map');
+              for (const [name, value] of Object.entries(manifest[key] || {})) registrySpec(name, value);
+            }
+            function overrides(value, parent) {
+              if (typeof value === 'string') {
+                if (value.startsWith('$')) {
+                  const name = value.slice(1);
+                  if (!Object.hasOwn(direct, name)) throw new Error('Unknown override reference');
+                  registrySpec(name, direct[name]);
+                } else registrySpec(parent, value);
+                return;
+              }
+              if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid overrides');
+              for (const [key, child] of Object.entries(value)) {
+                if (key === '.') { if (!parent) throw new Error('Invalid root override'); overrides(child, parent); }
+                else {
+                  const spec = npa(key);
+                  if (!spec.registry || !spec.name) throw new Error('Non-registry override selector');
+                  overrides(child, spec.name);
+                }
+              }
+            }
+            if (manifest.overrides !== undefined) overrides(manifest.overrides, null);
+          }
+          // MANIFEST_PREFLIGHT_END
+          checkManifest(JSON.parse(fs.readFileSync('package.json')));
+          NODE
+          mkdir -p npm-cache
+          export NPM_CONFIG_CACHE="$PWD/npm-cache"
+          # Trusted npm may inspect metadata, but cannot launch git or prepare scripts.
+          export NODE_OPTIONS="--permission --allow-fs-read=* --allow-fs-write=$PWD"
+          node -e 'const a=require("node:assert/strict");a.equal(process.permission.has("child"),false);a.equal(process.permission.has("worker"),false);a.equal(process.permission.has("addons"),false);a.throws(()=>require("node:child_process").spawnSync("/bin/true"),{code:"ERR_ACCESS_DENIED"});'
+          npm install --package-lock-only --ignore-scripts --engine-strict --no-audit --no-fund
+          npm ci --dry-run --ignore-scripts --engine-strict --no-audit --no-fund
+          test ! -e node_modules
+          printf '%s  package.json\n' "$MANIFEST_SHA256" | sha256sum --check --strict
+      - name: Check the candidate graph and record provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/manifest-lock-probe"
+          export PROBE_NPM_ROOT="$(npm root -g)"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const semver = require(process.env.PROBE_NPM_ROOT + '/npm/node_modules/semver');
+          const manifest = JSON.parse(fs.readFileSync('package.json'));
+          const raw = fs.readFileSync('package-lock.json');
+          if (raw.length > 4 * 1024 * 1024) throw new Error('Unexpected lock size');
+          const lock = JSON.parse(raw);
+          if (lock.lockfileVersion !== 3 || !lock.packages?.['']) throw new Error('Unsupported lock schema');
+          const canonical = value => JSON.stringify(Object.entries(value || {}).sort(([a], [b]) => a.localeCompare(b)));
+          if (lock.name !== manifest.name || lock.version !== manifest.version) throw new Error('Root identity changed');
+          for (const key of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+            if (canonical(lock.packages[''][key]) !== canonical(manifest[key])) throw new Error('Root manifest changed: ' + key);
+          }
+          // ENGINE_CHECK_BEGIN
+          function checkEngines(engines, name) {
+            if (engines == null) return;
+            let requirements;
+            if (Array.isArray(engines)) {
+              requirements = engines.map(value => {
+                if (typeof value !== 'string') throw new Error('Invalid legacy engine: ' + name);
+                const match = value.match(/^([A-Za-z][A-Za-z0-9_-]*)\s+(.+)$/);
+                if (!match) throw new Error('Invalid legacy engine: ' + name);
+                return [match[1], match[2]];
+              });
+            } else if (typeof engines === 'object') {
+              requirements = Object.entries(engines);
+            } else {
+              throw new Error('Invalid engine schema: ' + name);
+            }
+            for (const [engine, range] of requirements) {
+              if (!['node', 'npm'].includes(engine)) continue;
+              if (typeof range !== 'string' || semver.validRange(range) === null) throw new Error('Invalid engine range: ' + name);
+              const version = engine === 'node' ? '22.22.1' : '10.9.4';
+              if (!semver.satisfies(version, range)) throw new Error('Unsupported ' + engine + ' engine: ' + name);
+            }
+          }
+          // ENGINE_CHECK_END
+          checkEngines(manifest.engines, 'root manifest');
+          checkEngines(lock.packages[''].engines, 'root lock');
+          const packages = Object.entries(lock.packages).filter(([name]) => name);
+          for (const [name, pkg] of packages) {
+            if (!name.startsWith('node_modules/') || pkg.link) throw new Error('Unexpected dependency path: ' + name);
+            const url = new URL(pkg.resolved);
+            if (url.protocol !== 'https:' || url.hostname !== 'registry.npmjs.org' || url.username || url.password || url.port || url.search || url.hash) throw new Error('Non-registry dependency: ' + name);
+            if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(pkg.integrity || '') || Buffer.from((pkg.integrity || '').slice(7), 'base64').length !== 64) throw new Error('Missing SHA-512 integrity: ' + name);
+            checkEngines(pkg.engines, name);
+          }
+          const result = {
+            kind: 'proposed_derived_repair_lock_not_original_source',
+            source_commit: process.env.SOURCE_COMMIT,
+            package_json_sha256: crypto.createHash('sha256').update(fs.readFileSync('package.json')).digest('hex'),
+            package_lock_sha256: crypto.createHash('sha256').update(raw).digest('hex'),
+            lock_bytes: raw.length, package_count: packages.length,
+            node: process.version, npm: '10.9.4', registry: 'https://registry.npmjs.org',
+            lifecycle_scripts: false, workflow_commit: process.env.GITHUB_SHA,
+            workflow_run_id: process.env.GITHUB_RUN_ID, workflow_run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+            activation: 'none; independent integrity review and full build gates still required'
+          };
+          fs.writeFileSync('provenance.json', JSON.stringify(result, null, 2) + '\n');
+          console.log(JSON.stringify(result));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proposed-manifest-lock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/manifest-lock-probe/package-lock.json
+            ${{ runner.temp }}/manifest-lock-probe/provenance.json
+          if-no-files-found: error
+          retention-days: 14
