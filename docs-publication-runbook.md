@@ -182,8 +182,8 @@ profiles retain their original source and normalized hashes.
 
 `config/historical-input-readiness.json` enumerates all 40 historical/current
 versions. It is planning metadata, never an input fallback. The enabled source
-locks are v2.3.2, v2.3.1, v2.3.0, v2.2.5, v2.2.4, v2.2.3, v2.2.2, and
-v2.2.1, as detailed in the input batches below. Other historical versions still need their frontend package-lock bytes,
+locks are listed in `enabled_versions`, including v2.3.2 through v2.2.1
+and the v2.1.13/v2.1.12/v2.1.11 batch described below. Other historical versions still need their frontend package-lock bytes,
 exact Node/npm compatibility, a reviewed exact Go compiler
 satisfying BOTH Core and Agent module requirements, and complete reviewed
 installer/GeoIP pins. Available source and installer candidates are not silently
@@ -243,3 +243,22 @@ source builds does not authorize applying modern installer flags downstream or
 claiming historical installation/upgrade runtime coverage. The downstream
 interactive compatibility and runtime gate remain separate prerequisites to
 publishing repaired offline installer packages.
+
+## Fourth historical immutable-input batch
+
+v2.1.13, v2.1.12 and v2.1.11 use Go 1.25.7 for both components and retain
+their committed frontend locks with Node 22.22.1/npm 10.9.4. Every selected
+installer resource matches the actual historical amd64 package after the
+expected 1pctl version substitution. Full compressed archive hashes and member
+hashes were streamed and verified; no other historical architecture resource
+comparison is implied. Original source checkout provenance remains unproven.
+
+These interactive installers lack the newer built-in offline Docker tree helper.
+Downstream must apply its reviewed historical Docker adapter and run installation
+and upgrade tests; upstream source/build validation alone does not establish that
+an offline installer package works. Full seven-architecture repair builds remain
+required before enabling release promotion.
+
+### Historical frontend lock repair
+
+The v2.1.13, v2.1.12 and v2.1.11 source locks omit cosmiconfig even though their locked @commitlint/load requires it. The original source and dependency hashes remain pinned. After verifying those inputs, the shared Docker build applies the explicit recipe in config/frontend-lock-repairs.json: add only cosmiconfig 9.0.2 with its registry resolution and verified integrity. Existing dependency entries are preserved. Both the original and derived lock SHA-256 must match before writing, then npm ci --engine-strict remains mandatory. These are derived repair builds, not reproductions of an established original checkout. All three hosted builds and current-version regression must pass before publication.
