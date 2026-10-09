@@ -280,3 +280,7 @@ v2.1.8 has no original frontend lock. Its fixed derived lock is bound to the exa
 The source verifier checks both hashed Go modules directly against the selected compiler, including any toolchain directive, before applying patches. Both v2.1.8 modules require Go 1.25.7. Core/Agent configurations use the bounded immutable vendor-source route. Historical installer Docker/accelerator prompts do not default empty responses to yes; downstream adapters must preserve that behavior. Fresh seven-architecture builds, current-version regression and downstream native tests remain required at their respective publication stages.
 
 Build checks use operational source/configuration/repair inputs. The historical planning and audit documents are snapshots and do not enable versions or supply runtime verification data.
+
+## v2.1.7 through v2.1.5 shared frontend inputs
+
+These three source commits have the same frontend package manifest and no original lock. They share the same fixed derived repair-lock bytes, stored at each version's validated repair path. Go remains version-specific: v2.1.7 and v2.1.6 use 1.25.7; v2.1.5 uses 1.24.9. Each source/configuration contract and installer resource set is pinned independently. Use parallel build runs for the three versions with publication disabled; each must pass its own seven-architecture aggregation and subsequent publication gates. The shared frontend lock does not substitute for per-version build or downstream installation checks.
