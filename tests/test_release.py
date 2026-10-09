@@ -8,8 +8,20 @@ class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.temp.name)
         self.addCleanup(self.temp.cleanup)
-        self.entry=resolve_inputs.resolve('v2.3.2')
-        self.entry=json.loads(json.dumps(self.entry))
+        import embedded_configuration
+        from resolved_contract import INSTALLER_REQUIRED
+        from semantic_configuration import production
+        self.entry={'source_commit':'c'*40,'installer_commit':'d'*40,'mode':'stable',
+                    'go_version':'1.26.1','node_version':'22.22.1','npm_version':'10.9.4',
+                    'installer_sha256':dict.fromkeys(INSTALLER_REQUIRED,''),
+                    'geoip_url':'https://resource.fit2cloud.com/1panel/package/v2/geo/GeoIP.mmdb'}
+        self.configs={part:('base:\n  mode: dev\n  is_enterprise: false\n'+('  version: v0.0.0\n' if part=='core' else '')+'log:\n  level: debug\n').encode() for part in ('core','agent')}
+        def synthetic_expected(version,part,*args):
+            raw=self.configs[part]
+            return raw,production(raw,version,part,'stable'),'c'*40
+        for module in (sys.modules[__name__],embedded_configuration,configure_release):
+            handle=patch.object(module,'expected_bytes',side_effect=synthetic_expected);handle.start();self.addCleanup(handle.stop)
+        handle=patch.object(configure_release,'resolve',return_value=self.entry);handle.start();self.addCleanup(handle.stop)
         self.entry['installer_original_version']='v2.3.2'
         for rel in self.entry['installer_sha256']:
             content=(f'ORIGINAL_VERSION=v2.3.2\n' if rel=='1pctl' else f'# fixture {rel}\n').encode()
@@ -106,22 +118,29 @@ class ReleaseTests(unittest.TestCase):
         def fake(args,check):p.write_bytes(b'bad')
         with patch.object(download_resources.subprocess,'run',side_effect=fake):
             with self.assertRaisesRegex(ValueError,'Checksum mismatch'):download_resources.download('https://example.test/x',p,'0'*64)
-    def test_unknown_historical_version_fails_closed(self):
-        with self.assertRaisesRegex(ValueError,'no reviewed input lock'):resolve_inputs.resolve('v2.0.13')
+    def test_missing_or_different_run_contract_fails_closed(self):
+        import resolved_contract
+        from test_discovered_inputs import fixture
+        runtime=resolved_contract.runtime_contract
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory)
+            with patch.object(resolved_contract,'runtime_contract',side_effect=lambda version:runtime(version,root)):
+                with self.assertRaises(FileNotFoundError):resolve_inputs.resolve('v2.0.13')
+                (root/'config').mkdir()
+                (root/'config/resolved-source.json').write_bytes(resolved_contract.canonical(fixture()))
+                with self.assertRaises(ValueError):resolve_inputs.resolve('v2.0.13')
     def test_invalid_architectures(self):
         for text in ('','amd64 amd64','amd64 bogus','$(bad)'):
             with self.assertRaises(ValueError):validate_artifacts.architectures(text)
     def test_production_community_config(self):
-        # Exact reviewed source layouts at 65243c68c463cc055ab044093f641ea5d2e9e28b.
-        # In particular Agent has no version key, unlike Core.
-        fixtures={'core': 'base:\n  install_dir: /opt\n  mode: dev\n  is_demo: false\n  is_offline: false\n  is_fxplay: false\n  is_enterprise: false\n  port: 9999\n  username: admin\n  password: admin123\n  version: v2.0.0\n\nlog:\n  level: debug\n  time_zone: Asia/Shanghai\n  log_name: 1Panel-Core\n  log_suffix: .log\n  max_backup: 10\n', 'agent': 'base:\n  install_dir: /opt\n  mode: dev\n  is_demo: false\n  is_offline: false\n  is_fxplay: false\n  is_enterprise: false\n\nlog:\n  level: debug\n  time_zone: Asia/Shanghai\n  log_name: 1Panel\n  log_suffix: .log\n  max_backup: 10\n'}
+        fixtures={part:raw.decode() for part,raw in self.configs.items()}
         for part,fixture in fixtures.items():
             p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True);p.write_text(fixture)
         configure_release.configure(self.root,'v2.3.2')
         for part,fixture in fixtures.items():
             content=(self.root/part/'cmd/server/conf/app.yaml').read_text()
             expected=fixture.replace('  mode: dev\n','  mode: stable\n').replace('  level: debug\n','  level: info\n')
-            if part=='core': expected=expected.replace('  version: v2.0.0\n','  version: v2.3.2\n')
+            if part=='core': expected=expected.replace('  version: v0.0.0\n','  version: v2.3.2\n')
             self.assertEqual(content,expected)  # Every other line is preserved.
             self.assertIn('  is_enterprise: false\n',content)
             if part=='agent': self.assertNotIn('version:',content)

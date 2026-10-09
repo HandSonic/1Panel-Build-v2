@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "additions": {
+    "node_modules/cosmiconfig": {
+      "version": "9.0.2",
+      "license": "MIT",
+      "dependencies": {
+        "js-yaml": "^4.1.0",
+        "env-paths": "^2.2.1",
+        "parse-json": "^5.2.0",
+        "import-fresh": "^3.3.0"
+      },
+      "engines": {
+        "node": ">=14"
+      },
+      "peerDependencies": {
+        "typescript": ">=4.9.5"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      },
+      "resolved": "https://registry.npmjs.org/cosmiconfig/-/cosmiconfig-9.0.2.tgz",
+      "integrity": "sha512-gtTZxTDau1wL7Y7zifc2dd8jHSK/k6BTx/2Xp/BpdlAdnlYWFVt7qhJqgwi7637yRwRQ3qL4ZidbB4I8tA5VOg==",
+      "dev": true
+    }
+  },
+  "recipes": [
+    {
+      "manifest_sha256": "de8e3577082a5d475cbd259dfb1c1b6fed3e939e14cf27ab4d91afecab15657c",
+      "original_sha256": "3df25d4ab90562067c71e900b753a622b734e023d8b8da4f70bf51f013b3a3b3",
+      "derived_sha256": "725a6eb052a29051b8f3123dfc88d959a0102118520b9cf4e85673751dfc4c4c"
+    },
+    {
+      "manifest_sha256": "fefb337eb4af501df0d26b8401c71e7d0766e5f44e327b915e1b9cdf537eab3e",
+      "original_sha256": "bf72c828418273d1f6796e270084dbd7adb0bc391814a7b0bf55139f3153ba3c",
+      "derived_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1"
+    },
+    {
+      "manifest_sha256": "fefb337eb4af501df0d26b8401c71e7d0766e5f44e327b915e1b9cdf537eab3e",
+      "original_sha256": null,
+      "derived_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1",
+      "reviewed_lock_file": "frontend-locks/19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1.package-lock.json"
+    },
+    {
+      "manifest_sha256": "d5a914e32b8f3bd931c56b4ed48752484656bc7ae6bd14c36b54b1996683fffa",
+      "original_sha256": null,
+      "derived_sha256": "d75e189262869e69873ca817878f825fe28e3297d775077db8f1db5401294039",
+      "reviewed_lock_file": "frontend-locks/d75e189262869e69873ca817878f825fe28e3297d775077db8f1db5401294039.package-lock.json"
+    },
+    {
+      "manifest_sha256": "136f560604df9d40d22efd9ca3344c0098d5afbaf20af13573afe990843e07f5",
+      "original_sha256": null,
+      "derived_sha256": "a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426",
+      "reviewed_lock_file": "frontend-locks/a326ec8cc6aee255363aa5a51aa003be515b02df78382f0535e66ff4157e0426.package-lock.json"
+    }
+  ]
+}

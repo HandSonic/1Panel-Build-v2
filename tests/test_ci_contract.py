@@ -28,6 +28,8 @@ class CIContract(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    p=Path(d);(p/'config').mkdir();(p/'config/sources.json').write_text('{"v2.3.2":{}}');(p/'scripts').mkdir();(p/'scripts/resolve_inputs.py').write_text('import sys; print("SOURCE_COMMIT="+sys.argv[1]+"\\nGO_VERSION=1.26.1")')
    (p/'scripts/validate_artifacts.py').write_text('def architectures(value): return value.split()')
+   (p/'scripts/discover_inputs.py').write_text('import sys; assert \"--latest\" not in sys.argv; print(\"a\"*64)')
+   (p/'scripts/resolved_contract.py').write_text('')
    e=dict(os.environ,INPUT_VERSION='',INPUT_ARCHES='amd64',GITHUB_REF='refs/tags/v2.3.2',GITHUB_REF_NAME='v2.3.2',GITHUB_ENV=str(p/'env'),GITHUB_OUTPUT=str(p/'out'))
    r=subprocess.run(['bash','-c',github_block('Resolve immutable build inputs')],cwd=d,env=e,capture_output=True,text=True)
    self.assertEqual(r.returncode,0,r.stderr);self.assertIn('SOURCE_COMMIT=v2.3.2',(p/'build-inputs.env').read_text())

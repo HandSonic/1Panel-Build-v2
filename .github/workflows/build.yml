@@ -16,7 +16,7 @@ on:
         default: stable
         description: 'Official channel for automatic discovery'
       arch:
-        description: 'Normal-build architectures; existing-release promotion always requires all seven'
+        description: 'Requested architectures; each successful branch is independently validated'
         default: 'amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
       operation:
         type: choice
@@ -95,17 +95,10 @@ jobs:
           version=${INPUT_VERSION:-}
           if [[ -z "$version" && "$GITHUB_REF" == refs/tags/* ]]; then version=$GITHUB_REF_NAME; fi
           if [[ -z "$version" ]]; then
-            if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-              version=$(python3 -c 'import json;v=[v for v in json.load(open("config/sources.json")) if "-" not in v];print(max(v,key=lambda x:tuple(map(int,x[1:].split(".")))))')
-            else
-              version=$(python3 scripts/discover_inputs.py --latest --mode "$INPUT_CHANNEL")
-            fi
+            version=$(python3 scripts/discover_inputs.py --latest --mode "$INPUT_CHANNEL")
           fi
-          contract_sha=
-          if ! python3 -c 'import json,sys;sys.exit(0 if sys.argv[1] in json.load(open("config/sources.json")) else 1)' "$version"; then
-            contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
-            python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
-          fi
+          contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
+          python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
           echo "resolved_contract_sha256=$contract_sha" >> "$GITHUB_OUTPUT"
           python3 scripts/resolve_inputs.py "$version" > build-inputs.env
           matrix=$(python3 -c 'import json,sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(json.dumps({"arch":architectures(sys.argv[1])}))' "$arches")
@@ -144,6 +137,7 @@ jobs:
           retention-days: 3
           compression-level: 0
   compile:
+    name: compile (${{ matrix.arch }})
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
@@ -210,7 +204,11 @@ jobs:
           retention-days: 3
           compression-level: 0
   build:
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     needs: [prepare, compile]
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     outputs:
       version: ${{ needs.prepare.outputs.version }}
@@ -219,6 +217,8 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       TARGET_ARCHES: ${{ needs.prepare.outputs.arches }}
       BUILD_REPOSITORY_COMMIT: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+      PRODUCER_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       SHARD_GENERATION: ${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
       RESOLVED_CONTRACT_SHA256: ${{ needs.prepare.outputs.resolved_contract_sha256 }}
     steps:
@@ -237,7 +237,7 @@ jobs:
           set -euo pipefail
           python3 scripts/aggregate_shards.py shards dist "$VERSION" "$TARGET_ARCHES" "$SHARD_GENERATION"
           python3 scripts/resolved_contract.py activate dist "$VERSION"
-          python3 scripts/validate_artifacts.py dist "$VERSION" "$TARGET_ARCHES"
+          python3 scripts/validate_artifacts.py dist "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("dist/build-manifest.json"))["artifacts"]))')"
       - uses: actions/upload-artifact@v4
         with:
           name: verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}
@@ -246,7 +246,7 @@ jobs:
           compression-level: 0
   candidate:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && inputs.publish_candidate
+    if: ${{ !cancelled() && needs.build.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && inputs.publish_candidate }}
     runs-on: ubuntu-latest
     concurrency:
       group: upstream-candidate-${{ github.repository }}-${{ needs.build.outputs.version }}-${{ github.run_id }}
@@ -272,7 +272,7 @@ jobs:
       - name: Revalidate candidate artifact
         run: |
           python3 scripts/resolved_contract.py activate dist "$VERSION"
-          python3 scripts/validate_artifacts.py dist "$VERSION" "$TARGET_ARCHES"
+          python3 scripts/validate_artifacts.py dist "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("dist/build-manifest.json"))["artifacts"]))')"
       - name: Stage a new draft candidate and verify downloaded bytes
         run: |
           set -euo pipefail
@@ -281,11 +281,11 @@ jobs:
             echo 'Candidate already exists; refusing overwrite.'; exit 1
           fi
           gh release create "$tag" --target "$GITHUB_SHA" --draft --title "$tag" \
-            --notes 'Build candidate only. All requested architectures validated; pending promotion and downstream regression.'
+            --notes 'Build candidate only. Included artifacts validated; pending promotion and downstream regression.'
           gh release upload "$tag" dist/*
           mkdir remote-readback
           gh release download "$tag" --dir remote-readback
-          python3 scripts/validate_artifacts.py remote-readback "$VERSION" "$TARGET_ARCHES"
+          python3 scripts/validate_artifacts.py remote-readback "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("remote-readback/build-manifest.json"))["artifacts"]))')"
           python3 - <<'PY'
           from pathlib import Path
           import hashlib

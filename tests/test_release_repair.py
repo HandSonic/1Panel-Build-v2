@@ -54,7 +54,7 @@ class RepairTests(unittest.TestCase):
         self.assertIsNone(added['old_id'])
         self.assertEqual(client.assets[added['new_id']][0],'enterprise.tar.gz')
     def test_new_asset_switch_failure_restores_missing_state(self):
-        client,files,journal=self.run_repair('notes');new=files[0].parent/'enterprise.tar.gz';new.write_bytes(b'enterprise bytes');files.insert(1,new)
+        client,files,journal=self.run_repair('switch');new=files[0].parent/'enterprise.tar.gz';new.write_bytes(b'enterprise bytes');files.insert(1,new)
         with self.assertRaises(RuntimeError):repair(client,files,journal)
         self.assertNotIn('enterprise.tar.gz',[name for name,body in client.assets.values()])
         self.assertTrue(any(name.startswith('enterprise.tar.gz.staged-') for name,body in client.assets.values()))
@@ -103,11 +103,41 @@ class RepairTests(unittest.TestCase):
         with self.assertRaises(ValueError):repair(client,files,journal)
         self.assertEqual(client.assets[1][0],'package.tar.gz');self.assertEqual(client.assets[2][0],'checksums.txt')
         self.assertEqual(client.assets[9][0],'unexpected-canonical.tar.gz')
-    def test_notes_failure_restores_canonical_assets(self):
+    def test_publication_never_changes_release_notes(self):
         client,files,journal=self.run_repair('notes')
-        with self.assertRaises(RuntimeError):repair(client,files,journal)
-        self.assertEqual(json.loads(journal.read_text())['phase'],'rolled_back')
-        self.assertEqual(client.assets[1][0],'package.tar.gz')
+        state=repair(client,files,journal)
+        self.assertEqual(state['phase'],'complete')
         self.assertEqual(client.body,'old release notes')
+        self.assertFalse(client.failed)
+    def test_failed_branch_is_recoverably_retired(self):
+        client,files,journal=self.run_repair();client.assets[9]=('failed.tar.gz',b'old failed branch')
+        state=repair(client,files,journal,retire=['failed.tar.gz'])
+        retired=state['retirements'][0]
+        self.assertEqual(client.assets[9],(retired['backup'],b'old failed branch'))
+        self.assertNotIn('failed.tar.gz',[name for name,_ in client.assets.values()])
+        self.assertEqual(client.body,'old release notes')
+    def test_retirement_is_restored_after_uncertain_switch(self):
+        client,files,journal=self.run_repair('switch');client.assets[9]=('failed.tar.gz',b'old failed branch')
+        with self.assertRaises(RuntimeError):repair(client,files,journal,retire=['failed.tar.gz'])
+        self.assertEqual(client.assets[9],('failed.tar.gz',b'old failed branch'))
+        self.assertEqual(client.assets[1][0],'package.tar.gz')
+        self.assertEqual(json.loads(journal.read_text())['phase'],'rolled_back')
+    def test_absent_failed_asset_concurrent_addition_rejects_without_touching_it(self):
+        client,files,journal=self.run_repair();release=client.release;counter=[0]
+        def concurrent_addition():
+            counter[0]+=1
+            if counter[0]==6:client.assets[99]=('failed.tar.gz',b'concurrent human asset')
+            return release()
+        client.release=concurrent_addition
+        with self.assertRaisesRegex(ValueError,'appeared concurrently'):
+            repair(client,files,journal,retire=['failed.tar.gz'])
+        self.assertEqual(client.assets[99],('failed.tar.gz',b'concurrent human asset'))
+        self.assertEqual(client.assets[1][0],'package.tar.gz')
+        self.assertFalse(any(call[0]=='rename' and call[1]==99 for call in client.calls))
+        self.assertEqual(json.loads(journal.read_text())['phase'],'rolled_back')
+    def test_retirement_cannot_overlap_accepted_files(self):
+        client,files,journal=self.run_repair()
+        with self.assertRaises(ValueError):repair(client,files,journal,retire=['package.tar.gz'])
+        self.assertEqual(client.calls,[])
 
 if __name__=='__main__':unittest.main()

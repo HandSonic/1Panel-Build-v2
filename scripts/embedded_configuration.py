@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact per-version Go-embedded configuration checks; never execute binaries."""
+"""Immutable run-contract Go-embedded configuration checks; never execute binaries."""
 import hashlib,json,re,sys,tarfile
 from pathlib import Path
 from functools import lru_cache
@@ -33,17 +33,11 @@ def fetch_vendor_source(commit,component,source_path,source_bytes,source_sha256)
     return data
 
 def expected_bytes(version,component,root=ROOT):
-    registry=json.loads((root/'config/embedded-configs.json').read_text())
-    if version not in registry:raise ValueError(f'Unreviewed embedded-config version: {version}')
-    entry=registry[version];profile=entry['components'][component]
-    if profile.get('source_acquisition')=='immutable_vendor_https':
-        if 'source_file' in profile:raise ValueError('Ambiguous source acquisition')
-        original=fetch_vendor_source(entry['source_commit'],component,profile['source_path'],profile['source_bytes'],profile['source_sha256'])
-    elif 'source_acquisition' in profile:
-        raise ValueError('Unsupported source acquisition')
-    else:
-        original=(root/profile['source_file']).read_bytes()
-    if hashlib.sha256(original).hexdigest()!=profile['source_sha256']:raise ValueError('Pinned source YAML changed')
+    from resolved_contract import runtime_contract
+    contract=runtime_contract(version,root)
+    entry={'source_commit':contract['source']['commit'],'mode':contract['mode']}
+    profile=contract['configuration'][component]
+    original=fetch_vendor_source(entry['source_commit'],component,profile['path'],profile['source_bytes'],profile['source_sha256'])
     normalized=production(original,version,component,entry['mode'])
     if hashlib.sha256(normalized).hexdigest()!=profile['normalized_sha256']:raise ValueError('Reviewed normalized YAML changed')
     return original,normalized,entry['source_commit']

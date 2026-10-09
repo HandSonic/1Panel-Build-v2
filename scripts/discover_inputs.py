@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARCHES = ['amd64', 'arm64', 'armv7', 'ppc64le', 's390x', 'loong64', 'riscv64']
 SOURCE = '1Panel-dev/1Panel'
 INSTALLER = '1Panel-dev/installer'
-VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(beta|dev)\.([0-9]+))?')
+VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(beta|dev)\.(0|[1-9][0-9]*))?')
 DEPENDENCIES = ['core/go.mod', 'agent/go.mod', 'frontend/package.json', 'frontend/package-lock.json']
 INSTALLER_FILES = ['install.sh', '1pctl'] + [f'initscript/1panel-{part}.{ext}' for part in ['core', 'agent'] for ext in ['init', 'openrc', 'procd', 'service']] + [f'lang/{lang}.sh' for lang in ['en', 'fa', 'pt-BR', 'ru', 'zh']]
 
@@ -195,21 +195,19 @@ def resolve_source(vendor, version=None, mode='stable', root=ROOT):
         files[path] = facts(data)
         normalized = production(data, version, part, mode)
         configuration[part] = {'path': path, 'source_sha256': files[path]['sha256'], 'source_bytes': len(data), 'normalized_sha256': facts(normalized)['sha256']}
-    lock = {'kind': 'source', 'sha256': files.get('frontend/package-lock.json', {}).get('sha256'), 'manifest_sha256': files['frontend/package.json']['sha256']}
-    repair = None
-    if absent:
-        sources = json.loads((root / 'config/sources.json').read_text())
-        recipes = json.loads((root / 'config/frontend-lock-repairs.json').read_text())['versions']
-        matches = [(v, recipes[v]) for v, entry in sources.items() if entry.get('source_files_absent') == absent and entry['source_files_sha256']['frontend/package.json'] == lock['manifest_sha256'] and v in recipes]
-        hashes = {recipe['derived_sha256'] for _, recipe in matches}
-        if len(hashes) != 1:
-            raise ValueError('Source lacks a lock and no unambiguous manifest-bound repair exists; candidate dependency resolution required')
-        repair = matches[0][1]
-        data = (root / 'config' / repair['reviewed_lock_file']).read_bytes()
-        if facts(data)['sha256'] != repair['derived_sha256']:
-            raise ValueError('Repair lock checksum mismatch')
-        raw['frontend/package-lock.json'] = data
-        lock = {'kind': 'derived', 'sha256': repair['derived_sha256'], 'manifest_sha256': lock['manifest_sha256'], 'recipe_sha256': hashlib.sha256(canonical(repair)).hexdigest()}
+    from lock_catalog import select, derive
+    manifest_sha = files['frontend/package.json']['sha256']
+    original = raw.get('frontend/package-lock.json')
+    recipe, additions = select(manifest_sha, None if original is None else facts(original)['sha256'], root)
+    if recipe is None:
+        if original is None:
+            raise ValueError('Source lacks a lock and no manifest-bound repair exists; candidate dependency resolution required')
+        lock = {'kind': 'source', 'sha256': facts(original)['sha256'], 'manifest_sha256': manifest_sha}
+    else:
+        raw['frontend/package-lock.json'] = derive(raw['frontend/package.json'], original, recipe, additions, root)
+        lock = {'kind': 'derived', 'sha256': recipe['derived_sha256'], 'manifest_sha256': manifest_sha,
+                'recipe_sha256': hashlib.sha256(canonical(recipe)).hexdigest()}
+    repair = recipe
     parsed_lock = json.loads(raw['frontend/package-lock.json'])
     if parsed_lock.get('lockfileVersion') not in (2, 3) or not isinstance(parsed_lock.get('packages'), dict):
         raise ValueError('Unsupported npm lock schema')
@@ -335,8 +333,7 @@ def installer_inputs(vendor, version, mode, root=ROOT):
     resources, geoip = official_archive(vendor, version, mode)
     # Current branch is resolved only once. Historical candidates remain exact commits.
     current = vendor.commit(INSTALLER, 'heads/v2')
-    known = json.loads((root / 'config/sources.json').read_text())
-    commits = list(dict.fromkeys([current] + [row['installer_commit'] for row in known.values()]))
+    commits = [current]
     def candidates():
         seen = set()
         for commit in commits:

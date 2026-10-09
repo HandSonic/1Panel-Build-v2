@@ -20,7 +20,7 @@ INSTALLER_REQUIRED = {'install.sh', '1pctl'} | {
     f'initscript/1panel-{part}.{kind}' for part in ('core', 'agent')
     for kind in ('service', 'init', 'openrc', 'procd')} | {
     f'lang/{language}.sh' for language in ('en', 'fa', 'pt-BR', 'ru', 'zh')}
-VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:beta|dev)\.[0-9]+))?')
+VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:beta|dev)\.(?:0|[1-9][0-9]*)))?')
 MAX_CONTROL = 1024 * 1024
 
 
@@ -122,12 +122,15 @@ def source_contract(raw, expected_digest, version, mode):
     for path in source['absent']:
         safe_path(path)
         require(path not in source['files'], 'Input cannot be both present and absent')
+    required={'core/go.mod','agent/go.mod','frontend/package.json','frontend/package-lock.json'}
+    require(source['absent'] in ([],['frontend/package-lock.json']), 'Unsupported dependency absence contract')
+    require(set(source['files']) == required-set(source['absent']) | {f'{c}/cmd/server/conf/app.yaml' for c in ('core','agent')}, 'Unexpected source input set')
     installer = value['installer']
     exact_keys(installer, ('repository', 'commit', 'resources', 'original_version'), 'installer identity')
     require(installer['repository'] == '1Panel-dev/installer', 'Unexpected installer repository')
     commit_value(installer['commit'])
     file_map(installer['resources'])
-    require(INSTALLER_REQUIRED <= set(installer['resources']), 'Incomplete installer resource contract')
+    require(INSTALLER_REQUIRED == set(installer['resources']), 'Incomplete installer resource contract')
     require(isinstance(installer['original_version'], str) and
             (installer['original_version'] == 'version' or VERSION.fullmatch(installer['original_version'])),
             'Invalid original installer version')
@@ -155,10 +158,11 @@ def source_contract(raw, expected_digest, version, mode):
                 and url.username is None and url.password is None and url.port in (None, 443)
                 and not url.fragment, 'Unsupported GeoIP resource origin')
     exact_keys(value['configuration'], ('core', 'agent'), 'configuration')
-    for profile in value['configuration'].values():
+    for component,profile in value['configuration'].items():
         exact_keys(profile, ('path', 'source_sha256', 'source_bytes', 'normalized_sha256'), 'configuration profile')
+        require(profile['path']==f'{component}/cmd/server/conf/app.yaml', 'Unexpected configuration component path')
         safe_path(profile['path'])
-        require(type(profile['source_bytes']) is int and profile['source_bytes'] > 0, 'Invalid source config size')
+        require(type(profile['source_bytes']) is int and 0 < profile['source_bytes'] <= 65536, 'Invalid source config size')
         require(source['files'].get(profile['path']) ==
                 {'sha256': hash_value(profile['source_sha256']), 'bytes': profile['source_bytes']},
                 'Configuration is not bound to immutable source bytes')
@@ -196,50 +200,40 @@ def apply_contract(path, expected_digest, root, version):
     require(set(contract['installer']['resources']) == set(INSTALLER_FILES), 'Incomplete installer resources')
     for component, profile in contract['configuration'].items():
         require(profile['path'] == f'{component}/cmd/server/conf/app.yaml' and type(profile['source_bytes']) is int and 0 < profile['source_bytes'] <= 65536, 'Unsupported embedded source contract')
-    sources_path = root / 'config/sources.json'
-    sources = object_bytes(sources_path.read_bytes())
-    profiles_path = root / 'config/embedded-configs.json'
-    profiles = object_bytes(profiles_path.read_bytes())
-    recipes_path = root / 'config/frontend-lock-repairs.json'
-    recipes = object_bytes(recipes_path.read_bytes())
     lock = contract['frontend_lock']
-    recipe = None
     if lock['kind'] == 'derived':
-        require(absent == ['frontend/package-lock.json'], 'Derived contract must bind original lock absence')
-        matches = [r for v, r in recipes['versions'].items() if sources.get(v, {}).get('source_files_absent') == ['frontend/package-lock.json'] and sources[v].get('source_files_sha256', {}).get('frontend/package.json') == lock['manifest_sha256'] and digest(r) == lock['recipe_sha256'] and r.get('original_absent') and r.get('derived_sha256') == lock['sha256']]
-        require(bool(matches), 'Derived contract lacks an existing verified repair recipe')
-        recipe = matches[0]
-        lock_file = root / 'config' / recipe['reviewed_lock_file']
-        require(not lock_file.is_symlink() and lock_file.is_file() and hashlib.sha256(lock_file.read_bytes()).hexdigest() == lock['sha256'], 'Derived lock bytes mismatch')
+        from lock_catalog import select
+        original = inputs['files'].get('frontend/package-lock.json')
+        original_sha = original['sha256'] if original else None
+        recipe, _ = select(lock['manifest_sha256'], original_sha, root)
+        require(recipe is not None and digest(recipe) == lock['recipe_sha256'] and recipe['derived_sha256'] == lock['sha256'], 'Unbound manifest and original-lock repair recipe')
+        if original is None:
+            require(absent == ['frontend/package-lock.json'], 'Derived contract must bind original lock absence')
+            require(recipe.get('reviewed_lock_file') == 'frontend-locks/' + lock['sha256'] + '.package-lock.json', 'Unexpected content-addressed lock path')
+            lock_file = root / 'config' / recipe['reviewed_lock_file']
+            require(not lock_file.is_symlink() and lock_file.is_file() and hashlib.sha256(lock_file.read_bytes()).hexdigest() == lock['sha256'], 'Derived lock bytes mismatch')
     else:
         require(not absent, 'Source lock cannot be absent')
-    entry = {'source_commit': inputs['commit'], 'installer_commit': contract['installer']['commit'],
-             'go_version': contract['toolchain']['go'], 'node_version': contract['toolchain']['node'], 'npm_version': contract['toolchain']['npm'],
-             'mode': mode, 'geoip_sha256': contract['resources']['geoip']['sha256'],
-             'installer_sha256': {name: row['sha256'] for name, row in contract['installer']['resources'].items()},
-             'installer_original_version': contract['installer']['original_version'],
-             'source_files_sha256': {name: row['sha256'] for name, row in inputs['files'].items() if name in required},
-             'resolved_contract_sha256': expected_digest}
-    geoip = contract['resources']['geoip']
-    entry['geoip_archive' if 'archive' in geoip else 'geoip_url'] = geoip.get('archive', geoip.get('url'))
-    entry['geoip_bytes'] = geoip['bytes']
-    if absent:
-        entry['source_files_absent'] = absent
-        entry['frontend_repair_lock_sha256'] = lock['sha256']
-    profile = {'source_commit': inputs['commit'], 'mode': mode, 'components': {name: {'source_acquisition': 'immutable_vendor_https', 'source_path': row['path'], 'source_bytes': row['source_bytes'], 'source_sha256': row['source_sha256'], 'normalized_sha256': row['normalized_sha256']} for name, row in contract['configuration'].items()}}
-    if version in sources and sources[version] != entry:
-        require(sources[version].get('resolved_contract_sha256') == expected_digest, 'Refusing to replace a checked-in historical input contract')
-    if version in profiles and profiles[version] != profile:
-        require(version in sources and sources[version].get('resolved_contract_sha256') == expected_digest, 'Refusing to replace a checked-in historical configuration profile')
-    # All checks precede writes; the parent contract digest is passed across jobs.
-    sources[version], profiles[version] = entry, profile
-    if recipe is not None:
-        recipes['versions'][version] = recipe
-    sources_path.write_bytes(canonical(sources) + b'\n')
-    profiles_path.write_bytes(canonical(profiles) + b'\n')
-    recipes_path.write_bytes(canonical(recipes) + b'\n')
-    (root / 'config/resolved-source.json').write_bytes(canonical(contract))
+    # Runtime facts live in one authenticated per-run artifact, never a version registry.
+    target = root / 'config/resolved-source.json'
+    require(not target.is_symlink(), 'Linked resolved run contract rejected')
+    if target.exists() and target.read_bytes() != canonical(contract):
+        raise ValueError('Refusing to replace a different resolved run contract')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(canonical(contract))
     return contract
+
+
+def runtime_contract(version, root=None):
+    import os
+    from pathlib import Path
+    root = Path(root) if root is not None else Path(__file__).resolve().parents[1]
+    target=root / 'config/resolved-source.json'
+    require(not target.is_symlink(), 'Linked resolved run contract rejected')
+    raw = target.read_bytes()
+    value = object_bytes(raw)
+    expected = os.environ.get('RESOLVED_CONTRACT_SHA256') or hashlib.sha256(raw).hexdigest()
+    return source_contract(raw, expected, version, value.get('mode'))
 
 
 def activate_release(directory, version, root=None):

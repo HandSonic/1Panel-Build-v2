@@ -3,6 +3,8 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import discover_inputs as discovery
 import resolved_contract as resolved
+from contextlib import contextmanager
+from unittest.mock import patch
 
 class FakeVendor:
  def __init__(self):
@@ -17,9 +19,42 @@ class FakeVendor:
   if url.startswith('https://go.dev/'):return json.dumps([{'version':v,'stable':True} for v in ['go1.24.9','go1.25.0','go1.25.8','go1.26.1']]).encode()
   raise ValueError(url)
 
-def fixture():
- result,_,_=discovery.resolve_source(FakeVendor(),'v2.99.0')
- return {'schema':1,'kind':'1panel-resolved-build-inputs','version':'v2.99.0','mode':'stable','edition':'community','architectures':discovery.ARCHES,'source':result['source'],'configuration':result['configuration'],'frontend_lock':result['frontend_lock'],'toolchain':{'go':result['go'],'node':'22.22.1','npm':'10.9.4'},'installer':{'repository':discovery.INSTALLER,'commit':'b'*40,'original_version':'version','resources':{name:discovery.facts(b'synthetic') for name in discovery.INSTALLER_FILES}},'resources':{'geoip':dict(url='https://resource.fit2cloud.com/1panel/package/v2/geo/GeoIP.mmdb',**discovery.facts(b'geo'))}}
+def fixture(version='v2.99.0',mode='stable',vendor=None):
+ result,_,_=discovery.resolve_source(vendor or FakeVendor(),version,mode)
+ return {'schema':1,'kind':'1panel-resolved-build-inputs','version':version,'mode':mode,'edition':'community','architectures':discovery.ARCHES,'source':result['source'],'configuration':result['configuration'],'frontend_lock':result['frontend_lock'],'toolchain':{'go':result['go'],'node':'22.22.1','npm':'10.9.4'},'installer':{'repository':discovery.INSTALLER,'commit':'b'*40,'original_version':'version','resources':{name:discovery.facts(b'synthetic') for name in discovery.INSTALLER_FILES}},'resources':{'geoip':dict(url='https://resource.fit2cloud.com/1panel/package/v2/geo/GeoIP.mmdb',**discovery.facts(b'geo'))}}
+
+def install_fixture(root,value):
+ path=root/'config/resolved-source.json';path.parent.mkdir(parents=True,exist_ok=True)
+ path.write_bytes(resolved.canonical(value));return path
+
+@contextmanager
+def synthetic_runtime(root,value=None,vendor=None):
+ """Read real per-run contracts and serve only synthetic immutable HTTPS bytes."""
+ import io
+ import embedded_configuration as ec
+ vendor=vendor or FakeVendor();value=fixture(vendor=vendor) if value is None else value
+ install_fixture(root,value);runtime=resolved.runtime_contract
+ def read_contract(version,supplied_root=None):
+  # Route the production default checkout, preserving explicit temporary roots.
+  return runtime(version,root if supplied_root is None or supplied_root==ec.ROOT else supplied_root)
+ def response(url):
+  prefix='https://raw.githubusercontent.com/1Panel-dev/1Panel/'+value['source']['commit']+'/'
+  if not url.startswith(prefix):raise AssertionError('Unexpected source URL: '+url)
+  body=vendor.files[url[len(prefix):]];stream=io.BytesIO(body);stream.geturl=lambda:url
+  return stream
+ ec.fetch_vendor_source.cache_clear()
+ with patch.dict(os.environ),patch.object(resolved,'runtime_contract',side_effect=read_contract),patch.object(ec,'open_vendor_source',side_effect=response):
+  os.environ.pop('RESOLVED_CONTRACT_SHA256',None)
+  try:yield value
+  finally:ec.fetch_vendor_source.cache_clear()
+
+def configuration_shapes():
+ """Small invented source schemas, intentionally unrelated to release versions."""
+ for name,fields in [('minimal',b''),('legacy',b'  is_intl: false\n  remote_url: https://example.invalid\n'),('flags',b'  is_demo: true\n  is_offline: true\n  is_fxplay: true\n  is_enterprise: true\n'),('future',b'  future_option:\n    enabled: true\n    items: [1, two]\n')]:
+  vendor=FakeVendor()
+  for component in ('core','agent'):
+   vendor.files[f'{component}/cmd/server/conf/app.yaml']=b'base:\n  mode: dev\n'+(b'  version: old\n' if component=='core' else b'')+fields+b'log:\n  level: debug\n'
+  yield name,vendor
 
 class SourceDiscoveryTests(unittest.TestCase):
  def test_unlisted_version_and_channels(self):
@@ -43,25 +78,52 @@ class SourceDiscoveryTests(unittest.TestCase):
 class ContractTransportTests(unittest.TestCase):
  def setUp(self):
   t=tempfile.TemporaryDirectory();self.addCleanup(t.cleanup);self.root=Path(t.name);(self.root/'config').mkdir();self.path=self.root/'resolved-source.json';self.value=fixture()
-  for name,value in [('sources.json',{}),('embedded-configs.json',{}),('frontend-lock-repairs.json',{'versions':{},'additions':{}})]: (self.root/'config'/name).write_text(json.dumps(value))
+  for name in ('sources.json','embedded-configs.json','frontend-lock-repairs.json'):(self.root/'config'/name).write_text('poisoned legacy registry')
+  (self.root/'config/repair-locks.json').write_text(json.dumps({'schema':1,'recipes':[],'additions':{}}))
  def write(self):self.path.write_bytes(resolved.canonical(self.value));return resolved.digest(self.value)
  def test_unknown_contract_apply_is_repeatable(self):
-  sha=self.write();resolved.apply_contract(self.path,sha,self.root,'v2.99.0');first={p.name:p.read_bytes() for p in (self.root/'config').iterdir()};resolved.apply_contract(self.path,sha,self.root,'v2.99.0');self.assertEqual(first,{p.name:p.read_bytes() for p in (self.root/'config').iterdir()});self.assertEqual(json.loads(first['sources.json'])['v2.99.0']['resolved_contract_sha256'],sha)
+  sha=self.write();resolved.apply_contract(self.path,sha,self.root,'v2.99.0');first={p.name:p.read_bytes() for p in (self.root/'config').iterdir()};resolved.apply_contract(self.path,sha,self.root,'v2.99.0');self.assertEqual(first,{p.name:p.read_bytes() for p in (self.root/'config').iterdir()});self.assertEqual(first['resolved-source.json'],resolved.canonical(self.value))
+  for name in ('sources.json','embedded-configs.json','frontend-lock-repairs.json'):self.assertEqual(first[name],b'poisoned legacy registry')
  def test_bad_contract_fails_before_writes(self):
   initial={p.name:p.read_bytes() for p in (self.root/'config').iterdir()}
-  for kind in ['digest','source','edition','config','installer','architecture']:
+  for kind in ['digest','source','edition','config','installer','architecture','missing-source','extra-source','absence','version','toolchain']:
    self.value=fixture()
    if kind=='source':self.value['source']['repository']='evil/other'
    if kind=='edition':self.value['edition']='enterprise'
    if kind=='config':self.value['configuration']['core']['path']='elsewhere'
    if kind=='installer':del self.value['installer']['resources']['install.sh']
    if kind=='architecture':self.value['architectures']=['amd64']
+   if kind=='missing-source':del self.value['source']['files']['core/go.mod']
+   if kind=='extra-source':self.value['source']['files']['unrequested']=discovery.facts(b'extra')
+   if kind=='absence':self.value['source']['absent']=['core/go.mod']
+   if kind=='version':self.value['version']='v2.98.0'
+   if kind=='toolchain':self.value['toolchain']['go']='latest'
    sha=self.write()
    with self.subTest(kind=kind),self.assertRaises(ValueError):resolved.apply_contract(self.path,'0'*64 if kind=='digest' else sha,self.root,'v2.99.0')
    self.assertEqual(initial,{p.name:p.read_bytes() for p in (self.root/'config').iterdir()})
- def test_existing_history_cannot_be_overwritten(self):
-  (self.root/'config/sources.json').write_text(json.dumps({'v2.99.0':{'source_commit':'c'*40}}));sha=self.write()
-  with self.assertRaisesRegex(ValueError,'checked-in historical'):resolved.apply_contract(self.path,sha,self.root,'v2.99.0')
+ def test_existing_run_contract_cannot_be_overwritten(self):
+  original=copy.deepcopy(self.value);original['source']['commit']='c'*40
+  target=install_fixture(self.root,original);sha=self.write()
+  with self.assertRaisesRegex(ValueError,'different resolved run contract'):resolved.apply_contract(self.path,sha,self.root,'v2.99.0')
+  self.assertEqual(target.read_bytes(),resolved.canonical(original))
+ def test_legacy_registries_are_never_read(self):
+  originals={method:getattr(Path,method) for method in ('read_text','read_bytes')}
+  legacy={'sources.json','embedded-configs.json','frontend-lock-repairs.json'}
+  def guarded(method):
+   def read(path,*args,**kwargs):
+    if path.name in legacy:raise AssertionError('Legacy registry read: '+str(path))
+    return originals[method](path,*args,**kwargs)
+   return read
+  sha=self.write()
+  with patch.object(Path,'read_text',guarded('read_text')),patch.object(Path,'read_bytes',guarded('read_bytes')):
+   resolved.apply_contract(self.path,sha,self.root,'v2.99.0')
+   self.assertEqual(resolved.runtime_contract('v2.99.0',self.root),self.value)
+   discovered,_,_=discovery.resolve_source(FakeVendor(),'v2.99.0',root=self.root)
+   self.assertEqual(discovered['source'],self.value['source'])
+   import resolve_inputs,embedded_configuration
+   with synthetic_runtime(self.root,self.value):
+    self.assertEqual(resolve_inputs.resolve('v2.99.0')['source_commit'],self.value['source']['commit'])
+    for component in ('core','agent'):self.assertTrue(embedded_configuration.expected_bytes('v2.99.0',component)[1])
  def test_detached_release_contract_is_rejected(self):
   self.write();(self.root/'build-manifest.json').write_text(json.dumps({'version':'v2.99.0','artifacts':[{'resolved_contract_sha256':'0'*64}]}))
   with self.assertRaises(ValueError):resolved.activate_release(self.root,'v2.99.0',self.root)
@@ -154,19 +216,32 @@ class TemporalResourceTests(unittest.TestCase):
 class RecipeManifestBindingTests(unittest.TestCase):
  setUp=ContractTransportTests.setUp
  write=ContractTransportTests.write
- def test_derived_recipe_requires_matching_original_manifest_and_absence(self):
-  data=b'synthetic reviewed lock';sha=hashlib.sha256(data).hexdigest();recipe={'original_absent':True,'derived_sha256':sha,'reviewed_lock_file':'lock.json'}
-  (self.root/'config/lock.json').write_bytes(data)
-  (self.root/'config/frontend-lock-repairs.json').write_text(json.dumps({'versions':{'v2.1.0':recipe}}))
+ def test_derived_recipe_requires_matching_manifest_and_original_lock_absence(self):
+  data=b'synthetic reviewed lock';sha=hashlib.sha256(data).hexdigest()
   self.value['source']['absent']=['frontend/package-lock.json'];del self.value['source']['files']['frontend/package-lock.json']
   manifest=self.value['source']['files']['frontend/package.json']['sha256']
+  recipe={'manifest_sha256':manifest,'original_sha256':None,'derived_sha256':sha,'reviewed_lock_file':'frontend-locks/'+sha+'.package-lock.json'}
+  lock_file=self.root/'config'/recipe['reviewed_lock_file'];lock_file.parent.mkdir();lock_file.write_bytes(data)
   self.value['frontend_lock']={'kind':'derived','sha256':sha,'manifest_sha256':manifest,'recipe_sha256':resolved.digest(recipe)}
-  for source in [{},{'source_files_absent':[],'source_files_sha256':{'frontend/package.json':manifest}},{'source_files_absent':['frontend/package-lock.json'],'source_files_sha256':{'frontend/package.json':'0'*64}}]:
-   (self.root/'config/sources.json').write_text(json.dumps({'v2.1.0':source}));initial={p.name:p.read_bytes() for p in (self.root/'config').iterdir()}
-   with self.assertRaisesRegex(ValueError,'verified repair recipe'):resolved.apply_contract(self.path,self.write(),self.root,'v2.99.0')
-   self.assertEqual(initial,{p.name:p.read_bytes() for p in (self.root/'config').iterdir()})
-  (self.root/'config/sources.json').write_text(json.dumps({'v2.1.0':{'source_files_absent':['frontend/package-lock.json'],'source_files_sha256':{'frontend/package.json':manifest}}}))
+  catalog={'schema':1,'recipes':[recipe],'additions':{}}
+  for kind in ('missing','manifest','original-lock','recipe-digest','payload','linked-payload'):
+   altered=copy.deepcopy(catalog)
+   if kind=='missing':altered['recipes']=[]
+   if kind=='manifest':altered['recipes'][0]['manifest_sha256']='0'*64
+   if kind=='original-lock':altered['recipes'][0]['original_sha256']='0'*64
+   if kind=='recipe-digest':altered['recipes'][0]['derived_sha256']='0'*64
+   if kind=='payload':lock_file.write_bytes(b'changed')
+   if kind=='linked-payload':
+    lock_file.rename(lock_file.with_suffix('.actual'));lock_file.symlink_to(lock_file.with_suffix('.actual'))
+   (self.root/'config/repair-locks.json').write_text(json.dumps(altered))
+   before={p.name:p.read_bytes() for p in (self.root/'config').iterdir() if p.is_file()}
+   with self.subTest(kind=kind),self.assertRaises(ValueError):resolved.apply_contract(self.path,self.write(),self.root,'v2.99.0')
+   self.assertEqual(before,{p.name:p.read_bytes() for p in (self.root/'config').iterdir() if p.is_file()})
+   if lock_file.is_symlink():lock_file.unlink()
+   lock_file.write_bytes(data)
+  (self.root/'config/repair-locks.json').write_text(json.dumps(catalog))
   resolved.apply_contract(self.path,self.write(),self.root,'v2.99.0')
+  self.assertEqual(resolved.runtime_contract('v2.99.0',self.root),self.value)
  def test_archive_contract_identity_bounds_and_channel(self):
   _,geo=discovery.official_archive(OfficialArchiveTests().archive_vendor(),'v2.99.0','stable');self.value['resources']['geoip']=geo
   resolved.apply_contract(self.path,self.write(),self.root,'v2.99.0')

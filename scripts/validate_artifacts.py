@@ -77,7 +77,13 @@ def validate_dist(dist,version,arches):
     if {p.name for p in dist.iterdir()}!=expected: raise ValueError('Unexpected or missing release files')
     aggregate=''.join((dist/(r['file']+'.sha256')).read_text() for r in records)
     if (dist/'checksums.txt').read_text()!=aggregate: raise ValueError('Aggregate checksums mismatch')
-    if json.loads((dist/'build-manifest.json').read_text())!={'schema_version':1,'version':version,'artifacts':records}: raise ValueError('Release manifest mismatch')
+    aggregate_manifest = json.loads((dist/'build-manifest.json').read_text())
+    if aggregate_manifest.get('schema_version') == 2:
+        from matrix_contract import validate
+        if validate(aggregate_manifest, version) != list(arches) or aggregate_manifest['artifacts'] != records:
+            raise ValueError('Partial release manifest mismatch')
+    elif aggregate_manifest != {'schema_version':1,'version':version,'artifacts':records}:
+        raise ValueError('Release manifest mismatch')
     return records
 if __name__=='__main__':
     validate_dist(pathlib.Path(sys.argv[1]),sys.argv[2],architectures(' '.join(sys.argv[3:])))

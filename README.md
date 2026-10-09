@@ -7,15 +7,15 @@ build and does not enable enterprise capabilities.
 
 ## Reviewed inputs
 
-Historical input contracts remain in `config/sources.json`. Scheduled builds discover
-the official stable release; manual runs can select stable, beta or dev, or name
-an exact version. A compatible version absent from the historical registry is
-resolved into a per-run `resolved-source.json` artifact, without adding a version
-entry to the repository. The contract pins source/installer commits, exact
+Every version follows the same discovery path. There is no version allowlist or
+checked-in per-version source/configuration map. Scheduled builds select the
+official stable release; manual runs may select a channel or an explicit version.
+The generated `resolved-source.json` artifact pins source/installer commits,
 Go/Node/npm versions, resources, dependency inputs and embedded configuration.
+Subsequent jobs authenticate that exact contract rather than rediscovering inputs.
 
 Discovery compares installer resources against the matching official archive.
-It checks the resolved installer tip, existing immutable inputs and up to 300
+It checks the resolved installer tip and up to 300
 commits of official history anchored to that tip. Unmatched or unavailable
 history fails explicitly. GeoIP is bound to the same version archive, with full
 compressed size/hash and member size/hash checks, so later updates to the
@@ -32,14 +32,13 @@ The custom source build remains community-only. Enterprise packages use the
 separate downstream official-package path and installation gates. Builds alone
 do not imply a published or installation-verified release.
 
-The v2.3.2 source is `65243c68c463cc055ab044093f641ea5d2e9e28b`.
-The installer is `aa4a6bbf24ae0fd938b32294672f5086f940e483`: its install.sh
-SHA256 matches the official v2.3.2 installer (`3faa744fd158283470b48b3a971dc98cc390c7f291d4287b170416ae862dd28f`).
-GeoIP comes from the official resource host with a locked hash. A host update
-requires an explicit reviewed lock change; a changed response fails closed.
+Dependency repairs are selected by exact package-manifest and original-lock
+hashes in `config/repair-locks.json`, including an explicit absent-lock selector.
+The three stored lock payloads are content-addressed and shared across matching
+source manifests. Repairs never upgrade arbitrary existing dependencies or
+resolve floating versions during replay. Unknown missing-lock inputs stop with
+an actionable compatibility error until a suitable repair is reviewed.
 
-This historical source uses Go 1.26.1. Node 22.22.1 and npm 10.9.4 are pinned and checked
-at build time. Frontend dependencies use `npm ci` and the source lockfile.
 Release config is embedded before compiling: stable releases use `stable` and
 `info`; beta/dev versions use their matching channel and the same discovery gates. Demo, enterprise and fxplay remain false. `is_offline` remains false:
 shipping offline installation resources is not the application's separate
@@ -55,6 +54,8 @@ recorded build-repository commit identifies the build scripts actually used.
 VERSION=v2.3.2
 TARGET_ARCHES='amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
 python3 -m unittest discover -s tests -v
+contract_sha=$(python3 scripts/discover_inputs.py --version "$VERSION" --output resolved-source.json)
+python3 scripts/resolved_contract.py apply resolved-source.json "$VERSION" --sha256 "$contract_sha"
 python3 scripts/resolve_inputs.py "$VERSION" > build-inputs.env
 source build-inputs.env
 docker build --build-arg VERSION="$VERSION" \
@@ -93,11 +94,19 @@ do not replace real builds or installed-service runtime tests on each target.
 
 GitHub Actions runs regression tests, builds the requested matrix and preserves
 verified pipeline artifacts. Existing tags/releases do not suppress validation.
+Matrix jobs use `fail-fast: false`. A failed architecture is omitted while successful
+branches are independently validated and aggregated. The schema-2 manifest records
+every requested architecture, its exact producer attempt/job identity, and its
+terminal result. Shared source/preparation/validation failures block all dependent
+artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs,
+warnings and summaries, never Release notes. A failed branch's previous canonical
+assets are moved to recoverable backup names during an explicitly selected repair;
+checksum/receipt updates include only validated successful payloads.
 An explicit `publish_candidate` dispatch creates a **new draft** tag/release,
 downloads its assets again and verifies exact byte identity. It never overwrites
 public release assets. Promotion requires separate review after downstream
-regression. Scheduled builds use the reviewed default version, never floating
-latest. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
+regression. Scheduled builds discover the official channel version and immediately
+pin its immutable inputs. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
 and preserves pipeline artifacts. CNB automatic publication is intentionally
 removed until a provider-specific verified staging/promote flow is reviewed.
 
