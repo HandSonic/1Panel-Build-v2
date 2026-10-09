@@ -154,3 +154,38 @@ architecture may replace only its own intermediate shard on a failed-job rerun.
 A full preparation rerun gets a new artifact ID and isolated shard namespace.
 The final verified artifact remains immutable and is never overwritten; use a
 new workflow run when intentionally rebuilding an already successful aggregate.
+
+
+## Historical configuration compatibility and input readiness
+
+`semantic_configuration.py` uses pinned PyYAML 6.0.3 in an isolated Python
+environment. It rejects duplicate keys, aliases/anchors, explicit tags, malformed
+critical values and non-boolean known flags. It edits `base.mode`, Core
+`base.version`, `log.level`, and known boolean flags only when present. Other
+sections, unknown fields, comments and layout survive standalone normalization.
+An absent optional flag is never inserted.
+
+Build configuration must still match a SHA-pinned per-version source fixture
+semantically, or its already normalized form. Benign YAML spacing, key order,
+comments and line-ending differences are accepted. A typed comparison prevents
+Python's `false == 0` behavior from hiding a semantic change. The build emits the
+reviewed canonical normalized bytes and verifies their SHA, preserving exact
+binary-embedding checks. An unreviewed field/value change is a source-integrity
+failure, not an optional-field compatibility shortcut. Both components are
+validated before either is written.
+
+Fourteen configuration profiles are covered using cached immutable source
+snapshots, including older schemas without enterprise/FXPlay flags. Newly added
+profiles use current-tag snapshots for future reproducible rebuilds; they do not
+claim those commits produced an original historical release. Existing reviewed
+profiles retain their original source and normalized hashes.
+
+`config/historical-input-readiness.json` enumerates all 40 historical/current
+versions. It is planning metadata, never an input fallback. Only v2.3.2 currently
+has a complete enabled source lock. Older versions still need their frontend
+package-lock bytes, exact Node/npm compatibility, a reviewed exact Go compiler
+satisfying BOTH Core and Agent module requirements, and complete reviewed
+installer/GeoIP pins. Available source and installer candidates are not silently
+promoted to trusted build inputs. Every newly enabled version still requires an
+unpublished full seven-architecture build and downstream install/upgrade checks.
+No historical rebuild or runtime result is implied by parser fixture coverage.

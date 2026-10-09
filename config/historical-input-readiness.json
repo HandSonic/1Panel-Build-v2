@@ -1,0 +1,980 @@
+{
+  "scope": "40 released versions; candidate metadata only, not a build input lock",
+  "enabled_versions": [
+    "v2.3.2"
+  ],
+  "versions": [
+    {
+      "version": "v2.3.2",
+      "source_lock_enabled": true,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "65243c68c463cc055ab044093f641ea5d2e9e28b",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": "1.26.1",
+      "missing_review_inputs": [],
+      "required_validation": []
+    },
+    {
+      "version": "v2.3.1",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "0bad1b471f001ab6f3387ce6f8f0988a44d36d62",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "verified_from_actual_build_job_log",
+      "installer_candidate_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+      "installer_byte_proven_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+      "minimum_go_requirement": "1.26.1",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.3.0",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "2485b0aa5e166891fb351477cb43045e432a1339",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "verified_from_actual_build_job_log",
+      "installer_candidate_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+      "installer_byte_proven_commit": "aa4a6bbf24ae0fd938b32294672f5086f940e483",
+      "minimum_go_requirement": "1.26.1",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.2.5",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "e7ef35740ccd5ea026e091ee15168a2ba35ab923",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "verified_from_actual_build_job_log",
+      "installer_candidate_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+      "installer_byte_proven_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+      "minimum_go_requirement": "1.26.1",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.2.4",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "c04848a92a1add75997c38dbd8b5987dde333dee",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "verified_from_actual_build_job_log",
+      "installer_candidate_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+      "installer_byte_proven_commit": "9a3f6c8ccbbab2ba48d2aba3759ee999efa8b1f9",
+      "minimum_go_requirement": "1.26.1",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.2.3",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "582cf1f5331487baed05a2785c6be59b6d12c812",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "unverified_historical_job_logs_HTTP_410",
+      "installer_candidate_commit": "4441fc3e546cf155ae1145e7d092909cbfc9476f",
+      "installer_byte_proven_commit": "4441fc3e546cf155ae1145e7d092909cbfc9476f",
+      "minimum_go_requirement": "1.26.1",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.2.2",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "439c4794b7c34510c84a512926d49565e0b855ce",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": "1.25.10",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.2.1",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "209c12644543fba6afbc1a7088df2f7a7d320599",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "2ac4eedaa295375bb5c3360d5b44ae0d50eb1e6c",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": "1.25.10",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.13",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "7159aca226c172cf9360a93d37e10413d1dc4276",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "81a7964ac739d5be7b7099505666dd6f6c9a0544",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": "1.25.7",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.12",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "c392b72470a268f4720d7b68544720bf8c64fae8",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "81a7964ac739d5be7b7099505666dd6f6c9a0544",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": "1.25.7",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.11",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "79703e3c71b47040fa3d89abed475d94ecdeb367",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": "1.25.7",
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.10",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "4c396d68caa77fb7fa266de45def936b8f05a97a",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_go_mod_requirement",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.9",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "5ab758d626573705dba3da5c82c87b7a5b197cdf",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.8",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "6ea07421acf1e396606a892f44d76af9d5e8a7b2",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.7",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "6e052b8ef265dedbe2a50316159ee2b47fefb9ed",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.6",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "2d78ca5a869c832a31e4e5eae1b9419cd5245cd7",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.5",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "142c9b9a712b975178e57582828459b1c53569db",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "unverified_historical_job_logs_HTTP_410",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_go_mod_requirement",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.4",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "d114933fe9a44f6fbe65178cbbd56c9c5940baec",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.3",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "90d11a3b74d452b1cf311f08062a05c40e9545a1",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.2",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "c986b046678611e7c00022d490c9eed6a7439d4b",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "0230b8b50ad0dfe8e859e9517a9cdd5490df1c4d",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.1",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "8644579edad05d99d621a8a895c3f857bf898ea6",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "ec6d9b992094c17816bc7670b2775f1a5798c66f",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.1.0",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "6c3f56516fd405201aa1bb49367bf737fae3ca4e",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "ec6d9b992094c17816bc7670b2775f1a5798c66f",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.17",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "2b7562f54688c66b52b1f16c1c5ed9bc2b886b9b",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "ff11bea94524a668bc70c4cb7997f9a09c5fe074",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.16",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "f27a429fc589a740b4eb09763dcd8e5367f5e9c5",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "f811017b3f303f53548926fe5a8f8ec6f09cb2a5",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.15",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "7f9f4ae740b8fd80e06bb740a43a13836cc53a85",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "a0ba419d93169eb292f50da5a557501930800064",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.14",
+      "source_lock_enabled": false,
+      "embedded_config_profile": true,
+      "source_commit_candidate": "b3350b54b3f885a03674b86642b9f1ff73cfb43f",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "a0ba419d93169eb292f50da5a557501930800064",
+      "installer_byte_proven_commit": "a0ba419d93169eb292f50da5a557501930800064",
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_go_mod_requirement",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.0",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "8b9337b45a3512c54061a6b1ef4a75ab42af5505",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.13",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "217d780ed1820178a8d54def6d4b4189c1e78afd",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.12",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "da23b8e6d9538a078beb59dc4765ef886f8a48ff",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.11",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "7e8581a7de2cc5c65b445a6374a616c6070bda35",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.10",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "c5d403f10a1f67f223dda8859ae0333cb9241315",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.9",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "dd47fcc529d996834ea8a93f696d30dc4cf49887",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.8",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "9fed5f4bb8477a5d6d242a3ae5cb8ac4c171de23",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.7",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "b3a55ea44df6a3ba1ae0d1b17a56f97765faa285",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.6",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "04b9cbd87a1532adc0e8618e116e2c555bc5dc65",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.5",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "0cfdf0f3353085add2250eca37d3cd569a3827e6",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.4",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "0128cd313817580e5da573512ac8c6d47f3ea3bb",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.3",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "3f26412585168322841faa8f1a4f927f7f87b6f2",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.2",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "cf230ca6e78c43e285cfc2f3f5b686e794a3b6ec",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    },
+    {
+      "version": "v2.0.1",
+      "source_lock_enabled": false,
+      "embedded_config_profile": false,
+      "source_commit_candidate": "b1799d8c064238d0fe489f53deefe8aa1afd77d2",
+      "source_pin_meaning": "current_tag_snapshot_for_rebuild",
+      "original_checkout_provenance": "not_established",
+      "installer_candidate_commit": "d1c86b3c1f93a5fb4b62060d5c121001af2d1c3e",
+      "installer_byte_proven_commit": null,
+      "minimum_go_requirement": null,
+      "missing_review_inputs": [
+        "frontend_package_lock_json",
+        "reviewed_exact_node_npm_compatibility",
+        "reviewed_exact_go_selection_from_both_modules",
+        "complete_reviewed_geoip_and_installer_resource_pins",
+        "core_configuration_fixture",
+        "core_go_mod_requirement",
+        "agent_configuration_fixture",
+        "agent_go_mod_requirement",
+        "frontend_package_json"
+      ],
+      "required_validation": [
+        "unpublished_full_seven_architecture_build",
+        "downstream_install_upgrade_runtime"
+      ]
+    }
+  ]
+}

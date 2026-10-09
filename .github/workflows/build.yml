@@ -43,6 +43,11 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s tests -v
   prepare:
@@ -60,6 +65,11 @@ jobs:
       INPUT_VERSION: ${{ inputs.version }}
       INPUT_ARCHES: ${{ inputs.arch }}
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - name: Resolve immutable build inputs
         id: inputs
@@ -121,6 +131,11 @@ jobs:
       GOTOOLCHAIN: local
       PREPARED_SHA256: ${{ needs.prepare.outputs.source_sha256 }}
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -174,6 +189,11 @@ jobs:
       BUILD_REPOSITORY_COMMIT: ${{ github.sha }}
       SHARD_GENERATION: ${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -201,6 +221,11 @@ jobs:
       VERSION: ${{ needs.build.outputs.version }}
       TARGET_ARCHES: ${{ needs.build.outputs.arches }}
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -249,6 +274,11 @@ jobs:
       UPSTREAM_ARTIFACT_SHA256: ${{ inputs.upstream_artifact_sha256 }}
       UPSTREAM_BUILD_COMMIT: ${{ inputs.upstream_build_commit }}
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
@@ -289,6 +319,11 @@ jobs:
       PUBLICATION_OPERATION: ${{ inputs.operation }}
       EXPECTED_VALIDATION_RECEIPT_SHA256: ${{ needs.publication_prepare.outputs.receipt_sha256 }}
     steps:
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
