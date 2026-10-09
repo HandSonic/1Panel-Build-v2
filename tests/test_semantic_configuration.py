@@ -17,6 +17,7 @@ class SemanticConfigurationTests(unittest.TestCase):
     def test_all_reviewed_fixtures_and_benign_variations(self):
         registry=json.loads((ROOT/'config/embedded-configs.json').read_text())
         for version,entry in registry.items():
+            if any(p.get('source_acquisition') for p in entry['components'].values()):continue  # Synthetic HTTPS tests cover this route.
             for component in ['core','agent']:
                 old,new,_=expected_bytes(version,component)
                 parsed=yaml.safe_load(old)
@@ -66,7 +67,8 @@ class SemanticConfigurationTests(unittest.TestCase):
         self.assertIn('future: keep',result)
 
     def test_configure_accepts_formatting_but_emits_reviewed_bytes(self):
-        for version in json.loads((ROOT/'config/embedded-configs.json').read_text()):
+        for version,entry in json.loads((ROOT/'config/embedded-configs.json').read_text()).items():
+            if any(p.get('source_acquisition') for p in entry['components'].values()):continue  # Synthetic HTTPS tests cover this route.
             with tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp)
                 for component in ['core','agent']:

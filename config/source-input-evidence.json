@@ -3651,6 +3651,472 @@
         "builtin_offline_docker_tree_helper": false
       },
       "state": "reviewed_input_candidate_pending_independent_review_and_build"
+    },
+    "v2.1.9": {
+      "go_requirements": {
+        "core/go.mod": {
+          "go": "1.25.7"
+        },
+        "agent/go.mod": {
+          "go": "1.25.7"
+        }
+      },
+      "source_identity": {
+        "version": "v2.1.9",
+        "status": "verified_version_tag_for_repair_original_checkout_unproven",
+        "build_repository_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "current_source_tag_commit": "5ab758d626573705dba3da5c82c87b7a5b197cdf",
+        "source_url": "https://github.com/1Panel-dev/1Panel/tree/5ab758d626573705dba3da5c82c87b7a5b197cdf",
+        "release_url": "https://github.com/HandSonic/1Panel-Build-v2/releases/tag/v2.1.9",
+        "builder_tag_commit": "e7d04002a221ae404b74100814004573d88bd218",
+        "builder_commit_provenance": "tag_target_only_not_proof_of_actual_asset_build",
+        "upstream_asset_created_dates": [
+          "2026-04-23"
+        ],
+        "release_original_published_at": "2026-04-23T09:09:37Z",
+        "asset_rebuild_date_warning": false,
+        "actual_checkout_provenance": "not_established"
+      },
+      "frontend": {
+        "version": "v2.1.9",
+        "source_commit": "5ab758d626573705dba3da5c82c87b7a5b197cdf",
+        "files": [
+          {
+            "path": "core/go.mod",
+            "git_blob_sha": "2e9a73fbf7f9363a5343798d69f587630710fde8",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/5ab758d626573705dba3da5c82c87b7a5b197cdf/core/go.mod",
+            "sha256": "800afe6853d39a784ecba0765c0bfed217bf5d204787fb943c6ef12d467307a6",
+            "bytes": 5447
+          },
+          {
+            "path": "agent/go.mod",
+            "git_blob_sha": "8d8310e20403e09d8c690212480783d34526b71d",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/5ab758d626573705dba3da5c82c87b7a5b197cdf/agent/go.mod",
+            "sha256": "259012c34d455f9658b0c2b4a2e1bc499c60c56d468ca7f42fb5c52c4581d86b",
+            "bytes": 13936
+          },
+          {
+            "path": "frontend/package.json",
+            "git_blob_sha": "52237c15da5fd468947f31c2d6b86b2e5b344a22",
+            "url": "https://github.com/1Panel-dev/1Panel/blob/5ab758d626573705dba3da5c82c87b7a5b197cdf/frontend/package.json",
+            "sha256": "fefb337eb4af501df0d26b8401c71e7d0766e5f44e327b915e1b9cdf537eab3e",
+            "bytes": 3709
+          }
+        ],
+        "frontend_directory": [
+          {
+            "name": ".editorconfig",
+            "sha": "53408a9e5bd09d67ec160d89b5c85e62f60cb50f",
+            "type": "file"
+          },
+          {
+            "name": ".env",
+            "sha": "8e79839fe8484304b2483cc659542324c70b8fae",
+            "type": "file"
+          },
+          {
+            "name": ".env.development",
+            "sha": "fe459a35d2431048c166c4fdef3f77055216275f",
+            "type": "file"
+          },
+          {
+            "name": ".env.production",
+            "sha": "5c897a23bbc22e89a5260df067c2070fb04a6074",
+            "type": "file"
+          },
+          {
+            "name": ".eslintignore",
+            "sha": "c46be83dd0d414253d40cb01e3c7a5682c308145",
+            "type": "file"
+          },
+          {
+            "name": ".eslintrc.js",
+            "sha": "f42e646046a2e4926a2f5c1d280b536fe43c4407",
+            "type": "file"
+          },
+          {
+            "name": ".gitignore",
+            "sha": "9b6f6a2e86a8674b351f622efa8160b4e570a188",
+            "type": "file"
+          },
+          {
+            "name": ".prettierignore",
+            "sha": "749c863ff3a07b92a0d6b4561b082f16350ad885",
+            "type": "file"
+          },
+          {
+            "name": ".prettierrc.js",
+            "sha": "42706969acf244d36bc2eb52d83d6f966daca0e5",
+            "type": "file"
+          },
+          {
+            "name": "index.html",
+            "sha": "f5c3d49d2356212af86270c6d6490e6c79b5fad4",
+            "type": "file"
+          },
+          {
+            "name": "lint-staged.config.js",
+            "sha": "b3821e056f6005bbd7f0a3b55393cf6c760b9bee",
+            "type": "file"
+          },
+          {
+            "name": "package.json",
+            "sha": "52237c15da5fd468947f31c2d6b86b2e5b344a22",
+            "type": "file"
+          },
+          {
+            "name": "postcss.config.cjs",
+            "sha": "67cdf1a55fc3e666199b19f69367b5ff0b05f1fc",
+            "type": "file"
+          },
+          {
+            "name": "public",
+            "sha": "12087e454ab56cdb46b4d99eaf12d494ec03c878",
+            "type": "dir"
+          },
+          {
+            "name": "src",
+            "sha": "10292035013689a17cdc0ab4a5de75555177a821",
+            "type": "dir"
+          },
+          {
+            "name": "tailwind.config.js",
+            "sha": "b7ee96260009ff7bb97d3f0d7805a9ac62781158",
+            "type": "file"
+          },
+          {
+            "name": "tsconfig.json",
+            "sha": "9dd7c5e31bec1459b93712c0c0694759a9ebf7ab",
+            "type": "file"
+          },
+          {
+            "name": "vite-env.d.ts",
+            "sha": "8cee151713c4ef830e86c521e8fa0ce6415f12f0",
+            "type": "file"
+          },
+          {
+            "name": "vite.config.ts",
+            "sha": "c5d1a5f81cb879cfcf423c6752af11d5afe1edbd",
+            "type": "file"
+          }
+        ],
+        "lock_state": "absent_in_frontend_directory"
+      },
+      "source_pin_meaning": "verified_version_tag_commit_for_repair_build",
+      "installer_raw_git_blob_evidence": {
+        "commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
+        "tree_truncated": false,
+        "files": [
+          {
+            "path": "1pctl",
+            "git_blob_sha": "02e6906f462702c537e3b977076404a5257be69c",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/1pctl"
+          },
+          {
+            "path": "initscript/1panel-agent.init",
+            "git_blob_sha": "4ddfb176e3c672dfb93243f3c35a900cae8e700f",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-agent.init"
+          },
+          {
+            "path": "initscript/1panel-agent.openrc",
+            "git_blob_sha": "8b73654d14a53c92def736c4cca788c428aae996",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-agent.openrc"
+          },
+          {
+            "path": "initscript/1panel-agent.procd",
+            "git_blob_sha": "36babb9648939bf5a342ecdf21bcdea11794c961",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-agent.procd"
+          },
+          {
+            "path": "initscript/1panel-agent.service",
+            "git_blob_sha": "9049bcb7592294ded414266eeb9ff779c020bccd",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-agent.service"
+          },
+          {
+            "path": "initscript/1panel-core.init",
+            "git_blob_sha": "1c037063cd09557db8add85bfb09143a50934c57",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-core.init"
+          },
+          {
+            "path": "initscript/1panel-core.openrc",
+            "git_blob_sha": "29a68391d233c28ed5518fab66223d88c2477da7",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-core.openrc"
+          },
+          {
+            "path": "initscript/1panel-core.procd",
+            "git_blob_sha": "8f2fade1ac9fcb3129424155375c7800606544af",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-core.procd"
+          },
+          {
+            "path": "initscript/1panel-core.service",
+            "git_blob_sha": "3074e968aa8cd0bfe8ce03767629774d654795a5",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/initscript/1panel-core.service"
+          },
+          {
+            "path": "install.sh",
+            "git_blob_sha": "2aab9251001e43b31315a82525a2cbaf336bb094",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/install.sh"
+          },
+          {
+            "path": "lang/en.sh",
+            "git_blob_sha": "1f223b21694143f4e35a859c5df907a02b2dbb80",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/lang/en.sh"
+          },
+          {
+            "path": "lang/fa.sh",
+            "git_blob_sha": "fed04534563d6eb67a0fe1577a2df41d9ef0c4e1",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/lang/fa.sh"
+          },
+          {
+            "path": "lang/pt-BR.sh",
+            "git_blob_sha": "1a8d310bf283fd6afa1e317aabe2c8ed2a61d115",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/lang/pt-BR.sh"
+          },
+          {
+            "path": "lang/ru.sh",
+            "git_blob_sha": "073fb23ca88b9360cbfe7517be30b6c2bef4a77d",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/lang/ru.sh"
+          },
+          {
+            "path": "lang/zh.sh",
+            "git_blob_sha": "0fbfcf55500bdc55b122fc95a77da8109c6a5f89",
+            "url": "https://raw.githubusercontent.com/1Panel-dev/installer/1da5a4178bdaac17037536b732970d16df0ceec0/lang/zh.sh"
+          }
+        ]
+      },
+      "installer_published_member_comparison": {
+        "amd64": [
+          {
+            "name": "install.sh",
+            "bytes": 28737,
+            "sha256": "6c460520dff0fe895fec037bd7a6e332cbbe78c56e0edbbd147c552881c5bd8b"
+          },
+          {
+            "name": "1pctl",
+            "bytes": 13141,
+            "sha256": "47d6788875335fb3dab65003f3267919cbab9d4eeea715ac7a0f8e8898e9da6e"
+          },
+          {
+            "name": "initscript/1panel-core.openrc",
+            "bytes": 804,
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c"
+          },
+          {
+            "name": "initscript/1panel-agent.service",
+            "bytes": 449,
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228"
+          },
+          {
+            "name": "initscript/1panel-core.service",
+            "bytes": 448,
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d"
+          },
+          {
+            "name": "initscript/1panel-core.init",
+            "bytes": 4428,
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3"
+          },
+          {
+            "name": "initscript/1panel-agent.procd",
+            "bytes": 594,
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7"
+          },
+          {
+            "name": "initscript/1panel-agent.init",
+            "bytes": 4432,
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc"
+          },
+          {
+            "name": "initscript/1panel-core.procd",
+            "bytes": 577,
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae"
+          },
+          {
+            "name": "initscript/1panel-agent.openrc",
+            "bytes": 819,
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05"
+          },
+          {
+            "name": "lang/pt-BR.sh",
+            "bytes": 8641,
+            "sha256": "0384c5b5320772b88035849b102e13fade88a0ef13dc645c22a9c00d0577b426"
+          },
+          {
+            "name": "lang/zh.sh",
+            "bytes": 7474,
+            "sha256": "2864c5563be5ef869a8c6499b5a6f9b6eb88b0cd24bf063b3c475d3e8e159a4a"
+          },
+          {
+            "name": "lang/fa.sh",
+            "bytes": 8586,
+            "sha256": "735b4da7f987567c1133b3267874470e8300beccfd74eb1e03cb45b64822ca8d"
+          },
+          {
+            "name": "lang/en.sh",
+            "bytes": 8025,
+            "sha256": "c27689e624be3e8d95a5c412525254ff7be192d49a27549a214910b47626a391"
+          },
+          {
+            "name": "lang/ru.sh",
+            "bytes": 11730,
+            "sha256": "88fe11f0c6fdc02090cbdb7286353e642284886c671288b6ff23bc715eff1174"
+          }
+        ]
+      },
+      "historical_archive_stream_evidence": {
+        "version": "v2.1.9",
+        "arch": "amd64",
+        "observed_at_utc": "2026-10-09T07:16:01.641891+00:00",
+        "url": "https://github.com/HandSonic/1Panel-Build-v2/releases/download/v2.1.9/1panel-v2.1.9-linux-amd64.tar.gz",
+        "compressed_bytes": 59489815,
+        "compressed_sha256": "034f9de1f1fb6ba522f5619d01d17d2a7f98de00e7525df8507cc91da08440eb",
+        "members": [
+          {
+            "name": "README.md",
+            "bytes": 6450,
+            "sha256": "24315bc1509443978283ebd80480798cd617f2abce829330f0734c681a2e1eb7"
+          },
+          {
+            "name": "install.sh",
+            "bytes": 28737,
+            "sha256": "6c460520dff0fe895fec037bd7a6e332cbbe78c56e0edbbd147c552881c5bd8b"
+          },
+          {
+            "name": "LICENSE",
+            "bytes": 35149,
+            "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+          },
+          {
+            "name": "1pctl",
+            "bytes": 13141,
+            "sha256": "47d6788875335fb3dab65003f3267919cbab9d4eeea715ac7a0f8e8898e9da6e"
+          },
+          {
+            "name": "initscript/1panel-core.openrc",
+            "bytes": 804,
+            "sha256": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c"
+          },
+          {
+            "name": "initscript/1panel-agent.service",
+            "bytes": 449,
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228"
+          },
+          {
+            "name": "initscript/1panel-core.service",
+            "bytes": 448,
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d"
+          },
+          {
+            "name": "initscript/1panel-core.init",
+            "bytes": 4428,
+            "sha256": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3"
+          },
+          {
+            "name": "initscript/1panel-agent.procd",
+            "bytes": 594,
+            "sha256": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7"
+          },
+          {
+            "name": "initscript/1panel-agent.init",
+            "bytes": 4432,
+            "sha256": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc"
+          },
+          {
+            "name": "initscript/1panel-core.procd",
+            "bytes": 577,
+            "sha256": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae"
+          },
+          {
+            "name": "initscript/1panel-agent.openrc",
+            "bytes": 819,
+            "sha256": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05"
+          },
+          {
+            "name": "1panel-agent.service",
+            "bytes": 449,
+            "sha256": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228"
+          },
+          {
+            "name": "1panel-core",
+            "bytes": 73830584,
+            "sha256": "f0023988b00406f40619504fa79ba7759917ae8148cf762b46653aeb1cd2f927"
+          },
+          {
+            "name": "1panel-core.service",
+            "bytes": 448,
+            "sha256": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d"
+          },
+          {
+            "name": "lang/pt-BR.sh",
+            "bytes": 8641,
+            "sha256": "0384c5b5320772b88035849b102e13fade88a0ef13dc645c22a9c00d0577b426"
+          },
+          {
+            "name": "lang/zh.sh",
+            "bytes": 7474,
+            "sha256": "2864c5563be5ef869a8c6499b5a6f9b6eb88b0cd24bf063b3c475d3e8e159a4a"
+          },
+          {
+            "name": "lang/fa.sh",
+            "bytes": 8586,
+            "sha256": "735b4da7f987567c1133b3267874470e8300beccfd74eb1e03cb45b64822ca8d"
+          },
+          {
+            "name": "lang/en.sh",
+            "bytes": 8025,
+            "sha256": "c27689e624be3e8d95a5c412525254ff7be192d49a27549a214910b47626a391"
+          },
+          {
+            "name": "lang/ru.sh",
+            "bytes": 11730,
+            "sha256": "88fe11f0c6fdc02090cbdb7286353e642284886c671288b6ff23bc715eff1174"
+          },
+          {
+            "name": "1panel-agent",
+            "bytes": 77279416,
+            "sha256": "f8cba85c9419702936da6f9bfaa4a08933943e7ab92efa79f79219ee57549c38"
+          },
+          {
+            "name": "GeoIP.mmdb",
+            "bytes": 19565776,
+            "sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b"
+          }
+        ],
+        "archive_or_binaries_written": false,
+        "retained_resource_count": 15
+      },
+      "installer_hash_meaning": "15 immutable raw installer resources match actual historical amd64 archive after 1pctl ORIGINAL_VERSION substitution",
+      "frontend_lock_provenance": {
+        "kind": "explicit_derived_repair_input_original_lock_absent",
+        "path": "config/frontend-locks/v2.1.9.package-lock.json",
+        "sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1",
+        "reused_from_version": "v2.1.11",
+        "reused_producer_commit": "8e8ffd07a00c2660b559e999846b6bf6d82fc152",
+        "reused_successful_run": 37890787279,
+        "original_package_json_sha256": "fefb337eb4af501df0d26b8401c71e7d0766e5f44e327b915e1b9cdf537eab3e",
+        "package_json_identical_to_v2_1_11": true,
+        "lockfile_version": 3,
+        "workspaces": false,
+        "package_manager_override": false,
+        "npmrc_at_repository_or_frontend_root": false,
+        "npm_shrinkwrap_at_repository_or_frontend_root": false,
+        "root_package_json": false,
+        "live_directory_reverified_at_utc": "2026-10-09T07:16:03Z",
+        "no_new_dependency_resolution": true,
+        "full_v2_1_9_hosted_build_pending": true
+      },
+      "installer_features": {
+        "non_interactive_cli": false,
+        "builtin_offline_docker_tree_helper": false
+      },
+      "state": "reviewed_input_candidate_pending_independent_review_and_build",
+      "embedded_config_acquisition": {
+        "kind": "immutable_vendor_https_hash_only",
+        "retained_public_fixture_bytes": false,
+        "source_commit": "5ab758d626573705dba3da5c82c87b7a5b197cdf",
+        "validation": "exact original size/SHA-256 and normalized SHA-256; official immutable host/path only; redirects rejected; network failure stops validation",
+        "unit_tests": "synthetic mocked source; real source bindings validated by hosted builds"
+      }
     }
   }
 }
