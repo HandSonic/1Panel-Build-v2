@@ -97,7 +97,8 @@ verified pipeline artifacts. Existing tags/releases do not suppress validation.
 Matrix jobs use `fail-fast: false`. A failed architecture is omitted while successful
 branches are independently validated and aggregated. The schema-2 manifest records
 every requested architecture, its exact producer attempt/job identity, and its
-terminal result. Shared source/preparation/validation failures block all dependent
+terminal result. Replay requires a complete exact-attempt job inventory; if a
+failed-only retry omits inherited successful jobs, rerun the full workflow. Shared source/preparation/validation failures block all dependent
 artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs,
 warnings and summaries, never Release notes. A failed branch's previous canonical
 assets are moved to recoverable backup names during an explicitly selected repair;
@@ -107,7 +108,9 @@ downloads its assets again and verifies exact byte identity. It never overwrites
 public release assets. Promotion requires separate review after downstream
 regression. Scheduled builds discover the official channel version and immediately
 pin its immutable inputs. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
-and preserves pipeline artifacts. CNB automatic publication is intentionally
+and runs each architecture independently from a shared prepared image. Its failure
+stage preserves only the final validated subset while retaining a failed pipeline
+status. CNB automatic publication is intentionally
 removed until a provider-specific verified staging/promote flow is reviewed.
 
 The legacy direct GoReleaser entry point is disabled because it bypasses the
