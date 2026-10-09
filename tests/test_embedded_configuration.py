@@ -7,6 +7,7 @@ class EmbeddedConfigurationTests(unittest.TestCase):
  def test_reviewed_per_version_component_schemas(self):
   registry=json.loads((ROOT/'config/embedded-configs.json').read_text())
   for version,entry in registry.items():
+   if any(p.get('source_acquisition') for p in entry['components'].values()):continue  # Covered with synthetic HTTPS fixtures.
    for component in ['core','agent']:
     with self.subTest(version=version,component=component):
      old,new,commit=expected_bytes(version,component)

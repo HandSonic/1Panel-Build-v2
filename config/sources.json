@@ -409,5 +409,42 @@
       "frontend/package-lock.json"
     ],
     "frontend_repair_lock_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1"
+  },
+  "v2.1.9": {
+    "source_commit": "5ab758d626573705dba3da5c82c87b7a5b197cdf",
+    "installer_commit": "1da5a4178bdaac17037536b732970d16df0ceec0",
+    "go_version": "1.25.7",
+    "node_version": "22.22.1",
+    "npm_version": "10.9.4",
+    "mode": "stable",
+    "geoip_url": "https://resource.fit2cloud.com/1panel/package/v2/geo/GeoIP.mmdb",
+    "geoip_sha256": "fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b",
+    "installer_sha256": {
+      "1pctl": "d1e3939b5665de3f64a501e840638af0d481cd06dc035a5ae4924e97f1ef3240",
+      "initscript/1panel-agent.init": "9e1994bf3b2f0fccf19f30a8ad9efb6a5ce3dbf6555e7964db0e3249b5681abc",
+      "initscript/1panel-agent.openrc": "0059eb2a97cb798b7cad828c88b6092080031722deca4a2287e057313f7bea05",
+      "initscript/1panel-agent.procd": "ff15be18d2a99dc737e445e4a4ed25b043716ac35a1e74b9db2bb970aa82c0b7",
+      "initscript/1panel-agent.service": "be2952941b04ab8d7cef4a4b8980f88455a88fd60d37b3ab17d4f3e898079228",
+      "initscript/1panel-core.init": "b3ab1ed8aa0a3ef920cdd9d147808cf5766c2a56f668392416c2ed9db3a81aa3",
+      "initscript/1panel-core.openrc": "954c7614adab020d787b15c4ef0be50b09aac68566ae43a3cbb63a6375c0872c",
+      "initscript/1panel-core.procd": "9383213e983fe4355d2c1e42dd07f66472958993354327f33ab46b908a2346ae",
+      "initscript/1panel-core.service": "7c5d2b767929473b75c8d33008f457385eecfb3321848d1b0a77d50865f9555d",
+      "install.sh": "6c460520dff0fe895fec037bd7a6e332cbbe78c56e0edbbd147c552881c5bd8b",
+      "lang/en.sh": "c27689e624be3e8d95a5c412525254ff7be192d49a27549a214910b47626a391",
+      "lang/fa.sh": "735b4da7f987567c1133b3267874470e8300beccfd74eb1e03cb45b64822ca8d",
+      "lang/pt-BR.sh": "0384c5b5320772b88035849b102e13fade88a0ef13dc645c22a9c00d0577b426",
+      "lang/ru.sh": "88fe11f0c6fdc02090cbdb7286353e642284886c671288b6ff23bc715eff1174",
+      "lang/zh.sh": "2864c5563be5ef869a8c6499b5a6f9b6eb88b0cd24bf063b3c475d3e8e159a4a"
+    },
+    "installer_original_version": "version",
+    "source_files_sha256": {
+      "core/go.mod": "800afe6853d39a784ecba0765c0bfed217bf5d204787fb943c6ef12d467307a6",
+      "agent/go.mod": "259012c34d455f9658b0c2b4a2e1bc499c60c56d468ca7f42fb5c52c4581d86b",
+      "frontend/package.json": "fefb337eb4af501df0d26b8401c71e7d0766e5f44e327b915e1b9cdf537eab3e"
+    },
+    "source_files_absent": [
+      "frontend/package-lock.json"
+    ],
+    "frontend_repair_lock_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1"
   }
 }

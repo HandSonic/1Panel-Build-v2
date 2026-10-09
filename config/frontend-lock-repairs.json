@@ -46,6 +46,12 @@
       "derived_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1",
       "reviewed_lock_file": "frontend-locks/v2.1.10.package-lock.json",
       "provenance": "Reused exact tested v2.1.11 derived repair lock; package.json bytes identical; no original v2.1.10 lock exists."
+    },
+    "v2.1.9": {
+      "original_absent": true,
+      "derived_sha256": "19c10260cba63865de2a824e0ddffe98abe0216cd994ee19c1b3015516a55bb1",
+      "reviewed_lock_file": "frontend-locks/v2.1.9.package-lock.json",
+      "provenance": "Reused exact tested v2.1.11 derived repair lock; package.json bytes identical; no original v2.1.9 lock exists."
     }
   }
 }
