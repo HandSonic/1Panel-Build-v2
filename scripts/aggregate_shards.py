@@ -17,6 +17,13 @@ def aggregate(shards, destination, version, arches, run_suffix):
         raise ValueError('Missing, extra or unexpected architecture shards')
     if destination.exists() and any(destination.iterdir()):
         raise ValueError('Aggregate destination must be empty')
+    contract_sha=os.environ.get('RESOLVED_CONTRACT_SHA256','')
+    if contract_sha:
+        from resolved_contract import apply_contract
+        root=Path(__file__).resolve().parents[1]
+        for arch in arches:
+            path=shards/f'shard-{arch}-{run_suffix}'/'resolved-source.json'
+            apply_contract(path,contract_sha,root,version)
     inputs = subprocess.check_output([sys.executable, str(Path(__file__).with_name('resolve_inputs.py')), version])
     # Validate everything first; never merge shard manifests with conflicting names.
     for arch in arches:

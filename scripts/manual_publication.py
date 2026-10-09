@@ -35,6 +35,11 @@ def extract_verified_zip(path,destination):
 
 
 def validate_upstream_input(directory,version,expected_commit,contract):
+    records=json.loads((Path(directory)/'build-manifest.json').read_text())['artifacts']
+    if len(records)!=7 or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')
+    if contract=='upstream7':
+        from resolved_contract import activate_release
+        activate_release(directory,version)
     validator_root=ROOT if contract=='upstream7' else ROOT/'vendor/upstream-validation'
     subprocess.run([sys.executable,str(validator_root/'scripts/validate_artifacts.py'),str(directory),version,' '.join(ARCHES)],check=True)
     records=json.loads((Path(directory)/'build-manifest.json').read_text())['artifacts']
@@ -127,7 +132,11 @@ def prepare(args):
 
 def publish(args):
     contract=check_identity(args.version,args.tag,args.repository)
-    work=Path(args.work);files=validate_payloads(work/'release',contract,args.version)
+    work=Path(args.work)
+    if contract=='upstream7':
+        from resolved_contract import activate_release
+        activate_release(work/'release',args.version)
+    files=validate_payloads(work/'release',contract,args.version)
     proof_path=work/'control'/PROOF
     if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256'):
         raise ValueError('Downloaded validation receipt differs from the read-only preparation job')

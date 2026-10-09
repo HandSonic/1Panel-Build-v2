@@ -29,6 +29,12 @@ def policy_fingerprint(contract,version,root=ROOT):
     else:raise ValueError('Unknown publication contract')
     paths.append('scripts/embedded_configuration.py')
     facts={p:digest(root/p)['sha256'] for p in paths}
+    if contract=='upstream7':
+        entry=json.loads((root/'config/sources.json').read_text())[version]
+        if entry.get('resolved_contract_sha256'):
+            facts['resolved_contract_sha256']=entry['resolved_contract_sha256']
+            for extra in ['scripts/discover_inputs.py','scripts/resolved_contract.py','scripts/select_node_toolchain.mjs']:
+                facts[extra]=digest(root/extra)['sha256']
     facts['embedded-config-version']=hashlib.sha256(json.dumps(json.loads((root/'config/embedded-configs.json').read_text())[version],sort_keys=True).encode()).hexdigest()
     if contract=='upstream7':
         # Adding an unrelated historical version must not invalidate this version's receipt.
@@ -39,7 +45,9 @@ def policy_fingerprint(contract,version,root=ROOT):
 def expected_names(contract,version,root=ROOT):
     if contract=='upstream7':
         names={f'1panel-{version}-linux-{a}.tar.gz' for a in ARCHES}
-        return names|{name+'.sha256' for name in names}|{'checksums.txt','build-manifest.json','build-inputs.env'}
+        result=names|{name+'.sha256' for name in names}|{'checksums.txt','build-manifest.json','build-inputs.env'}
+        if json.loads((root/'config/sources.json').read_text())[version].get('resolved_contract_sha256'): result.add('resolved-source.json')
+        return result
     if contract=='downstream17':
         matrix=json.loads((root/f'release-matrix-{version}.json').read_text())
         return {f'1panel-{version}-{source}-offline-linux-{arch}.tar.gz' for source,arches in matrix.items() for arch in arches}|{'checksums.txt'}
@@ -135,5 +143,18 @@ def existing_release_state(client,contract,version,tag,root=ROOT):
         run=json.loads(client.run('api',f'repos/{client.repo}/actions/runs/{proof["workflow_run_id"]}'))
         if run.get('event') in ['pull_request','pull_request_target']:
             raise ValueError('Repair-needed: read-only PR tests are not package publication validation')
-        verify_receipt(proof,(directory/'checksums.txt').read_bytes(),assets,run,contract,version,tag,client.repo,root)
+        verification_root=root
+        if contract=='upstream7' and 'resolved-source.json' in proof.get('files',{}):
+            from resolved_contract import apply_contract
+            client.download('resolved-source.json',directory)
+            supplied=directory/'resolved-source.json'
+            if digest(supplied)!=proof['files']['resolved-source.json']:raise ValueError('Repair-needed: source contract differs from published receipt')
+            import shutil
+            verification_root=directory/'policy'
+            verification_root.mkdir()
+            shutil.copytree(root/'config',verification_root/'config')
+            shutil.copytree(root/'scripts',verification_root/'scripts')
+            shutil.copyfile(root/'Dockerfile',verification_root/'Dockerfile')
+            apply_contract(supplied,proof['files']['resolved-source.json']['sha256'],verification_root,version)
+        verify_receipt(proof,(directory/'checksums.txt').read_bytes(),assets,run,contract,version,tag,client.repo,verification_root)
     return 'verified'

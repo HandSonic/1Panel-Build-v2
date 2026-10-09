@@ -7,11 +7,30 @@ build and does not enable enterprise capabilities.
 
 ## Reviewed inputs
 
-`config/sources.json` contains the supported immutable historical build inputs.
-Each entry pins the source and installer commits, resource hashes, compatible
-Go/Node/npm versions, and release channel. Shared frontend repair locks are
-stored once by SHA-256 and remain bound to each source manifest. Unknown input
-contracts fail before building or publishing.
+Historical input contracts remain in `config/sources.json`. Scheduled builds discover
+the official stable release; manual runs can select stable, beta or dev, or name
+an exact version. A compatible version absent from the historical registry is
+resolved into a per-run `resolved-source.json` artifact, without adding a version
+entry to the repository. The contract pins source/installer commits, exact
+Go/Node/npm versions, resources, dependency inputs and embedded configuration.
+
+Discovery compares installer resources against the matching official archive.
+It checks the resolved installer tip, existing immutable inputs and up to 300
+commits of official history anchored to that tip. Unmatched or unavailable
+history fails explicitly. GeoIP is bound to the same version archive, with full
+compressed size/hash and member size/hash checks, so later updates to the
+standalone GeoIP URL do not change the resolved build. Discovery also
+selects toolchains satisfying both Go modules and every declared npm engine,
+and retains `npm ci --engine-strict`, archive integrity and all architecture gates.
+A source without a lock can reuse only an exact-manifest-bound verified repair
+lock. An unsupported workspace, package manager, dependency source, missing new
+lock or incompatible installer fails clearly before publication. Such failures
+need a compatibility repair; they are never silently accepted. The source
+contract digest follows every shard, package, aggregate and publication receipt.
+
+The custom source build remains community-only. Enterprise packages use the
+separate downstream official-package path and installation gates. Builds alone
+do not imply a published or installation-verified release.
 
 The v2.3.2 source is `65243c68c463cc055ab044093f641ea5d2e9e28b`.
 The installer is `aa4a6bbf24ae0fd938b32294672f5086f940e483`: its install.sh
@@ -19,11 +38,10 @@ SHA256 matches the official v2.3.2 installer (`3faa744fd158283470b48b3a971dc98cc
 GeoIP comes from the official resource host with a locked hash. A host update
 requires an explicit reviewed lock change; a changed response fails closed.
 
-The source requires Go 1.26.1. Node 22.14.0 and npm 10.9.2 are pinned and checked
+This historical source uses Go 1.26.1. Node 22.22.1 and npm 10.9.4 are pinned and checked
 at build time. Frontend dependencies use `npm ci` and the source lockfile.
 Release config is embedded before compiling: stable releases use `stable` and
-`info`; beta/dev versions require separately reviewed locks with their matching
-channel. Demo, enterprise and fxplay remain false. `is_offline` remains false:
+`info`; beta/dev versions use their matching channel and the same discovery gates. Demo, enterprise and fxplay remain false. `is_offline` remains false:
 shipping offline installation resources is not the application's separate
 offline-feature/license mode. Upstream's stable mode selects Gin release mode
 and avoids dev-only external app.yaml override behavior.

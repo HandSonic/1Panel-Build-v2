@@ -4,13 +4,17 @@
   - name: Resolve immutable inputs and test
     script: |
       set -eu
-      apk add --no-cache bash python3 py3-pip curl jq git
+      apk add --no-cache bash python3 py3-pip curl jq git nodejs npm
       python3 -m venv /tmp/build-python
       . /tmp/build-python/bin/activate
       python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
       version="${VERSION:-}"
       if [ -z "$version" ] && [ "${CNB_IS_TAG:-false}" = true ]; then version="$CNB_BRANCH"; fi
-      version="${version:-v2.3.2}"
+      if [ -z "$version" ]; then version=$(python3 scripts/discover_inputs.py --latest --mode "${CHANNEL:-stable}"); fi
+      if ! python3 -c 'import json,sys;sys.exit(0 if sys.argv[1] in json.load(open("config/sources.json")) else 1)' "$version"; then
+        contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
+        python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
+      fi
       arches=$(printf '%s' "${TARGET_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}" | tr ';,' ' ')
       for arch in $arches; do
         case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac

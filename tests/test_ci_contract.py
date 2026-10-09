@@ -26,7 +26,7 @@ class CIContract(unittest.TestCase):
    self.assertNotEqual(r.returncode,0);self.assertFalse((Path(d)/'build-inputs.env').exists())
  def test_tag_selected_not_latest_fallback(self):
   with tempfile.TemporaryDirectory() as d:
-   p=Path(d);(p/'scripts').mkdir();(p/'scripts/resolve_inputs.py').write_text('import sys; print("SOURCE_COMMIT="+sys.argv[1]+"\\nGO_VERSION=1.26.1")')
+   p=Path(d);(p/'config').mkdir();(p/'config/sources.json').write_text('{"v2.3.2":{}}');(p/'scripts').mkdir();(p/'scripts/resolve_inputs.py').write_text('import sys; print("SOURCE_COMMIT="+sys.argv[1]+"\\nGO_VERSION=1.26.1")')
    (p/'scripts/validate_artifacts.py').write_text('def architectures(value): return value.split()')
    e=dict(os.environ,INPUT_VERSION='',INPUT_ARCHES='amd64',GITHUB_REF='refs/tags/v2.3.2',GITHUB_REF_NAME='v2.3.2',GITHUB_ENV=str(p/'env'),GITHUB_OUTPUT=str(p/'out'))
    r=subprocess.run(['bash','-c',github_block('Resolve immutable build inputs')],cwd=d,env=e,capture_output=True,text=True)

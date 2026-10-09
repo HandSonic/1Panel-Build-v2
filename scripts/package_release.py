@@ -18,6 +18,7 @@ def package(root,version,arch):
             if (root/optional).is_file(): shutil.copy2(root/optional,stage/optional)
         manifest={'schema_version':1,'version':version,'architecture':arch,'edition':'community','build_repository_commit':commit}
         for key in ('source_commit','installer_commit','mode','go_version','node_version','npm_version'):manifest[key]=entry[key]
+        if entry.get('resolved_contract_sha256'): manifest['resolved_contract_sha256']=entry['resolved_contract_sha256']
         manifest['files']={str(p.relative_to(stage)):{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'size':p.stat().st_size} for p in sorted(stage.rglob('*')) if p.is_file()}
         (stage/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         archive=dist/(name+'.tar.gz')
@@ -31,6 +32,10 @@ def finalize(root,version,arches):
         file=f'1panel-{version}-linux-{arch}.tar.gz'; p=dist/file
         entry=resolve(version)
         records.append({'architecture':arch,'file':file,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'size':p.stat().st_size,'source_commit':entry['source_commit'],'installer_commit':entry['installer_commit'],'build_repository_commit':os.environ['BUILD_REPOSITORY_COMMIT']})
+    entry=resolve(version)
+    if entry.get('resolved_contract_sha256'):
+        for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
+        shutil.copyfile(pathlib.Path(__file__).resolve().parents[1]/'config/resolved-source.json',dist/'resolved-source.json')
     (dist/'checksums.txt').write_text(''.join((dist/(r['file']+'.sha256')).read_text() for r in records))
     (dist/'build-manifest.json').write_text(json.dumps({'schema_version':1,'version':version,'artifacts':records},indent=2)+'\n')
     validate_dist(dist,version,arches)
