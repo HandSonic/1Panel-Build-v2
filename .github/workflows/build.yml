@@ -37,7 +37,8 @@ on:
   schedule:
     - cron: '0 7 * * *'
 concurrency:
-  group: upstream-build-${{ github.ref }}
+  # Read-only builds/validation may overlap without replacing another pending run.
+  group: upstream-run-${{ github.run_id }}-${{ github.run_attempt }}
   cancel-in-progress: false
 jobs:
   tests:
@@ -214,6 +215,10 @@ jobs:
     needs: build
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && inputs.publish_candidate
     runs-on: ubuntu-latest
+    concurrency:
+      group: upstream-candidate-${{ github.repository }}-${{ needs.build.outputs.version }}-${{ github.run_id }}
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
     env:
@@ -320,6 +325,11 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote-existing'
     needs: publication_prepare
     runs-on: ubuntu-latest
+    # Every ref repairing the same canonical tag shares one writer; other tags overlap.
+    concurrency:
+      group: upstream-release-${{ github.repository }}-${{ inputs.version }}
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
       actions: read
