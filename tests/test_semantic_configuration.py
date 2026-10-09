@@ -92,16 +92,17 @@ class SemanticConfigurationTests(unittest.TestCase):
             for component in ['core','agent']:
                 self.assertEqual((root/component/'cmd/server/conf/app.yaml').read_bytes(),before[component])
 
-    def test_readiness_covers_all_versions_without_enabling_incomplete_locks(self):
-        readiness=json.loads((ROOT/'config/historical-input-readiness.json').read_text())
+    def test_enabled_versions_have_exact_component_configuration_contracts(self):
         locks=json.loads((ROOT/'config/sources.json').read_text())
-        self.assertEqual(len(readiness['versions']),40)
-        self.assertEqual(set(readiness['enabled_versions']),set(locks))
-        for row in readiness['versions']:
-            self.assertEqual(row['source_lock_enabled'],row['version'] in locks)
-            if row['version'] not in locks:
-                self.assertIn('frontend_package_lock_json',row['missing_review_inputs'])
-                self.assertIn('unpublished_full_seven_architecture_build',row['required_validation'])
+        profiles=json.loads((ROOT/'config/embedded-configs.json').read_text())
+        for version, entry in locks.items():
+            self.assertIn(version, profiles)
+            self.assertEqual(set(profiles[version]['components']), {'core', 'agent'})
+            for component in ('core', 'agent'):
+                original, normalized, commit = expected_bytes(version, component)
+                self.assertEqual(commit, entry['source_commit'])
+                self.assertTrue(original)
+                self.assertTrue(normalized)
 
     def test_runtime_dependency_is_pinned_and_isolated(self):
         workflow=(ROOT/'.github/workflows/build.yml').read_text()

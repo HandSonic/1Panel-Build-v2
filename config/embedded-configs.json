@@ -497,5 +497,40 @@
         "source_bytes": 197
       }
     }
+  },
+  "v2.1.8": {
+    "source_commit": "6ea07421acf1e396606a892f44d76af9d5e8a7b2",
+    "source_provenance": "cached_immutable_current_tag_snapshot_for_rebuild_not_original_checkout_proof",
+    "mode": "stable",
+    "components": {
+      "core": {
+        "source_path": "core/cmd/server/conf/app.yaml",
+        "source_bytes": 271,
+        "source_sha256": "fac5a69b9454e9c139f0044c0447ae0e050d6754ab3e72d20fc93a67d914d8ed",
+        "normalized_sha256": "8207febdeeea169312de2511bd2e7e8a3e577a84ab92c876389ee206d8d5aecb",
+        "source_acquisition": "immutable_vendor_https",
+        "normalized_fields": {
+          "mode": "$MODE",
+          "level": "info",
+          "is_demo": "false",
+          "is_offline": "false",
+          "is_fxplay": "false",
+          "version": "$VERSION"
+        }
+      },
+      "agent": {
+        "source_path": "agent/cmd/server/conf/app.yaml",
+        "source_bytes": 178,
+        "source_sha256": "a28333ecc0adf576aa292bd55d485858d0ce828786f630aeb6925cfc9a788a3a",
+        "normalized_sha256": "84258f45770920f3c1336e1820565c5da35b15ece5c63278ea4422891625f2eb",
+        "source_acquisition": "immutable_vendor_https",
+        "normalized_fields": {
+          "mode": "$MODE",
+          "level": "info",
+          "is_demo": "false",
+          "is_offline": "false"
+        }
+      }
+    }
   }
 }
