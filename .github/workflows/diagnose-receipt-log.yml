@@ -1,0 +1,25 @@
+name: Read-only receipt log diagnostic
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-receipt-log.yml'
+      - 'scripts/diagnose_receipt_log.py'
+      - 'tests/test_receipt_log_diagnostic.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test output redaction and fixed request shape
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_receipt_log_diagnostic.py -v
+      - name: Diagnose the fixed authenticated receipt log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/diagnose_receipt_log.py
