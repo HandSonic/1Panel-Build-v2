@@ -4,6 +4,30 @@ import unittest
 import yaml
 
 class PublicationControlArtifact(unittest.TestCase):
+    def test_artifact_only_mode_runs_source_but_never_publication_jobs(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        jobs = data['jobs']
+        def enabled(expression, candidate=False):
+            expression = expression.removeprefix('${{').removesuffix('}}').strip()
+            for old, new in {
+                'github.event_name': repr('workflow_dispatch'),
+                'github.ref': repr('refs/heads/master'),
+                'inputs.operation': repr('build-only'),
+                'inputs.publish_candidate': repr(candidate),
+                'needs.tests.result': repr('success'),
+                'needs.build.result': repr('success'),
+                'needs.publication_prepare.result': repr('success'),
+                'cancelled()': 'False',
+                "startsWith('refs/heads/master', 'refs/tags/v')": 'False',
+            }.items():
+                expression = expression.replace(old, new)
+            expression = expression.replace('!=', '<>').replace('!', ' not ').replace('<>', '!=')
+            return eval(expression.replace('&&', ' and ').replace('||', ' or '), {'__builtins__': {}})
+        self.assertTrue(enabled(jobs['prepare']['if']))
+        for candidate in (False, True):
+            for job in ('candidate', 'publication_prepare', 'publication_repair', 'automatic_publication'):
+                self.assertFalse(enabled(jobs[job]['if'], candidate), job)
+
     def test_id_selected_automatic_input_uses_flat_validated_directory(self):
         data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
         steps = data['jobs']['publication_prepare']['steps']

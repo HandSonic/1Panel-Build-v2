@@ -20,9 +20,9 @@ on:
         default: 'amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
       operation:
         type: choice
-        options: [build, validate-automatic, validate-promotion, promote-existing]
+        options: [build, build-only, validate-automatic, validate-promotion, promote-existing]
         default: build
-        description: Normal build/publication, read-only automatic validation, or explicit backed-up promotion
+        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit backed-up promotion
       upstream_run_id:
         description: Exact successful build run ID
         default: ''
@@ -60,7 +60,7 @@ jobs:
           node-version: '22.22.1'
       - run: python3 -m unittest discover -s tests -v
   prepare:
-    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'validate-automatic'
+    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic'
     needs: tests
     runs-on: ubuntu-latest
     outputs:

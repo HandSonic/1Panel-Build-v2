@@ -205,11 +205,13 @@ class AutomaticTransaction(unittest.TestCase):
 
 class EventGates(unittest.TestCase):
     def test_readonly_and_candidate_modes_never_publish(self):
-        for mode in ('validate-automatic','validate-promotion','promote-existing'):
+        for mode in ('build-only','validate-automatic','validate-promotion','promote-existing'):
             self.assertFalse(ap.operation_allowed('publish','workflow_dispatch',
                 'refs/heads/master','master',mode,False))
         self.assertTrue(ap.operation_allowed('prepare','workflow_dispatch',
                 'refs/heads/master','master','validate-automatic',False))
+        self.assertFalse(ap.operation_allowed('prepare','workflow_dispatch',
+                'refs/heads/master','master','build-only',False))
         self.assertFalse(ap.operation_allowed('publish','workflow_dispatch',
                 'refs/heads/master','master','build',True))
 

@@ -115,6 +115,10 @@ non-candidate manual `build` runs then prepare and publish a canonical release.
 `validate-automatic` exercises the same preparation and publication plan without
 enabling a writer. It is an optional validation mode, not a required step for new
 versions. Existing tags/releases do not suppress validation.
+`build-only` creates verified CI source artifacts without publication preparation
+or release writes, for example when repairing an old release without a trusted
+receipt. It uses the same discovery, build and aggregate gates. Normal `build`
+remains the default and publishes automatically; new releases need no extra step.
 Matrix jobs use `fail-fast: false`. A failed architecture is omitted while successful
 branches are independently validated and aggregated. The schema-2 manifest records
 every requested architecture, its exact producer attempt/job identity, and its
