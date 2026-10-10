@@ -4,6 +4,19 @@ import unittest
 import yaml
 
 class PublicationControlArtifact(unittest.TestCase):
+    def test_id_selected_automatic_input_uses_flat_validated_directory(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        steps = data['jobs']['publication_prepare']['steps']
+        selected = [step for step in steps if step.get('uses') == 'actions/download-artifact@v4']
+        self.assertEqual(len(selected), 1)
+        download = selected[0]
+        self.assertEqual(download['with']['artifact-ids'], '${{ needs.build.outputs.artifact_id }}')
+        self.assertEqual(download['with']['path'], 'automatic-input')
+        self.assertIs(download['with']['merge-multiple'], True)
+        prepare = next(step for step in steps if step.get('name') == 'Prepare normal automatic canonical publication')
+        self.assertIn('--input automatic-input', prepare['run'])
+        self.assertEqual(download['if'], prepare['if'])
+
     def test_exact_control_only_paths_after_receipt_binding(self):
         data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
         job = data['jobs']['publication_prepare']

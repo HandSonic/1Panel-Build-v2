@@ -338,6 +338,7 @@ jobs:
         with:
           artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: automatic-input
+          merge-multiple: true
       - name: Prepare normal automatic canonical publication
         if: inputs.operation != 'validate-promotion' && inputs.operation != 'promote-existing'
         run: |
