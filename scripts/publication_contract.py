@@ -150,6 +150,25 @@ def verify_receipt(proof,checksums,assets,run,contract,version,tag,repository,ro
 def digest_bytes(data):return {'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
 
 
+def validation_log_failure_note(error):
+    """Expose only bounded diagnostics, never raw stderr, URLs or credentials."""
+    stderr = error.stderr if isinstance(error.stderr, str) else ''
+    status = re.search(r'\bHTTP ([1-5][0-9]{2})\b', stderr)
+    category = 'unclassified'
+    for name, pattern in (
+        ('timeout', r'timed out|timeout|deadline exceeded'),
+        ('connection', r'connection reset|connection refused|unexpected eof'),
+        ('dns', r'no such host|name resolution'),
+        ('tls', r'tls handshake|certificate verify'),
+        ('http2', r'http/2|stream error|internal_error'),
+    ):
+        if re.search(pattern, stderr, re.I):
+            category = name
+            break
+    code = error.returncode if type(error.returncode) is int else 'unknown'
+    return f'Receipt log fetch failed: exit={code}; http_status={status[1] if status else "unknown"}; network={category}'
+
+
 def verify_validation_log(client,proof,receipt_sha):
     run_id=proof.get('workflow_run_id')
     if type(run_id) is not int or run_id<=0 or not re.fullmatch('[0-9a-f]{40}',proof.get('workflow_commit','')):
@@ -159,7 +178,11 @@ def verify_validation_log(client,proof,receipt_sha):
     for job in jobs:
         if job.get('name') not in ['build','publication_prepare'] or job.get('conclusion')!='success':continue
         if type(job.get('id')) is not int or job.get('run_id')!=run_id or job.get('run_attempt')!=proof['workflow_run_attempt'] or job.get('head_sha')!=proof['workflow_commit']:continue
-        logs=client.run('api',f'repos/{client.repo}/actions/jobs/{job['id']}/logs')
+        try:
+            logs=client.run('api',f'repos/{client.repo}/actions/jobs/{job['id']}/logs')
+        except subprocess.CalledProcessError as error:
+            error.add_note(validation_log_failure_note(error))
+            raise
         hashes=re.findall(r'VERIFIED_RELEASE_RECEIPT_SHA256=([0-9a-f]{64})',logs)
         if hashes == [receipt_sha]:return True
     raise ValueError('Repair-needed: published receipt is not bound to a successful validation job')

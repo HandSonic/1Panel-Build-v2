@@ -1,9 +1,44 @@
-import copy,hashlib,json,os,sys,tempfile,unittest
+import copy,hashlib,json,os,sys,tempfile,unittest,subprocess
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import publication_contract as contracts
 from test_matrix_contract import MatrixContractTests
+
+class ReceiptLogDiagnostics(unittest.TestCase):
+ def test_only_controlled_failure_facts_are_disclosed(self):
+  for stderr,status,category in [
+   ('HTTP 403 token=secret https://private.invalid/?sig=secret','403','unclassified'),
+   ('HTTP 404','404','unclassified'),
+   ('HTTP 503 stream error: INTERNAL_ERROR','503','http2'),
+   ('dial: i/o timeout https://private.invalid','unknown','timeout'),
+   ('connection reset by peer','unknown','connection'),
+   ('no such host','unknown','dns'),
+   ('TLS handshake timeout','unknown','timeout'),
+   ('certificate verify failed','unknown','tls'),
+   ('unrecognized secret value','unknown','unclassified'),
+  ]:
+   with self.subTest(stderr=stderr):
+    error=subprocess.CalledProcessError(1,['gh','api'],stderr=stderr)
+    self.assertEqual(contracts.validation_log_failure_note(error),f'Receipt log fetch failed: exit=1; http_status={status}; network={category}')
+ def test_failed_log_read_still_raises_without_retry_or_receipt_acceptance(self):
+  proof={'workflow_run_id':123,'workflow_run_attempt':1,'workflow_commit':'a'*40}
+  job={'id':456,'name':'publication_prepare','conclusion':'success','run_id':123,'run_attempt':1,'head_sha':'a'*40}
+  error=subprocess.CalledProcessError(1,['gh','api','repos/example/project/actions/jobs/456/logs'],stderr='HTTP 403 secret=do-not-print')
+  class Client:
+   repo='example/project'
+   def __init__(self):self.calls=[]
+   def run(self,*args):
+    self.calls.append(args)
+    if len(self.calls)==1:return json.dumps({'jobs':[job]})
+    raise error
+  client=Client()
+  with self.assertRaises(subprocess.CalledProcessError) as caught:
+   contracts.verify_validation_log(client,proof,'b'*64)
+  self.assertIs(caught.exception,error)
+  self.assertEqual(len(client.calls),2)
+  self.assertEqual(error.__notes__,['Receipt log fetch failed: exit=1; http_status=403; network=unclassified'])
+  self.assertNotIn('secret', '\n'.join(error.__notes__))
 
 class ReceiptTests(unittest.TestCase):
  def setUp(self):
