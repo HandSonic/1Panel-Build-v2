@@ -6,6 +6,10 @@ import publication_contract as contracts
 from test_matrix_contract import MatrixContractTests
 
 class ReceiptTests(unittest.TestCase):
+ def setUp(self):
+  # A synthetic per-run contract isolates receipt tests from checkout state.
+  self.runtime_patch=patch('resolved_contract.runtime_contract',return_value={'frontend_lock':{'kind':'source'}})
+  self.runtime_patch.start();self.addCleanup(self.runtime_patch.stop)
  def fixture(self,root):
   manifest,producer,jobs=MatrixContractTests().fixture();manifest['version']='v2.99.0'
   names=contracts.expected_names('upstream-matrix','v2.99.0',root,['amd64']);files=[];sums=[]
@@ -56,6 +60,21 @@ class ReceiptTests(unittest.TestCase):
   names=contracts.expected_names('upstream-matrix','v2.99.0',accepted=['amd64'])
   self.assertEqual(sum(n.endswith('.tar.gz') for n in names),1)
   self.assertIn('build-manifest.json',names);self.assertIn('resolved-source.json',names)
+ def test_partial_producer_failure_is_accepted_only_for_its_exact_attempt(self):
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);p,c,a,r=self.fixture(root)
+   p['workflow_run_id']=p['producer_run_id'];p['workflow_run_attempt']=p['producer_run_attempt']
+   r.update(id=p['producer_run_id'],run_attempt=p['producer_run_attempt'],conclusion='failure')
+   self.assertTrue(self.check(root,(p,c,a,r)))
+   for key in ('id','run_attempt'):
+    bad=dict(r);bad[key]+=1
+    with self.subTest(key=key),self.assertRaises(ValueError):self.check(root,(p,c,a,bad))
+   bad=dict(r,conclusion='cancelled')
+   with self.assertRaises(ValueError):self.check(root,(p,c,a,bad))
+ def test_resolved_lock_sidecar_is_part_of_exact_receipt_inventory(self):
+  with patch('resolved_contract.runtime_contract',return_value={'frontend_lock':{'kind':'resolved'}}):
+   names=contracts.expected_names('upstream-matrix','v2.99.0',accepted=['amd64'])
+   self.assertIn('resolved-frontend-package-lock.json',names)
 
 class ValidationLogTests(unittest.TestCase):
  def test_receipt_hash_must_exist_in_exact_successful_validation_job(self):

@@ -69,7 +69,13 @@ def validate_dist(dist,version,arches):
     if entry.get('resolved_contract_sha256'):
         for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
         contract_file=dist/'resolved-source.json'
-        if hashlib.sha256(contract_file.read_bytes()).hexdigest()!=entry['resolved_contract_sha256']: raise ValueError('Resolved contract bytes mismatch')
+        from automatic_frontend_lock import read_regular, read_payload, required_sidecars
+        from resolved_contract import MAX_CONTROL, object_bytes, source_contract
+        raw=read_regular(contract_file,MAX_CONTROL)
+        if hashlib.sha256(raw).hexdigest()!=entry['resolved_contract_sha256']: raise ValueError('Resolved contract bytes mismatch')
+        contract=source_contract(raw,entry['resolved_contract_sha256'],version,object_bytes(raw)['mode'])
+        read_payload(dist,contract)
+        expected.update(required_sidecars(contract))
         expected.add('resolved-source.json')
     expected|={'checksums.txt','build-manifest.json'}
     # CI may attach the resolved inputs alongside the immutable manifests.
@@ -82,6 +88,10 @@ def validate_dist(dist,version,arches):
         from matrix_contract import validate
         if validate(aggregate_manifest, version) != list(arches) or aggregate_manifest['artifacts'] != records:
             raise ValueError('Partial release manifest mismatch')
+    elif aggregate_manifest.get('schema_version') == 3:
+        from publication_lineage import validate
+        if validate(aggregate_manifest, version) != list(arches) or aggregate_manifest['artifacts'] != records:
+            raise ValueError('Publication lineage manifest mismatch')
     elif aggregate_manifest != {'schema_version':1,'version':version,'artifacts':records}:
         raise ValueError('Release manifest mismatch')
     return records

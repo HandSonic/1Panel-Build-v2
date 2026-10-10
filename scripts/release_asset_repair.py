@@ -33,21 +33,35 @@ class Journal:
             json.dump(self.state,stream,indent=2);stream.write('\n');stream.flush();os.fsync(stream.fileno())
         temporary.replace(self.path)
 
-def check_asset_names(assets,expected):
+def check_asset_names(assets,expected,extra=()):
     names=[a['name'] for a in assets]
     if len(names)!=len(set(names)):raise ValueError('Duplicate remote asset names')
-    for name in set(names)-set(expected):
+    for name in set(names)-set(expected)-set(extra):
         if not any(re.fullmatch(re.escape(base)+r'\.(backup|staged)-[0-9a-f]{12}',name) for base in expected):
             raise ValueError(f'Unexpected canonical asset requires review: {name}')
 
-def repair(client, files, journal_path, retire=()):
-    before=client.release();assets={a['name']:a for a in before['assets']}
+def release_snapshot(release):
+    if release is None:return None
+    return {'id':release['id'],'draft':release['draft'],'tag_name':release['tag_name'],
+            'body':release.get('body') or '',
+            'assets':sorted([{'id':a['id'],'name':a['name'],'size':a['size'],'digest':a.get('digest')} for a in release['assets']],key=lambda a:a['id'])}
+
+
+def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, preserved_assets=None):
+    before=client.release()
+    if expected_snapshot is not None and release_snapshot(before)!=expected_snapshot:
+        raise ValueError('Release changed before the bound repair transaction')
+    assets={a['name']:a for a in before['assets']}
     if len(assets)!=len(before['assets']):raise ValueError('Duplicate remote asset names')
     expected={p.name:digest(p) for p in files}
     if len(expected)!=len(files):raise ValueError('Duplicate local publication filenames')
     if set(retire) & set(expected) or len(set(retire)) != len(retire):raise ValueError('Invalid retired artifact names')
     allowed=set(expected)|set(retire)
-    check_asset_names(before['assets'],allowed)
+    preserved_assets=preserved_assets or {}
+    if set(preserved_assets)&allowed:raise ValueError('Preserved recovery inventory overlaps canonical mutation')
+    for name,asset in preserved_assets.items():
+        if assets.get(name)!=asset:raise ValueError('Preserved recovery asset changed before transaction')
+    check_asset_names(before['assets'],allowed,preserved_assets)
     token=uuid.uuid4().hex[:12]
     state={'repo':client.repo,'tag':client.tag,'phase':'staging','old_notes':before.get('body') or '',
            'operations':[],'retirements':[],'rollback_errors':[],'warning':'GitHub multi-asset changes are not atomic; a brief naming transition can occur.'}
@@ -134,8 +148,10 @@ def repair(client, files, journal_path, retire=()):
             state.pop('pending',None)
             state['phase']='verifying';journal.save()
             final_assets=client.release()['assets']
-            check_asset_names(final_assets,allowed)
+            check_asset_names(final_assets,allowed,preserved_assets)
             after={a['name']:a for a in final_assets}
+            for name,asset in preserved_assets.items():
+                if after.get(name)!=asset:raise ValueError('Preserved recovery asset changed during transaction')
             if set(retire) & set(after):
                 raise ValueError('A failed branch canonical asset appeared concurrently')
             for retirement in state['retirements']:

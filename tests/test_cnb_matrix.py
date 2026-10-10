@@ -72,3 +72,13 @@ name='1panel-'+os.environ['BUILD_VERSION']+'-linux-'+arch+'.tar.gz'
    self.assertEqual((root/'attempts').read_text().splitlines(),['amd64','arm64'])
   root,result=self.run_case(prepare=True,stale=True)
   self.assertNotEqual(result.returncode,0);self.assertFalse((root/'cnb-verified-artifacts').exists())
+
+ def test_cnb_uses_the_same_exact_automatic_resolver_toolchain(self):
+  import yaml
+  config=yaml.safe_load((ROOT/'.cnb.yml').read_text())
+  first=config['.build_pipeline'][0]['stages'][0]['script']
+  self.assertIn('docker create --entrypoint true node:22.22.1-alpine',first)
+  self.assertIn('test "$(node --version)" = v22.22.1',first)
+  self.assertIn('test "$(npm --version)" = 10.9.4',first)
+  self.assertLess(first.index('test "$(npm --version)"'),first.index('scripts/discover_inputs.py'))
+  self.assertNotIn('git nodejs npm',first)

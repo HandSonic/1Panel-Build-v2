@@ -8,6 +8,7 @@ import subprocess
 import sys
 from package_release import finalize
 from validate_artifacts import architectures, validate_dist
+INPUT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
@@ -35,10 +36,11 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
     contract_sha=os.environ.get('RESOLVED_CONTRACT_SHA256','')
     if contract_sha:
         from resolved_contract import apply_contract
-        root=Path(__file__).resolve().parents[1]
         for arch in arches:
             path=shards/f'shard-{arch}-{run_suffix}'/'resolved-source.json'
-            apply_contract(path,contract_sha,root,version)
+            # This authenticates the contract and its exact required sidecar in
+            # each successful shard before the aggregate destination is created.
+            apply_contract(path,contract_sha,INPUT_ROOT,version)
     inputs = subprocess.check_output([sys.executable, str(Path(__file__).with_name('resolve_inputs.py')), version])
     # Validate everything first; never merge shard manifests with conflicting names.
     for arch in arches:

@@ -54,7 +54,7 @@ class VersionConcurrency(unittest.TestCase):
 
     def test_all_writers_are_locked_and_resource_limit_remains(self):
         writers = {name for name, job in self.jobs.items() if job.get('permissions', {}).get('contents') == 'write'}
-        self.assertEqual(writers, {'candidate', 'publication_repair'})
+        self.assertEqual(writers, {'candidate', 'publication_repair', 'automatic_publication'})
         for name in writers:
             self.assertIn('concurrency', self.jobs[name])
         self.assertEqual(self.jobs['compile']['strategy']['max-parallel'], 3)
@@ -62,3 +62,16 @@ class VersionConcurrency(unittest.TestCase):
         self.assertEqual(self.jobs['publication_repair']['needs'], 'publication_prepare')
         self.assertIn("inputs.operation == 'promote-existing'", self.jobs['publication_repair']['if'])
         self.assertEqual(self.jobs['publication_repair']['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
+
+    def test_automatic_and_repair_writers_share_exact_canonical_lock(self):
+        auto = self.jobs['automatic_publication']
+        self.assertFalse(auto['concurrency']['cancel-in-progress'])
+        self.assertEqual(auto['concurrency']['queue'], 'max')
+        context = self.context | {'needs.publication_prepare.outputs.version': 'v2.1.10',
+                                  'needs.prepare.outputs.version': 'v2.1.10'}
+        auto_key = key(auto['concurrency']['group'], **context)
+        repair_key = key(self.jobs['publication_repair']['concurrency']['group'], **context)
+        self.assertEqual(auto_key, repair_key)
+        self.assertIn('!cancelled()', auto['if'])
+        self.assertEqual(auto['permissions']['contents'], 'write')
+        self.assertNotIn('id-token', auto['permissions'])

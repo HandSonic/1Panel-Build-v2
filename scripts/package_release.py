@@ -2,6 +2,7 @@
 import hashlib,json,os,pathlib,re,shutil,sys,tarfile,tempfile
 from resolve_inputs import resolve
 from validate_artifacts import architectures,validate_dist,validate_elf
+CONFIG = pathlib.Path(__file__).resolve().parents[1] / 'config'
 
 def package(root,version,arch):
     entry=resolve(version); commit=os.environ['BUILD_REPOSITORY_COMMIT']
@@ -35,7 +36,16 @@ def finalize(root,version,arches):
     entry=resolve(version)
     if entry.get('resolved_contract_sha256'):
         for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
-        shutil.copyfile(pathlib.Path(__file__).resolve().parents[1]/'config/resolved-source.json',dist/'resolved-source.json')
+        from automatic_frontend_lock import copy_payload, read_regular, read_payload, write_payload
+        from resolved_contract import MAX_CONTROL, object_bytes, source_contract
+        raw = read_regular(CONFIG / 'resolved-source.json', MAX_CONTROL)
+        if hashlib.sha256(raw).hexdigest() != entry['resolved_contract_sha256']:
+            raise ValueError('Cached resolved contract bytes mismatch')
+        contract = source_contract(raw, entry['resolved_contract_sha256'], version, object_bytes(raw)['mode'])
+        # Validate all inputs before exposing either member of the transport pair.
+        read_payload(CONFIG, contract)
+        copy_payload(contract, CONFIG, dist)
+        write_payload(dist / 'resolved-source.json', raw)
     (dist/'checksums.txt').write_text(''.join((dist/(r['file']+'.sha256')).read_text() for r in records))
     (dist/'build-manifest.json').write_text(json.dumps({'schema_version':1,'version':version,'artifacts':records},indent=2)+'\n')
     validate_dist(dist,version,arches)

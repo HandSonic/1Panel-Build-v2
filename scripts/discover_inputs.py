@@ -13,6 +13,7 @@ import re
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from semantic_configuration import production
+from frontend_lock_origins import validate_lock_origins
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHES = ['amd64', 'arm64', 'armv7', 'ppc64le', 's390x', 'loong64', 'riscv64']
@@ -201,8 +202,10 @@ def resolve_source(vendor, version=None, mode='stable', root=ROOT):
     recipe, additions = select(manifest_sha, None if original is None else facts(original)['sha256'], root)
     if recipe is None:
         if original is None:
-            raise ValueError('Source lacks a lock and no manifest-bound repair exists; candidate dependency resolution required')
-        lock = {'kind': 'source', 'sha256': facts(original)['sha256'], 'manifest_sha256': manifest_sha}
+            from automatic_frontend_lock import generate
+            raw['frontend/package-lock.json'], lock = generate(raw['frontend/package.json'], commit, manifest_sha)
+        else:
+            lock = {'kind': 'source', 'sha256': facts(original)['sha256'], 'manifest_sha256': manifest_sha}
     else:
         raw['frontend/package-lock.json'] = derive(raw['frontend/package.json'], original, recipe, additions, root)
         lock = {'kind': 'derived', 'sha256': recipe['derived_sha256'], 'manifest_sha256': manifest_sha,
@@ -217,45 +220,6 @@ def resolve_source(vendor, version=None, mode='stable', root=ROOT):
     return {'version': version, 'mode': mode, 'source': {'repository': SOURCE, 'commit': commit, 'files': files, 'absent': absent}, 'configuration': configuration, 'frontend_lock': lock, 'go': select_go(vendor, [raw['core/go.mod'], raw['agent/go.mod']])}, raw, repair
 
 
-
-
-def validate_lock_origins(lock):
-    """Bundled entries inherit only an explicitly declared, integrity-pinned archive."""
-    packages=lock['packages']
-    package_name=r'(?:@[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+'
-    def tarball(item):
-        url=item.get('resolved','')
-        if not isinstance(url,str) or not re.fullmatch(r'https://registry\.npmjs\.org/[^?#\s]+/-/[^/?#\s]+\.tgz',url):
-            raise ValueError('Dependency must use the official npm registry tarball')
-        if not isinstance(item.get('integrity'),str) or not re.fullmatch(r'sha512-[A-Za-z0-9+/]{86}==',item['integrity']):
-            raise ValueError('Dependency requires pinned SHA-512 integrity')
-    for path,item in packages.items():
-        if path=='':continue
-        if not isinstance(item,dict) or item.get('link') or not re.fullmatch('node_modules/'+package_name+'(?:/node_modules/'+package_name+')*',path) or '..' in Path(path).parts:
-            raise ValueError('Unsupported frontend dependency source')
-        if item.get('inBundle') is not True:
-            tarball(item)
-            continue
-        # Bundled contents are shipped inside an ancestor tarball, not fetched by
-        # a missing child URL. Require the complete explicit bundle ancestry.
-        child=path
-        while True:
-            if '/node_modules/' not in child:
-                raise ValueError('Bundled dependency has no pinned containing package')
-            parent,direct=child.rsplit('/node_modules/',1)
-            owner=packages.get(parent)
-            if not isinstance(owner,dict) or owner.get('link'):
-                raise ValueError('Bundled dependency parent is absent or linked')
-            if owner.get('inBundle') is True:
-                child=parent
-                continue
-            declared=owner.get('bundleDependencies',owner.get('bundledDependencies'))
-            if not isinstance(declared,list) or direct not in declared:
-                raise ValueError('Containing tarball does not declare this bundled dependency')
-            tarball(owner)
-            break
-        # If npm retains a separate origin too, do not ignore an invalid one.
-        if 'resolved' in item or 'integrity' in item:tarball(item)
 
 
 def select_node(vendor, package, lock):
@@ -413,7 +377,9 @@ def discover(vendor, version=None, mode='stable', root=ROOT):
     tools = select_node(vendor, json.loads(raw['frontend/package.json']), json.loads(raw['frontend/package-lock.json']))
     installer, geoip = installer_inputs(vendor, result['version'], mode, root)
     contract = {'schema': 1, 'kind': '1panel-resolved-build-inputs', 'version': result['version'], 'mode': mode, 'edition': 'community', 'architectures': ARCHES, 'source': result['source'], 'installer': installer, 'toolchain': dict(go=result['go'], **tools), 'resources': {'geoip': geoip}, 'configuration': result['configuration'], 'frontend_lock': result['frontend_lock']}
-    return contract, repair
+    # A generated lock travels with this exact run, never into a checked-in map.
+    payload = raw['frontend/package-lock.json'] if result['frontend_lock']['kind'] == 'resolved' else None
+    return contract, payload
 
 
 if __name__ == '__main__':
@@ -430,6 +396,15 @@ if __name__ == '__main__':
     else:
         if args.output is None:
             parser.error('--output is required for immutable contract discovery')
-        contract, _ = discover(vendor, args.version, mode)
-        args.output.write_bytes(canonical(contract))
-        print(hashlib.sha256(canonical(contract)).hexdigest())
+        contract, payload = discover(vendor, args.version, mode)
+        from automatic_frontend_lock import SIDECAR, write_payload, read_payload, read_regular
+        # A retry must not replace another discovery's already pinned inputs.
+        encoded = canonical(contract)
+        if args.output.exists() or args.output.is_symlink():
+            if read_regular(args.output, 1024 * 1024) != encoded:
+                raise ValueError('Refusing to replace a different resolved run contract')
+        if payload is not None:
+            write_payload(args.output.parent / SIDECAR, payload)
+        read_payload(args.output.parent, contract)
+        write_payload(args.output, encoded)
+        print(hashlib.sha256(encoded).hexdigest())

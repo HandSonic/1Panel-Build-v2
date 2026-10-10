@@ -67,6 +67,9 @@ def apply(frontend, contract, root=ROOT):
     lock = contract['frontend_lock']
     if lock['kind'] == 'source':
         return
+    if lock['kind'] == 'resolved':
+        from automatic_frontend_lock import apply as apply_resolved
+        return apply_resolved(frontend, contract, root)
     manifest_path = frontend / 'package.json'
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise ValueError('Missing or linked frontend manifest')

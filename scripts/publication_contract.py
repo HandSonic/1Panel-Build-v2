@@ -8,6 +8,15 @@ ROOT=Path(__file__).resolve().parents[1]
 ARCHES=['amd64','arm64','armv7','ppc64le','s390x','loong64','riscv64']
 REPOS={'upstream-matrix':'HandSonic/1Panel-Build-v2'}
 PROOF='release-validation.json'
+LINEAGE_KEYS=('requested_architectures','resolved_contract_sha256','current_generation','generations','artifact_generations')
+
+def matrix_validate(manifest, version=None):
+    if manifest.get('schema_version') == 3:
+        from publication_lineage import validate
+    else:
+        from matrix_contract import validate
+    return validate(manifest,version)
+
 
 
 def contract_for_repo(repository):
@@ -24,7 +33,9 @@ def policy_fingerprint(contract,version,root=ROOT):
                'scripts/discover_inputs.py','scripts/resolved_contract.py','scripts/select_node_toolchain.mjs',
                'scripts/lock_catalog.py','scripts/matrix_contract.py','scripts/semantic_configuration.py',
                'scripts/publication_contract.py','scripts/manual_publication.py',
-               'scripts/release_asset_repair.py','scripts/aggregate_shards.py']
+               'scripts/release_asset_repair.py','scripts/aggregate_shards.py',
+               'scripts/automatic_frontend_lock.py','scripts/automatic_frontend_lock.mjs',
+               'scripts/frontend_lock_origins.py','scripts/verify_bundled_archives.py','scripts/publication_lineage.py','scripts/automatic_publication.py']
         facts={p:digest(root/p)['sha256'] for p in paths}
         facts['resolved_contract_sha256']=contract_digest(runtime_contract(version,root))
         return hashlib.sha256(json.dumps(facts,sort_keys=True).encode()).hexdigest()
@@ -36,6 +47,9 @@ def expected_names(contract,version,root=ROOT,accepted=None):
         names={f'1panel-{version}-linux-{a}.tar.gz' for a in (ARCHES if accepted is None else accepted)}
         result=names|{name+'.sha256' for name in names}|{'checksums.txt','build-manifest.json','build-inputs.env'}
         result.add('resolved-source.json')
+        from automatic_frontend_lock import required_sidecars
+        from resolved_contract import runtime_contract
+        result.update(required_sidecars(runtime_contract(version, root)))
         return result
     raise ValueError('Unknown publication contract')
 
@@ -43,8 +57,7 @@ def expected_names(contract,version,root=ROOT,accepted=None):
 def validate_payloads(directory,contract,version,root=ROOT):
     directory=Path(directory)
     if contract=='upstream-matrix':
-        from matrix_contract import validate
-        accepted=validate(json.loads((directory/'build-manifest.json').read_text()),version)
+        accepted=matrix_validate(json.loads((directory/'build-manifest.json').read_text()),version)
         if not accepted:raise ValueError('No successful architecture payloads')
         # Every accepted archive is independently checked.
         subprocess.run([sys.executable,str(root/'scripts/validate_artifacts.py'),str(directory),version,' '.join(accepted)],check=True)
@@ -66,28 +79,46 @@ def make_proof(files,contract,version,tag,repository,workflow_run_id,workflow_co
             'workflow_run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
             'files':{p.name:digest(p) for p in files}}
     if contract=='upstream-matrix':
-        from matrix_contract import validate
         manifest=json.loads(next(p for p in files if p.name=='build-manifest.json').read_text())
-        proof['successful_architectures']=validate(manifest,version)
-        for key in ('requested_architectures','producer_run_id','producer_run_attempt','producer_head_sha','outcomes'):
-            proof[key]=manifest[key]
+        proof['successful_architectures']=matrix_validate(manifest,version)
+        proof['schema']=manifest['schema_version']
+        keys=LINEAGE_KEYS if proof['schema']==3 else ('requested_architectures','producer_run_id','producer_run_attempt','producer_head_sha','outcomes')
+        for key in keys:proof[key]=manifest[key]
     return proof
 
 
-def verify_receipt(proof,checksums,assets,run,contract,version,tag,repository,root=ROOT):
+def verify_receipt(proof,checksums,assets,run,contract,version,tag,repository,root=ROOT,*,current_payloads_revalidated=False):
     if type(proof.get('workflow_run_attempt')) is not int or proof['workflow_run_attempt']<=0:raise ValueError('Invalid validation attempt identity')
     if contract=='upstream-matrix':
-        from matrix_contract import validate
-        synthetic={'schema_version':2,'version':version,'artifacts':[{'architecture':a} for a in proof.get('successful_architectures',[])]}
-        for key in ('requested_architectures','producer_run_id','producer_run_attempt','producer_head_sha','outcomes'):synthetic[key]=proof.get(key)
-        if not validate(synthetic,version):raise ValueError('Empty successful publication inventory')
+        schema=proof.get('schema')
+        if schema not in (2,3):raise ValueError('Unsupported publication receipt schema')
+        synthetic={'schema_version':schema,'version':version,'artifacts':[{'architecture':a} for a in proof.get('successful_architectures',[])]}
+        keys=LINEAGE_KEYS if schema==3 else ('requested_architectures','producer_run_id','producer_run_attempt','producer_head_sha','outcomes')
+        for key in keys:synthetic[key]=proof.get(key)
+        if schema==3:
+            synthetic['artifacts']=[]
+            for arch in proof.get('successful_architectures',[]):
+                key=proof.get('artifact_generations',{}).get(arch)
+                rows=proof.get('generations',{}).get(key,{}).get('artifacts',[])
+                matches=[r for r in rows if r.get('architecture')==arch]
+                if len(matches)!=1:raise ValueError('Missing receipt lineage row')
+                synthetic['artifacts'].append(matches[0])
+        if not matrix_validate(synthetic,version):raise ValueError('Empty successful publication inventory')
     expected=expected_names(contract,version,root,proof.get('successful_architectures') if contract=='upstream-matrix' else None)
-    identity={'schema':2 if contract=='upstream-matrix' else 1,'contract':contract,'version':version,'release_tag':tag,'repository':repository,
+    identity={'schema':proof.get('schema') if contract=='upstream-matrix' else 1,'contract':contract,'version':version,'release_tag':tag,'repository':repository,
               'policy_fingerprint':policy_fingerprint(contract,version,root)}
+    if current_payloads_revalidated:
+        # Only existing_release_state's complete, current-validator no-op path uses this.
+        identity.pop('policy_fingerprint')
+        if not re.fullmatch('[0-9a-f]{64}',proof.get('policy_fingerprint','')):raise ValueError('Invalid historical policy fingerprint')
     if any(proof.get(k)!=v for k,v in identity.items()):raise ValueError('Repair-needed: validation receipt identity is missing or stale')
     if set(proof.get('files',{}))!=expected:raise ValueError('Repair-needed: receipt matrix mismatch')
-    if run.get('id')!=proof.get('workflow_run_id') or run.get('run_attempt')!=proof.get('workflow_run_attempt') or run.get('head_sha')!=proof.get('workflow_commit') or run.get('status')!='completed' or run.get('conclusion')!='success':
-        raise ValueError('Repair-needed: receipt workflow is not a completed successful exact commit')
+    if run.get('id')!=proof.get('workflow_run_id') or run.get('run_attempt')!=proof.get('workflow_run_attempt') or run.get('head_sha')!=proof.get('workflow_commit') or run.get('status')!='completed' or run.get('conclusion') not in ('success','failure'):
+        raise ValueError('Repair-needed: receipt workflow is not a completed permitted exact commit')
+    if run.get('conclusion')=='failure':
+        producer=proof.get('generations',{}).get(proof.get('current_generation'),{}) if proof.get('schema')==3 else proof
+        if run.get('id')!=producer.get('producer_run_id') or run.get('run_attempt')!=producer.get('producer_run_attempt') or not any(r.get('status')=='failure' for r in producer.get('outcomes',[])):
+            raise ValueError('Receipt failure is not its own declared partial producer')
     allowed={'.github/workflows/build.yml'}
     if run.get('path','').split('@')[0] not in allowed:raise ValueError('Repair-needed: unrecognized receipt workflow')
     by_name={a['name']:a for a in assets}
@@ -129,10 +160,10 @@ def verify_validation_log(client,proof,receipt_sha):
         if type(job.get('id')) is not int or job.get('run_id')!=run_id or job.get('run_attempt')!=proof['workflow_run_attempt'] or job.get('head_sha')!=proof['workflow_commit']:continue
         logs=client.run('api',f'repos/{client.repo}/actions/jobs/{job['id']}/logs')
         hashes=re.findall(r'VERIFIED_RELEASE_RECEIPT_SHA256=([0-9a-f]{64})',logs)
-        if receipt_sha in hashes:return True
+        if hashes == [receipt_sha]:return True
     raise ValueError('Repair-needed: published receipt is not bound to a successful validation job')
 
-def existing_release_state(client,contract,version,tag,root=ROOT):
+def existing_release_state(client,contract,version,tag,root=ROOT,*,complete_noop_arches=None):
     release=client.release()
     if release.get('draft'):return 'draft'
     with tempfile.TemporaryDirectory() as temporary:
@@ -154,25 +185,49 @@ def existing_release_state(client,contract,version,tag,root=ROOT):
             import shutil
             verification_root=directory/'policy'
             verification_root.mkdir()
-            shutil.copytree(root/'config',verification_root/'config')
+            shutil.copytree(root/'config',verification_root/'config',ignore=shutil.ignore_patterns('resolved-source.json','resolved-frontend-package-lock.json'))
             shutil.copytree(root/'scripts',verification_root/'scripts')
             shutil.copyfile(root/'Dockerfile',verification_root/'Dockerfile')
+            from automatic_frontend_lock import required_sidecars
+            for name in required_sidecars(json.loads(supplied.read_text())):
+                client.download(name,directory)
+                if digest(directory/name)!=proof['files'].get(name):raise ValueError('Published lock sidecar differs from receipt')
             apply_contract(supplied,proof['files']['resolved-source.json']['sha256'],verification_root,version)
             client.download('build-manifest.json',directory)
             manifest_path=directory/'build-manifest.json'
             if digest(manifest_path)!=proof['files']['build-manifest.json']:raise ValueError('Published matrix differs from receipt')
             manifest=json.loads(manifest_path.read_text())
-            from matrix_contract import verify_jobs,validate
-            if validate(manifest,version)!=proof.get('successful_architectures'):raise ValueError('Published accepted inventory differs from receipt')
-            for key in ('requested_architectures','producer_run_id','producer_run_attempt','producer_head_sha','outcomes'):
+            if matrix_validate(manifest,version)!=proof.get('successful_architectures'):raise ValueError('Published accepted inventory differs from receipt')
+            keys=LINEAGE_KEYS if manifest['schema_version']==3 else ('requested_architectures','producer_run_id','producer_run_attempt','producer_head_sha','outcomes')
+            for key in keys:
                 if manifest[key]!=proof.get(key):raise ValueError('Published matrix identity differs from receipt')
-            producer=manifest['producer_run_id'];attempt=manifest['producer_run_attempt']
-            producer_run=json.loads(client.run('api',f'repos/{client.repo}/actions/runs/{producer}/attempts/{attempt}'))
-            pages=json.loads(client.run('api','--paginate','--slurp',f'repos/{client.repo}/actions/runs/{producer}/attempts/{attempt}/jobs?per_page=100'))
-            commits={r['build_repository_commit'] for r in manifest['artifacts']}
-            if len(commits)!=1:raise ValueError('Mixed producer commits')
-            built_commit=commits.pop()
-            execution=json.loads(client.run('api',f'repos/{client.repo}/git/commits/{built_commit}')) if producer_run.get('event')=='pull_request' else None
-            verify_jobs(manifest,producer_run,[j for page in pages for j in page['jobs']],built_commit,execution)
-        verify_receipt(proof,(directory/'checksums.txt').read_bytes(),assets,run,contract,version,tag,client.repo,verification_root)
-    return 'verified'
+            verify_manifest_producers(client,manifest)
+        if complete_noop_arches is not None:
+            if proof.get('successful_architectures')!=complete_noop_arches or proof.get('requested_architectures')!=complete_noop_arches:
+                raise ValueError('No-op requires the entire exact requested inventory')
+            payloads=directory/'payloads';payloads.mkdir()
+            for name,facts in proof['files'].items():
+                present=directory/name
+                if not present.exists():client.download(name,directory)
+                if digest(present)!=facts:raise ValueError('Current no-op readback differs from old receipt')
+                os.link(present,payloads/name)
+            validate_payloads(payloads,contract,version,verification_root)
+            if client.release()!=release:raise ValueError('Release changed during current no-op revalidation')
+        verify_receipt(proof,(directory/'checksums.txt').read_bytes(),assets,run,contract,version,tag,client.repo,verification_root,
+                       current_payloads_revalidated=complete_noop_arches is not None)
+    return 'verified-current-noop' if complete_noop_arches is not None else 'verified'
+
+
+def verify_manifest_producers(client, manifest):
+    from matrix_contract import verify_jobs
+    matrix_validate(manifest)
+    generations=manifest['generations'].values() if manifest['schema_version']==3 else [manifest]
+    for generation in generations:
+        producer=generation['producer_run_id'];attempt=generation['producer_run_attempt']
+        run=json.loads(client.run('api',f'repos/{client.repo}/actions/runs/{producer}/attempts/{attempt}'))
+        pages=json.loads(client.run('api','--paginate','--slurp',f'repos/{client.repo}/actions/runs/{producer}/attempts/{attempt}/jobs?per_page=100'))
+        commits={r['build_repository_commit'] for r in generation['artifacts']}
+        if len(commits)!=1:raise ValueError('Missing or mixed producer commits')
+        built=commits.pop()
+        execution=json.loads(client.run('api',f'repos/{client.repo}/git/commits/{built}')) if run.get('event')=='pull_request' else None
+        verify_jobs(generation,run,[j for page in pages for j in page['jobs']],built,execution)

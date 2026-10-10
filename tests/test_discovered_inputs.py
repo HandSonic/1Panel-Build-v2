@@ -71,9 +71,26 @@ class SourceDiscoveryTests(unittest.TestCase):
   with self.assertRaises(ValueError):discovery.identity('v2.99.0/../../main')
   v=FakeVendor();v.files['agent/go.mod']=b'module test\ngo 9.0.0\n'
   with self.assertRaises(ValueError):discovery.resolve_source(v,'v2.99.0')
- def test_missing_lock_needs_a_manifest_bound_candidate(self):
+ def test_missing_lock_uses_exact_manifest_bound_generation(self):
+  from automatic_frontend_lock import GENERATOR,sha
+  v=FakeVendor();lock=v.files.pop('frontend/package-lock.json');manifest=v.files['frontend/package.json']
+  descriptor={'kind':'resolved','sha256':sha(lock),'bytes':len(lock),'manifest_sha256':sha(manifest),'manifest':manifest.decode(),'generator':dict(GENERATOR)}
+  with patch('automatic_frontend_lock.generate',return_value=(lock,descriptor)) as generate:
+   value,raw,recipe=discovery.resolve_source(v,'v2.99.0')
+  generate.assert_called_once_with(manifest,'a'*40,sha(manifest))
+  self.assertEqual(value['frontend_lock'],descriptor);self.assertIsNone(recipe)
+  self.assertEqual(value['source']['absent'],['frontend/package-lock.json'])
+  self.assertNotIn('frontend/package-lock.json',value['source']['files'])
+  self.assertEqual(raw['frontend/package-lock.json'],lock)
+ def test_existing_invalid_lock_never_triggers_fresh_resolution(self):
+  v=FakeVendor();v.files['frontend/package-lock.json']=b'{"lockfileVersion":3,"packages":{"":{}}}'
+  with patch('automatic_frontend_lock.generate',side_effect=AssertionError('must not replace present lock')) as generate:
+   with self.assertRaises(ValueError):discovery.resolve_source(v,'v2.99.0')
+  generate.assert_not_called()
+ def test_missing_lock_resolution_failure_is_not_silently_accepted(self):
   v=FakeVendor();del v.files['frontend/package-lock.json']
-  with self.assertRaisesRegex(ValueError,'candidate dependency resolution required'):discovery.resolve_source(v,'v2.99.0')
+  with patch('automatic_frontend_lock.generate',side_effect=ValueError('registry integrity failure')):
+   with self.assertRaisesRegex(ValueError,'registry integrity failure'):discovery.resolve_source(v,'v2.99.0')
 
 class ContractTransportTests(unittest.TestCase):
  def setUp(self):

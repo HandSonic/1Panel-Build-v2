@@ -5,7 +5,14 @@
     script: |
       set -eu
       rm -f -- cnb-verified-artifacts
-      apk add --no-cache bash python3 py3-pip curl jq git nodejs npm
+      apk add --no-cache bash python3 py3-pip curl jq git libstdc++ libgcc
+      toolchain=$(docker create --entrypoint true node:22.22.1-alpine)
+      trap 'docker rm -f "$toolchain" >/dev/null' EXIT
+      mkdir -p /tmp/cnb-node
+      docker cp "$toolchain:/usr/local/." /tmp/cnb-node/
+      export PATH="/tmp/cnb-node/bin:$PATH"
+      test "$(node --version)" = v22.22.1
+      test "$(npm --version)" = 10.9.4
       python3 -m venv /tmp/build-python
       . /tmp/build-python/bin/activate
       python3 -m pip install --disable-pip-version-check PyYAML==6.0.3

@@ -168,11 +168,15 @@ def source_contract(raw, expected_digest, version, mode):
                 'Configuration is not bound to immutable source bytes')
         hash_value(profile['normalized_sha256'])
     lock = value['frontend_lock']
-    require(isinstance(lock, dict) and lock.get('kind') in ('source', 'derived'), 'Unsupported frontend lock origin')
-    fields = ('kind', 'sha256', 'manifest_sha256') + (('recipe_sha256',) if lock['kind'] == 'derived' else ())
-    exact_keys(lock, fields, 'frontend lock')
-    for key in fields[1:]:
-        hash_value(lock[key])
+    require(isinstance(lock, dict) and lock.get('kind') in ('source', 'derived', 'resolved'), 'Unsupported frontend lock origin')
+    if lock['kind'] == 'resolved':
+        from automatic_frontend_lock import validate_descriptor
+        validate_descriptor(lock, source)
+    else:
+        fields = ('kind', 'sha256', 'manifest_sha256') + (('recipe_sha256',) if lock['kind'] == 'derived' else ())
+        exact_keys(lock, fields, 'frontend lock')
+        for key in fields[1:]:
+            hash_value(lock[key])
     require(source['files'].get('frontend/package.json', {}).get('sha256') == lock['manifest_sha256'],
             'Frontend dependency manifest is not bound to source')
     if lock['kind'] == 'source':
@@ -188,7 +192,8 @@ def apply_contract(path, expected_digest, root, version):
     """Install a verified generated contract into this disposable CI checkout only."""
     from pathlib import Path
     root, path = Path(root), Path(path)
-    raw = path.read_bytes()
+    from automatic_frontend_lock import SIDECAR, read_regular, read_payload, write_payload
+    raw = read_regular(path, MAX_CONTROL)
     mode = object_bytes(raw).get('mode')
     contract = source_contract(raw, expected_digest, version, mode)
     inputs = contract['source']
@@ -212,13 +217,19 @@ def apply_contract(path, expected_digest, root, version):
             require(recipe.get('reviewed_lock_file') == 'frontend-locks/' + lock['sha256'] + '.package-lock.json', 'Unexpected content-addressed lock path')
             lock_file = root / 'config' / recipe['reviewed_lock_file']
             require(not lock_file.is_symlink() and lock_file.is_file() and hashlib.sha256(lock_file.read_bytes()).hexdigest() == lock['sha256'], 'Derived lock bytes mismatch')
-    else:
+    elif lock['kind'] == 'source':
         require(not absent, 'Source lock cannot be absent')
+    payload = read_payload(path.parent, contract)
     # Runtime facts live in one authenticated per-run artifact, never a version registry.
     target = root / 'config/resolved-source.json'
+    require(not target.parent.is_symlink(), 'Linked resolved input directory rejected')
     require(not target.is_symlink(), 'Linked resolved run contract rejected')
-    if target.exists() and target.read_bytes() != canonical(contract):
+    if target.exists() and read_regular(target, MAX_CONTROL) != canonical(contract):
         raise ValueError('Refusing to replace a different resolved run contract')
+    if payload is not None:
+        write_payload(root / 'config' / SIDECAR, payload)
+    else:
+        read_payload(root / 'config', contract)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(canonical(contract))
     return contract

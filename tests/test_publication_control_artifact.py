@@ -22,6 +22,7 @@ class PublicationControlArtifact(unittest.TestCase):
             'publication-work/release/build-manifest.json',
             'publication-work/release/build-inputs.env',
             'publication-work/release/resolved-source.json',
+            'publication-work/release/resolved-frontend-package-lock.json',
         ])
         self.assertEqual(args['if-no-files-found'], 'error')
         self.assertEqual(args['retention-days'], 14)
@@ -32,3 +33,15 @@ class PublicationControlArtifact(unittest.TestCase):
         repair = data['jobs']['publication_repair']
         self.assertEqual(repair['permissions']['contents'], 'write')
         self.assertEqual(repair['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
+
+    def test_automatic_writer_requires_successful_preparation_and_receipt_binding(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        job = data['jobs']['automatic_publication']
+        self.assertIn("needs.publication_prepare.result == 'success'", job['if'])
+        self.assertIn('!cancelled()', job['if'])
+        self.assertEqual(job['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
+        self.assertEqual(job['permissions']['contents'], 'write')
+        self.assertNotIn('id-token', job['permissions'])
+        commands = '\n'.join(step.get('run', '') for step in job['steps'])
+        self.assertIn('automatic_publication.py publish', commands)
+        self.assertNotIn('gh release delete', commands)
