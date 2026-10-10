@@ -12,14 +12,12 @@ import json
 from pathlib import PurePosixPath
 import re
 from urllib.parse import urlsplit
+from installer_resources import MODERN, resource_layout
 
 ARCHES = ('amd64', 'arm64', 'armv7', 'ppc64le', 's390x', 'loong64', 'riscv64')
 NATIVE = ('amd64', 'arm64')
 SOURCES = ('official', 'custom', 'enterprise-original', 'enterprise-docker')
-INSTALLER_REQUIRED = {'install.sh', '1pctl'} | {
-    f'initscript/1panel-{part}.{kind}' for part in ('core', 'agent')
-    for kind in ('service', 'init', 'openrc', 'procd')} | {
-    f'lang/{language}.sh' for language in ('en', 'fa', 'pt-BR', 'ru', 'zh')}
+INSTALLER_REQUIRED = MODERN  # Compatibility name for existing modern-layout fixtures.
 VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:beta|dev)\.(?:0|[1-9][0-9]*)))?')
 MAX_CONTROL = 1024 * 1024
 
@@ -130,7 +128,7 @@ def source_contract(raw, expected_digest, version, mode):
     require(installer['repository'] == '1Panel-dev/installer', 'Unexpected installer repository')
     commit_value(installer['commit'])
     file_map(installer['resources'])
-    require(INSTALLER_REQUIRED == set(installer['resources']), 'Incomplete installer resource contract')
+    resource_layout(installer['resources'])
     require(isinstance(installer['original_version'], str) and
             (installer['original_version'] == 'version' or VERSION.fullmatch(installer['original_version'])),
             'Invalid original installer version')
@@ -201,8 +199,7 @@ def apply_contract(path, expected_digest, root, version):
     absent = inputs['absent']
     require(absent in ([], ['frontend/package-lock.json']), 'Unsupported dependency absence contract')
     require(set(inputs['files']) == required - set(absent) | {f'{c}/cmd/server/conf/app.yaml' for c in ('core', 'agent')}, 'Unexpected source input set')
-    from discover_inputs import INSTALLER_FILES
-    require(set(contract['installer']['resources']) == set(INSTALLER_FILES), 'Incomplete installer resources')
+    resource_layout(contract['installer']['resources'])
     for component, profile in contract['configuration'].items():
         require(profile['path'] == f'{component}/cmd/server/conf/app.yaml' and type(profile['source_bytes']) is int and 0 < profile['source_bytes'] <= 65536, 'Unsupported embedded source contract')
     lock = contract['frontend_lock']

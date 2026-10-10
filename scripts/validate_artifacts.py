@@ -3,6 +3,7 @@
 import gzip,hashlib,json,pathlib,re,struct,sys,tarfile
 from resolve_inputs import resolve
 from embedded_configuration import validate_binary
+from installer_resources import service_copies, resource_layout, validate_root_interface
 ARCHES={'amd64':(2,1,62),'arm64':(2,1,183),'armv7':(1,1,40),'ppc64le':(2,1,21),'s390x':(2,2,22),'loong64':(2,1,258),'riscv64':(2,1,243)}
 def architectures(value):
     arches=value.replace(',',' ').replace(';',' ').split()
@@ -53,8 +54,10 @@ def validate_package(path, version, arch):
                 continue
             if hashlib.sha256(data[rel]).hexdigest()!=digest: raise ValueError(f'Installer resource mismatch {rel}')
         if f'ORIGINAL_VERSION={version}'.encode() not in data['1pctl']: raise ValueError('1pctl version mismatch')
-        for part in ('core','agent'):
-            if data[f'1panel-{part}.service'] != data[f'initscript/1panel-{part}.service']: raise ValueError('Service copy mismatch')
+        if resource_layout(entry['installer_sha256']) == 'root-systemd':
+            validate_root_interface(data['install.sh'], entry['installer_sha256'])
+        for source, target in service_copies(entry['installer_sha256']):
+            if data[target] != data[source]: raise ValueError('Service copy mismatch')
         return manifest
 
 def validate_dist(dist,version,arches):

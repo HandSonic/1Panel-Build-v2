@@ -14,6 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from semantic_configuration import production
 from frontend_lock_origins import validate_lock_origins
+from installer_resources import ARCHIVE_RESOURCES, MODERN, archive_resources
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHES = ['amd64', 'arm64', 'armv7', 'ppc64le', 's390x', 'loong64', 'riscv64']
@@ -21,7 +22,7 @@ SOURCE = '1Panel-dev/1Panel'
 INSTALLER = '1Panel-dev/installer'
 VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(beta|dev)\.(0|[1-9][0-9]*))?')
 DEPENDENCIES = ['core/go.mod', 'agent/go.mod', 'frontend/package.json', 'frontend/package-lock.json']
-INSTALLER_FILES = ['install.sh', '1pctl'] + [f'initscript/1panel-{part}.{ext}' for part in ['core', 'agent'] for ext in ['init', 'openrc', 'procd', 'service']] + [f'lang/{lang}.sh' for lang in ['en', 'fa', 'pt-BR', 'ru', 'zh']]
+INSTALLER_FILES = sorted(MODERN)  # Existing public helper name; runtime discovery selects the actual layout.
 
 
 def canonical(value):
@@ -305,20 +306,21 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
                     sha.update(part); size += len(part)
                     if rel == 'GeoIP.mmdb' and geoip_destination is not None:
                         geoip_destination.write(part)
-                    if rel in INSTALLER_FILES:
+                    if rel in ARCHIVE_RESOURCES:
                         if size > 512 * 1024:
                             raise ValueError('Installer resource exceeds bound')
                         kept.extend(part)
                 if size != member.size:
                     raise ValueError('Truncated official member')
-                if rel in INSTALLER_FILES:
+                if rel in ARCHIVE_RESOURCES:
                     resources[rel] = bytes(kept)
                 if rel == 'GeoIP.mmdb':
                     geoip = {'sha256': sha.hexdigest(), 'bytes': size}
         while stream.read(1024 * 1024):
             pass
-    if stream.sha.hexdigest() != expected_sha or (expected is not None and stream.size != expected['bytes']) or set(resources) != set(INSTALLER_FILES) or not geoip or not geoip['bytes']:
+    if stream.sha.hexdigest() != expected_sha or (expected is not None and stream.size != expected['bytes']) or not geoip or not geoip['bytes']:
         raise ValueError('Official archive integrity/resource contract mismatch')
+    resources = archive_resources(resources)
     geoip['archive'] = {'url': base + name, 'sha256': stream.sha.hexdigest(), 'bytes': stream.size, 'member': name[:-7] + '/GeoIP.mmdb'}
     return resources, geoip
 
@@ -353,9 +355,11 @@ def installer_inputs(vendor, version, mode, root=ROOT):
         if install != resources['install.sh']:
             continue
         values = {'install.sh': install}
-        for path in INSTALLER_FILES:
+        for path in resources:
             if path not in values:
-                values[path] = vendor.source(INSTALLER, commit, path)
+                values[path] = vendor.source(INSTALLER, commit, path, optional=True)
+        if any(data is None for data in values.values()):
+            continue
         original = re.findall(rb'^ORIGINAL_VERSION=([^\r\n]+)$', values['1pctl'], re.M)
         if len(original) != 1:
             continue
@@ -363,7 +367,7 @@ def installer_inputs(vendor, version, mode, root=ROOT):
         if raw_version != 'version' and not VERSION.fullmatch(raw_version):
             continue
         rendered = re.sub(rb'^ORIGINAL_VERSION=.*$', ('ORIGINAL_VERSION=' + version).encode(), values['1pctl'], flags=re.M)
-        if all((rendered if path == '1pctl' else values[path]) == resources[path] for path in INSTALLER_FILES):
+        if all((rendered if path == '1pctl' else values[path]) == resources[path] for path in resources):
             matched = {'repository': INSTALLER, 'commit': commit, 'resources': {path: facts(data) for path, data in values.items()}, 'original_version': raw_version}
             break
     if matched is None:

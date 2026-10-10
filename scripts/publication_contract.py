@@ -35,6 +35,7 @@ def policy_fingerprint(contract,version,root=ROOT):
                'scripts/publication_contract.py','scripts/manual_publication.py',
                'scripts/release_asset_repair.py','scripts/aggregate_shards.py',
                'scripts/automatic_frontend_lock.py','scripts/automatic_frontend_lock.mjs',
+               'scripts/installer_resources.py','scripts/service_layout.py','scripts/download_resources.py',
                'scripts/frontend_lock_origins.py','scripts/verify_bundled_archives.py','scripts/publication_lineage.py','scripts/automatic_publication.py']
         facts={p:digest(root/p)['sha256'] for p in paths}
         facts['resolved_contract_sha256']=contract_digest(runtime_contract(version,root))
