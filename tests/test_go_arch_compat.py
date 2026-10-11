@@ -79,10 +79,20 @@ class Compat(unittest.TestCase):
             with compat.module_for_arch(self.root, 'loong64'):
                 self.fail('must not build')
 
-    def test_dependency_downgrade_rejected(self):
+    def test_original_transitive_floor_is_preserved_in_overlay(self):
+        before = self.graph() + '\n{"Path":"other","Version":"v1.9.0"}'
+        lower = self.graph('v1.29.10', 'v1.49.3') + '\n{"Path":"other","Version":"v1.8.0"}'
+        preserved = self.graph('v1.29.10', 'v1.49.3') + '\n{"Path":"other","Version":"v1.9.0"}'
+        with patch.object(compat, 'run', side_effect=[before, '', lower, '', preserved]) as run, patch.object(compat, 'capabilities', side_effect=[['modernc.org/sqlite/lib'], []]):
+            with compat.module_for_arch(self.root, 'loong64') as modfile:
+                self.assertIsNotNone(modfile)
+            self.assertEqual(run.call_args_list[3].args[0], ['mod', 'edit', '-require=other@v1.9.0'])
+        self.assertEqual((self.root / 'go.sum').read_text(), 'original checksums\n')
+
+    def test_residual_dependency_downgrade_rejected(self):
         before = self.graph() + '\n{"Path":"other","Version":"v1.9.0"}'
         after = self.graph('v1.29.10', 'v1.49.3') + '\n{"Path":"other","Version":"v1.8.0"}'
-        with patch.object(compat, 'run', side_effect=[before, '', after]), patch.object(compat, 'capabilities', return_value=['modernc.org/sqlite/lib']), self.assertRaisesRegex(RuntimeError, 'downgrade other'):
+        with patch.object(compat, 'run', side_effect=[before, '', after, '', after]), patch.object(compat, 'capabilities', return_value=['modernc.org/sqlite/lib']), self.assertRaisesRegex(RuntimeError, 'downgrade other'):
             with compat.module_for_arch(self.root, 'loong64'):
                 self.fail('must not build')
 

@@ -11,7 +11,9 @@ agent module, `go_arch_compat.py` asks Go which files are selected for
 - The compatibility floor is `modernc.org/sqlite v1.29.10` together with
   `modernc.org/libc v1.49.3`, the libc requirement of that SQLite release.
   Requirements are raised with `go mod edit`, followed by Go's minimal version
-  selection. Newer selected dependencies are retained; downgrades are rejected.
+  selection. Original selected transitive dependency floors are retained in the
+  temporary overlay if a newer modernc graph drops a requirement. Newer
+  dependencies are retained; any remaining downgrade is rejected.
 - Source replacements, unexpected probe errors, an unsupported newer graph, or
   an overlay still missing architecture support fail explicitly. There is no
   `@latest`, silent architecture omission, or substitution of another CPU target.

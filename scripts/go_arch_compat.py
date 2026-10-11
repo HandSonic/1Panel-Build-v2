@@ -120,6 +120,17 @@ def module_for_arch(cwd, arch):
         run(['mod', 'edit', *requirements], cwd, arch, modfile)
         # Resolve once, then verify that MVS did not lower any selected dependency.
         selected = {m['Path']: m for m in objects(run(['list', '-m', '-json', 'all'], cwd, arch, modfile))}
+        # A newer modernc release can drop a transitive requirement, causing
+        # Go's recomputed graph to select a lower version even though our two
+        # explicit requirements only increased. Retain original selected floors
+        # in this disposable overlay rather than accepting any downgrade.
+        floors = [f"-require={name}@{before['Version']}"
+                  for name, before in modules.items()
+                  if name in selected and before.get('Version') and selected[name].get('Version')
+                  and older(selected[name]['Version'], before['Version'])]
+        if floors:
+            run(['mod', 'edit', *floors], cwd, arch, modfile)
+            selected = {m['Path']: m for m in objects(run(['list', '-m', '-json', 'all'], cwd, arch, modfile))}
         for name, before in modules.items():
             after = selected.get(name)
             if after and before.get('Version') and after.get('Version') and older(after['Version'], before['Version']):
