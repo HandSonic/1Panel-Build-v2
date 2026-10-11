@@ -94,6 +94,11 @@ def prepare(args):
     if args.upstream_source=='verified-ci':
         source=work/'upstream-input'
         provenance=fetch_ci_bundle(source,args.version,args.run_id,args.artifact_id,args.artifact_sha256,args.build_commit,contract)
+        # Old verified binaries need only a standard data-only metadata migration.
+        # Verify the original CI bytes first, then independently revalidate the result.
+        from package_metadata import embed_legacy
+        if embed_legacy(source,args.version):
+            validate_upstream_input(source,args.version,args.build_commit,contract)
     elif contract=='upstream-matrix':raise ValueError('Upstream promotion requires a verified CI input, never old release bytes')
     destination=work/'release'
     shutil.move(source,destination)

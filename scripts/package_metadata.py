@@ -1,11 +1,98 @@
 """Small, non-executable build inputs carried by ordinary installation archives."""
 import hashlib
+import io
 import json
+import os
 from pathlib import Path, PurePosixPath
 import tarfile
+import tempfile
 
 FORMAT = 'package-only-v1'
 DIRECTORY = 'build-metadata'
+
+
+def embed_legacy(directory, version):
+    """Add data-only inputs to already validated CI packages; never rebuild payloads."""
+    from automatic_frontend_lock import MAX_LOCK, read_regular, read_payload, required_sidecars
+    from resolved_contract import MAX_CONTROL, canonical, object_bytes, source_contract
+    directory = Path(directory)
+    summary_path = directory / 'build-manifest.json'
+    summary = json.loads(summary_path.read_text())
+    raw = read_regular(directory / 'resolved-source.json', MAX_CONTROL)
+    sha = hashlib.sha256(raw).hexdigest()
+    contract = source_contract(raw, sha, version, object_bytes(raw)['mode'])
+    if raw != canonical(contract):
+        raise ValueError('Noncanonical migration source contract')
+    read_payload(directory, contract)
+    additions = {'resolved-source.json': raw}
+    additions.update({name: read_regular(directory / name, MAX_LOCK) for name in required_sidecars(contract)})
+    changed = False
+    for row in summary['artifacts']:
+        arch = row['architecture']
+        name = f'1panel-{version}-linux-{arch}.tar.gz'
+        if row['file'] != name or row.get('resolved_contract_sha256') != sha:
+            raise ValueError('Migration archive identity/source mismatch')
+        path = directory / name
+        if read(path, version, arch) is not None:
+            continue
+        prefix = name.removesuffix('.tar.gz') + '/'
+        with tempfile.TemporaryDirectory(dir=directory) as temporary:
+            output = Path(temporary) / name
+            with tarfile.open(path, 'r:gz') as old, tarfile.open(output, 'w:gz') as new:
+                members = old.getmembers()
+                if any(PurePosixPath(m.name) == PurePosixPath(prefix + DIRECTORY) and not m.isdir() for m in members):
+                    raise ValueError('Legacy payload conflicts with metadata directory')
+                manifests = [m for m in members if m.name == prefix + 'manifest.json']
+                if len(manifests) != 1 or not manifests[0].isfile() or not 0 < manifests[0].size <= MAX_CONTROL:
+                    raise ValueError('Invalid legacy manifest')
+                manifest = object_bytes(old.extractfile(manifests[0]).read())
+                if manifest.get('resolved_contract_sha256') != sha:
+                    raise ValueError('Legacy manifest source mismatch')
+                seen = set()
+                for member in members:
+                    p = PurePosixPath(member.name)
+                    if member.name in seen or p.is_absolute() or '..' in p.parts or p.parts[0] != prefix[:-1]:
+                        raise ValueError('Unsafe or duplicate migration member')
+                    seen.add(member.name)
+                    if member.isdir():
+                        new.addfile(member)
+                        continue
+                    if not member.isfile() or not member.name.startswith(prefix):
+                        raise ValueError('Nonregular migration member')
+                    rel = member.name[len(prefix):]
+                    if rel == 'manifest.json':
+                        continue
+                    body = old.extractfile(member).read()
+                    if manifest['files'].get(rel) != {'sha256': hashlib.sha256(body).hexdigest(), 'size': len(body)}:
+                        raise ValueError('Migration payload differs from original manifest')
+                    # Preserve every original payload byte and tar permission unchanged.
+                    new.addfile(member, io.BytesIO(body))
+                actual = {m.name[len(prefix):] for m in members if m.isfile() and m.name != prefix + 'manifest.json'}
+                if set(manifest['files']) != actual:
+                    raise ValueError('Migration manifest file set mismatch')
+                for filename, body in additions.items():
+                    rel = DIRECTORY + '/' + filename
+                    info = tarfile.TarInfo(prefix + rel)
+                    info.mode = 0o644
+                    info.size = len(body)
+                    new.addfile(info, io.BytesIO(body))
+                    manifest['files'][rel] = {'sha256': hashlib.sha256(body).hexdigest(), 'size': len(body)}
+                manifest['publication_format'] = FORMAT
+                body = canonical(manifest)
+                info = tarfile.TarInfo(prefix + 'manifest.json')
+                info.mode = 0o644
+                info.size = len(body)
+                new.addfile(info, io.BytesIO(body))
+            read(output, version, arch)
+            os.replace(output, path)
+        row['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        row['size'] = path.stat().st_size
+        (directory / (name + '.sha256')).write_text(row['sha256'] + '  ' + name + '\n')
+        changed = True
+    if changed:
+        summary_path.write_bytes(canonical(summary))
+        (directory / 'checksums.txt').write_text(''.join((directory / (row['file'] + '.sha256')).read_text() for row in summary['artifacts']))
+    return changed
 
 
 def install(stage, config, entry):
