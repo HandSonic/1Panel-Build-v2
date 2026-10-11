@@ -22,7 +22,7 @@ on:
         type: choice
         options: [build, build-only, validate-automatic, validate-promotion, promote-existing]
         default: build
-        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit backed-up promotion
+        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit reviewed promotion
       upstream_run_id:
         description: Exact successful build run ID
         default: ''
