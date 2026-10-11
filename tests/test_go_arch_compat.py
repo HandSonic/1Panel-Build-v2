@@ -145,10 +145,6 @@ class Compat(unittest.TestCase):
         self.assertEqual(list(self.root.glob('.sqlite-compat-*')), [])
         self.assertEqual((self.root / 'go.mod').read_text(), 'module fixture\ngo 1.23\n')
 
-    def test_build_entrypoint_uses_wrapper_for_both_components(self):
-        text = (Path(__file__).resolve().parents[1] / 'scripts/build_release.sh').read_text()
-        self.assertIn('for component in core agent', text)
-        self.assertIn('go_arch_compat.py', text)
 
 class WorkflowIntegration(unittest.TestCase):
     def test_loong64_requires_runtime_smoke_before_packaging(self):

@@ -296,14 +296,13 @@ jobs:
           fi
           gh release create "$tag" --target "$GITHUB_SHA" --draft --title "$tag" \
             --notes 'Build candidate only. Included artifacts validated; pending promotion and downstream regression.'
-          gh release upload "$tag" dist/*
+          gh release upload "$tag" dist/*.tar.gz dist/*.tar.gz.sha256
           mkdir remote-readback
           gh release download "$tag" --dir remote-readback
-          python3 scripts/validate_artifacts.py remote-readback "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("remote-readback/build-manifest.json"))["artifacts"]))')"
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
-          local={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('dist').iterdir() if p.is_file()}
+          local={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('dist').iterdir() if p.is_file() and p.name.endswith(('.tar.gz','.tar.gz.sha256'))}
           remote={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('remote-readback').iterdir() if p.is_file()}
           if local != remote: raise SystemExit('Remote readback differs from validated output')
           PY

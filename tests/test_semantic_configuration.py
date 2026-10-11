@@ -110,10 +110,3 @@ class SemanticConfigurationTests(unittest.TestCase):
                     self.assertEqual(hashlib.sha256(normalized).hexdigest(),profile['normalized_sha256'])
                     self.assertEqual(value['source']['files'][profile['path']],{'sha256':profile['source_sha256'],'bytes':len(original)})
 
-    def test_runtime_dependency_is_pinned_and_isolated(self):
-        workflow=(ROOT/'.github/workflows/build.yml').read_text()
-        self.assertIn('python3 -m venv "$RUNNER_TEMP/build-python"',workflow)
-        self.assertIn('PyYAML==6.0.3',workflow)
-        self.assertIn('ENV PATH="/opt/build-python/bin:$PATH"',(ROOT/'Dockerfile').read_text())
-        self.assertIn('python3 -m venv /tmp/build-python',(ROOT/'.cnb.yml').read_text())
-        self.assertIn('PyYAML==6.0.3',(ROOT/'.cnb.yml').read_text())

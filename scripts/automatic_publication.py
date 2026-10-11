@@ -12,7 +12,7 @@ from manual_publication import check_identity, github_json
 from publication_contract import (PROOF, ROOT, digest_bytes, existing_release_state,
                                   make_proof, matrix_validate, validate_payloads)
 from publication_lineage import compose
-from release_asset_repair import GitHub, digest, repair, release_snapshot as snapshot, Journal
+from release_asset_repair import GitHub, digest, repair, release_snapshot as snapshot, Journal, asset_identity
 
 
 
@@ -66,43 +66,30 @@ def prepare(args):
     contract_sha=digest(source/'resolved-source.json')['sha256']
     client=GitHub(args.repository,args.version)
     before=optional_release(client)
-    previous=None
     work.mkdir();control=work/'control';control.mkdir();destination=work/'release';destination.mkdir()
-    if before is not None:
-        if before.get('draft'):raise ValueError('Existing draft requires recovery review; it is not adopted')
-        old=work/'previous';old.mkdir()
-        client.download(PROOF,old)
-        oldproof=json.loads((old/PROOF).read_text())
-        if oldproof.get('successful_architectures')==current['requested_architectures'] and oldproof.get('requested_architectures')==current['requested_architectures']:
-            if existing_release_state(client,contract,args.version,args.version,complete_noop_arches=current['requested_architectures'])!='verified-current-noop':
-                raise ValueError('Existing complete release failed current validation')
-            if snapshot(client.release())!=snapshot(before):raise ValueError('Existing release changed during verification')
-            plan={'schema':1,'operation':'unchanged','before':snapshot(before),'version':args.version}
-            (control/'automatic-plan.json').write_text(json.dumps(plan,sort_keys=True)+'\n')
-            shutil.copyfile(old/PROOF,control/PROOF)
-            print('AUTOMATIC_PUBLICATION_UNCHANGED=1')
-            return
-        if existing_release_state(client,contract,args.version,args.version)!='verified':raise ValueError('Existing release is not verified')
-        if oldproof['files'].get('resolved-source.json',{}).get('sha256')!=contract_sha:
-            raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
-        for name,facts in oldproof['files'].items():
-            client.download(name,old)
-            if digest(old/name)!=facts:raise ValueError('Existing release changed during readback')
-        previous=json.loads((old/'build-manifest.json').read_text())
-    merged=compose(previous,current,contract_sha)
-    for path in files:
-        if not path.name.endswith(('.tar.gz','.tar.gz.sha256')):shutil.copyfile(path,destination/path.name)
-    for row in merged['artifacts']:
-        origin=work/'previous' if previous is not None and row['architecture'] in matrix_validate(previous) else source
-        for name in (row['file'],row['file']+'.sha256'):shutil.copyfile(origin/name,destination/name)
-    (destination/'build-manifest.json').write_text(json.dumps(merged,indent=2)+'\n')
-    (destination/'checksums.txt').write_text(''.join((destination/(r['file']+'.sha256')).read_text() for r in merged['artifacts']))
-    files=validate_payloads(destination,contract,args.version)
+    for path in files:shutil.copyfile(path,destination/path.name)
     proof=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
     (control/PROOF).write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
-    plan={'schema':1,'operation':'create' if before is None else 'append','version':args.version,
+    preserved={}
+    operation='create'
+    if before is not None:
+        from public_packages import verify_existing
+        verified,records=verify_existing(client,args.version,ROOT)
+        if snapshot(verified)!=snapshot(before):raise ValueError('Existing release changed during verification')
+        if set(records)>=set(current['requested_architectures']):
+            operation='unchanged'
+            print('AUTOMATIC_PUBLICATION_UNCHANGED=1')
+        else:
+            if any(row.get('publication_format')!='package-only-v1' for row in records.values()):
+                raise ValueError('Legacy partial release requires explicit package-format migration')
+            if any(row['resolved_contract_sha256']!=contract_sha for row in records.values()):
+                raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
+            operation='append'
+        names={row['file']+suffix for row in records.values() for suffix in ('','.sha256')}
+        preserved={a['name']:asset_identity(a) for a in before['assets'] if a['name'] in names}
+    plan={'schema':1,'operation':operation,'version':args.version,
           'before':snapshot(before),'receipt_sha256':digest(control/PROOF)['sha256'],
-          'preserved':{r['file']:oldproof['files'][r['file']] for r in previous['artifacts']} if previous else {}}
+          'preserved':preserved}
     (control/'automatic-plan.json').write_text(json.dumps(plan,indent=2,sort_keys=True)+'\n')
 
 
@@ -141,14 +128,16 @@ def publish(args,client=None):
     manifest=json.loads((work/'release'/'build-manifest.json').read_text())
     current=manifest['generations'][manifest['current_generation']] if manifest['schema_version']==3 else manifest
     current_producer(current,os.environ['GITHUB_SHA'])
+    # Existing successful architecture packages are never automatically replaced.
+    from public_packages import package_files, recovery_assets, require_embedded, inventory
+    require_embedded(files,args.version)
+    published=package_files(files)
     if plan['operation']=='append':
-        existing={a['name']:a for a in plan['before']['assets'] if a['name'].endswith(('.tar.gz','.tar.gz.sha256'))}
-        for name,asset in existing.items():
-            facts=proof['files'].get(name,{})
-            if asset.get('digest')!='sha256:'+facts.get('sha256','') or asset['size']!=facts.get('bytes'):
-                raise ValueError('Automatic append would replace an existing canonical artifact')
-    for name,facts in plan['preserved'].items():
-        if proof['files'].get(name)!=facts:raise ValueError('Automatic publication cannot replace an existing archive')
+        current_release=client.release()
+        pairs=inventory(current_release,args.version)
+        actual={asset['name']:asset for pair in pairs.values() for asset in pair}
+        if {name:asset_identity(asset) for name,asset in plan['preserved'].items()}!={name:asset_identity(asset) for name,asset in actual.items()}:raise ValueError('Preserved package inventory changed')
+        published=[path for path in published if path.name not in actual]
     journal=control/'automatic-journal.json'
     if journal.exists() or (control/'creation-journal.json').exists():raise ValueError('Existing automatic journal requires recovery review')
     expected_snapshot=plan['before']
@@ -163,10 +152,12 @@ def publish(args,client=None):
         creation.state.update(phase='created',release_id=created['id']);creation.save()
         if snapshot(client.release())!=snapshot(created):raise ValueError('Created draft differs from POST identity')
         expected_snapshot=snapshot(created)
-    ordered=[p for p in files if p.name!='checksums.txt']+[proof_path]+[p for p in files if p.name=='checksums.txt']
+    ordered=published
     recovery={}
     if plan['operation']=='append':
-        recovery={a['name']:a for a in client.release()['assets'] if re.search(r'\.(?:backup|staged)-[0-9a-f]{12}$',a['name'])}
+        current_release=client.release()
+        recovery=recovery_assets(current_release,args.version)
+        recovery.update(actual)
     state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery)
     if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
     if plan['operation']=='create':

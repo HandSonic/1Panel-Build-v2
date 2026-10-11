@@ -17,9 +17,14 @@ def package(root,version,arch):
             source=root/'build'/binary; validate_elf(source.read_bytes(),arch); shutil.copy2(source,stage/binary)
         for optional in ('LICENSE','README.md'):
             if (root/optional).is_file(): shutil.copy2(root/optional,stage/optional)
+        from package_metadata import install, FORMAT
+        if entry.get('resolved_contract_sha256'):
+            install(stage, CONFIG, dict(entry, version=version))
         manifest={'schema_version':1,'version':version,'architecture':arch,'edition':'community','build_repository_commit':commit}
         for key in ('source_commit','installer_commit','mode','go_version','node_version','npm_version'):manifest[key]=entry[key]
-        if entry.get('resolved_contract_sha256'): manifest['resolved_contract_sha256']=entry['resolved_contract_sha256']
+        if entry.get('resolved_contract_sha256'):
+            manifest['resolved_contract_sha256']=entry['resolved_contract_sha256']
+            manifest['publication_format']=FORMAT
         manifest['files']={str(p.relative_to(stage)):{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'size':p.stat().st_size} for p in sorted(stage.rglob('*')) if p.is_file()}
         (stage/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         archive=dist/(name+'.tar.gz')

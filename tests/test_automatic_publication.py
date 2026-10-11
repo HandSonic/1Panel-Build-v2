@@ -1,7 +1,4 @@
-"""Reimplemented recovery tests for the automatic canonical transaction.
-
-These tests replace unavailable local tests; they do not claim the old test blob.
-"""
+"""Automatic package-only publication, immutable append and recovery behavior."""
 import copy
 import hashlib
 import json
@@ -71,8 +68,8 @@ class AutomaticTransaction(unittest.TestCase):
         (self.work / 'control').mkdir()
         (self.work / 'release').mkdir()
         self.files = []
-        for name, body in [('payload.tar.gz', b'archive'),
-                           ('payload.tar.gz.sha256', b'archive checksum'),
+        for name, body in [(f'1panel-{Client.tag}-linux-amd64.tar.gz', b'archive'),
+                           (f'1panel-{Client.tag}-linux-amd64.tar.gz.sha256', b'archive checksum'),
                            ('checksums.txt', b'aggregate checksum'),
                            ('build-manifest.json', b'{"schema_version":2}')]:
             p = self.work / 'release' / name
@@ -102,6 +99,8 @@ class AutomaticTransaction(unittest.TestCase):
             p = patch.object(ap, target, replacement)
             p.start()
             self.addCleanup(p.stop)
+        p = patch('public_packages.require_embedded', return_value=None)
+        p.start(); self.addCleanup(p.stop)
         p = patch('resolved_contract.activate_release', lambda *a: None)
         p.start()
         self.addCleanup(p.stop)
@@ -130,13 +129,14 @@ class AutomaticTransaction(unittest.TestCase):
             self.after_repair(client)
         return {'phase': 'complete'}
 
-    def test_create_checksums_last_and_same_owned_id(self):
+    def test_create_publishes_only_package_pairs_and_same_owned_id(self):
         c = Client()
         self.assertEqual(ap.publish(self.args, c), 'published')
         self.assertFalse(c.value['draft'])
         self.assertEqual(c.value['id'], 17)
         ordered, kw = self.repair_calls[0]
-        self.assertEqual(ordered[-1].name, 'checksums.txt')
+        self.assertEqual({p.name for p in ordered}, {self.files[0].name, self.files[1].name})
+        self.assertTrue(all(p.name.endswith(('.tar.gz', '.tar.gz.sha256')) for p in ordered))
         self.assertEqual(kw['expected_snapshot']['id'], 17)
         self.assertEqual(self.producer_calls, 2)
         self.assertFalse(any('body=' in item for call in c.calls for item in call))
@@ -188,19 +188,22 @@ class AutomaticTransaction(unittest.TestCase):
         self.plan.update(operation='append', before=ap.snapshot(c.release()))
         self.save_plan()
         self.before_repair = lambda client: client.value['assets'].append(
-            {'id': 91, 'name': 'payload.tar.gz', 'size': 9, 'digest': 'sha256:'+'b'*64})
+            {'id': 91, 'name': f'1panel-{Client.tag}-linux-amd64.tar.gz', 'size': 9, 'digest': 'sha256:'+'b'*64})
         with self.assertRaises(ValueError): ap.publish(self.args, c)
         self.assertEqual(c.value['assets'][0]['id'], 91)
         self.assertEqual(c.calls, [])
 
-    def test_append_cannot_replace_existing_bytes(self):
+    def test_append_rejects_tampered_preserved_inventory(self):
         c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False,
-            'body': '', 'assets': [{'id': 91, 'name':'payload.tar.gz',
-            'size': 9, 'digest':'sha256:'+'b'*64}]})
-        self.plan.update(operation='append', before=ap.snapshot(c.release()))
+            'body': '', 'assets': [dict(id=91+i,name=p.name,size=facts(p)['bytes'],
+                digest='sha256:'+facts(p)['sha256']) for i,p in enumerate(self.files[:2])]})
+        self.plan.update(operation='append', before=ap.snapshot(c.release()),
+                         preserved={c.value['assets'][0]['name']:c.value['assets'][0]})
         self.save_plan()
-        with self.assertRaises(ValueError): ap.publish(self.args, c)
+        with self.assertRaisesRegex(ValueError,'Preserved package inventory changed'):
+            ap.publish(self.args,c)
         self.assertFalse(self.repair_calls)
+        self.assertEqual(c.calls,[])
 
 
 class EventGates(unittest.TestCase):
@@ -270,13 +273,22 @@ class RealAppendTransactions(unittest.TestCase):
     def client(self,failure=None):
         from test_release_repair import FakeGitHub
         c=FakeGitHub(failure);c.repo=Client.repo;c.tag=Client.tag
-        c.assets={1:('payload.tar.gz',b'archive'),2:('checksums.txt',b'old sums'),
-                  3:('payload.tar.gz.sha256',b'archive checksum'),
-                  4:('missing.tar.gz.backup-012345abcdef',b'old missing branch')}
+        c.assets={1:(f'1panel-{Client.tag}-linux-amd64.tar.gz',b'archive'),2:('checksums.txt',b'old sums'),
+                  3:(f'1panel-{Client.tag}-linux-amd64.tar.gz.sha256',b'archive checksum'),
+                  4:(f'1panel-{Client.tag}-linux-arm.tar.gz.backup-012345abcdef',b'old missing branch')}
         release=c.release
         c.release=lambda:dict(release(),id=8,draft=False,tag_name=Client.tag)
         self.plan.update(operation='append',before=ap.snapshot(c.release()),
-                         preserved={'payload.tar.gz':facts(self.files[0])})
+                         preserved={a['name']:a for a in c.release()['assets'] if a['id'] in (1,3)})
+        # Rebuilding an already-public architecture must not replace its old bytes.
+        self.files[0].write_bytes(b'rebuilt amd64 archive')
+        self.proof['files'][self.files[0].name]=facts(self.files[0])
+        for suffix,body in [('',b'new arm64 archive'),('.sha256',b'new arm64 checksum')]:
+            path=self.work/'release'/f'1panel-{Client.tag}-linux-arm64.tar.gz{suffix}'
+            path.write_bytes(body);self.files.append(path);self.proof['files'][path.name]=facts(path)
+        self.proofpath.write_text(json.dumps(self.proof))
+        self.plan['receipt_sha256']=facts(self.proofpath)['sha256']
+        os.environ['EXPECTED_VALIDATION_RECEIPT_SHA256']=facts(self.proofpath)['sha256']
         self.save_plan()
         return c
 
@@ -284,9 +296,23 @@ class RealAppendTransactions(unittest.TestCase):
         from release_asset_repair import repair
         c=self.client();before=copy.deepcopy(c.assets)
         with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
-        for i in (1,3,4):self.assertEqual(c.assets[i],before[i])
+        for i in before:self.assertEqual(c.assets[i],before[i])
+        uploads=[call[1] for call in c.calls if call[0]=='upload']
+        self.assertEqual(len(uploads),2)
+        self.assertTrue(all('linux-arm64.tar.gz' in name for name in uploads))
         self.assertFalse(any(call[0]=='rename' and call[1] in (1,3,4) for call in c.calls))
         self.assertEqual(c.body,'old release notes')
+
+    def test_download_counters_do_not_change_preserved_package_identity(self):
+        from release_asset_repair import repair
+        c=self.client();before=copy.deepcopy(c.assets);release=c.release;count=[0]
+        def counted():
+            value=release();count[0]+=1
+            for asset in value['assets']:asset['download_count']=count[0]
+            return value
+        c.release=counted
+        with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
+        for key in before:self.assertEqual(c.assets[key],before[key])
 
     def test_real_transaction_uncertain_switch_rolls_back(self):
         from release_asset_repair import repair
@@ -315,10 +341,10 @@ class RealAppendTransactions(unittest.TestCase):
         from release_asset_repair import repair
         c=self.client()
         def raced(client,*args,**kwargs):
-            client.assets[1]=('payload.tar.gz',b'concurrent replacement')
+            client.assets[1]=(f'1panel-{Client.tag}-linux-amd64.tar.gz',b'concurrent replacement')
             return repair(client,*args,**kwargs)
         with patch.object(ap,'repair',raced),self.assertRaises(ValueError):ap.publish(self.args,c)
-        self.assertEqual(c.assets[1],('payload.tar.gz',b'concurrent replacement'))
+        self.assertEqual(c.assets[1],(f'1panel-{Client.tag}-linux-amd64.tar.gz',b'concurrent replacement'))
         self.assertEqual(c.calls,[])
 
 
@@ -330,20 +356,16 @@ class PrepareControlFlow(unittest.TestCase):
         self.root=Path(self.temp.name);self.source=self.root/'source';self.source.mkdir()
         self.contract=fixture();self.contract_raw=resolved_contract.canonical(self.contract)
         self.contract_sha=hashlib.sha256(self.contract_raw).hexdigest()
-        self.policyroot=self.root/'policy';(self.policyroot/'config').mkdir(parents=True)
-        (self.policyroot/'config'/'repair-locks.json').write_text('{"schema":1,"recipes":[],"additions":{}}')
-        (self.policyroot/'scripts').mkdir();(self.policyroot/'Dockerfile').write_text('synthetic')
-        self.payload_checks=[]
         def validate(directory,*args):
-            directory=Path(directory);self.payload_checks.append(directory)
-            return sorted(directory.iterdir())
+            return sorted(Path(directory).iterdir())
         import publication_contract as pc
         for target,fn in [(ap,'check_identity'),(ap,'current_producer')]:
             p=patch.object(target,fn,return_value='upstream-matrix' if fn=='check_identity' else None)
             p.start();self.addCleanup(p.stop)
-        for target in (ap,pc):
-            p=patch.object(target,'validate_payloads',side_effect=validate);p.start();self.addCleanup(p.stop)
+        p=patch.object(ap,'validate_payloads',side_effect=validate);p.start();self.addCleanup(p.stop)
         p=patch.object(pc,'policy_fingerprint',return_value='f'*64);p.start();self.addCleanup(p.stop)
+        p=patch('public_packages.require_embedded',return_value=None)
+        p.start();self.addCleanup(p.stop)
         p=patch('resolved_contract.activate_release',return_value=None);p.start();self.addCleanup(p.stop)
         p=patch.dict(os.environ,GITHUB_RUN_ID='11',GITHUB_RUN_ATTEMPT='2',GITHUB_SHA='b'*40)
         p.start();self.addCleanup(p.stop)
@@ -364,107 +386,79 @@ class PrepareControlFlow(unittest.TestCase):
         (directory/'resolved-source.json').write_bytes(self.contract_raw)
         return manifest,run,jobs
 
-    def old_release(self,successful=('amd64',)):
-        import publication_contract as pc
-        directory=self.root/'previous';manifest,run,jobs=self.payload(directory,successful,10,'a'*40)
-        proof=pc.make_proof(sorted(directory.iterdir()),'upstream-matrix',Client.tag,Client.tag,
-                            Client.repo,10,'a'*40,self.policyroot)
-        # A deliberately different old policy is allowed only by full current no-op revalidation.
-        proof['policy_fingerprint']='e'*64 if len(successful)==2 else 'f'*64
-        proofraw=json.dumps(proof).encode()
-        objects={p.name:p.read_bytes() for p in directory.iterdir()};objects[ap.PROOF]=proofraw
+    def old_release(self, successful=('amd64',)):
+        directory=self.root/'previous'
+        self.payload(directory,successful,10,'a'*40)
+        packages=[p for p in directory.iterdir() if p.name.endswith(('.tar.gz','.tar.gz.sha256'))]
         client=Client({'id':8,'tag_name':Client.tag,'draft':False,'body':'kept notes',
-            'assets':[{'id':i+1,'name':name,'size':len(body),'digest':'sha256:'+hashlib.sha256(body).hexdigest()}
-                      for i,(name,body) in enumerate(objects.items())]})
-        def download(name,dest):(Path(dest)/name).write_bytes(objects[name])
-        client.download=download
-        def api(*args):
-            if args == ('--version',):return 'gh version 2.92.0 (2026-05-13)'
-            if args[:2] == ('run','view'):return 'VERIFIED_RELEASE_RECEIPT_SHA256='+hashlib.sha256(proofraw).hexdigest()
-            path=args[-1]
-            if '/jobs?' in path:
-                if '--paginate' in args:return json.dumps([{'jobs':jobs}])
-                return json.dumps({'jobs':[{'id':99,'name':'publication_prepare','conclusion':'success',
-                    'run_id':10,'run_attempt':2,'head_sha':'a'*40}]})
-            if path.endswith('/logs'):return 'VERIFIED_RELEASE_RECEIPT_SHA256='+hashlib.sha256(proofraw).hexdigest()
-            if path.endswith('/attempts/2'):return json.dumps(run)
-            raise AssertionError(args)
-        client.run=api
-        return client,objects,proof
+            'assets':[{'id':i+1,'name':p.name,'size':p.stat().st_size,
+                       'digest':'sha256:'+facts(p)['sha256']} for i,p in enumerate(packages)]})
+        records={arch:{'file':f'1panel-{Client.tag}-linux-{arch}.tar.gz',
+                       'resolved_contract_sha256':self.contract_sha,'publication_format':'package-only-v1'} for arch in successful}
+        return client, records
 
-    def perform(self,client):
-        import publication_contract as pc
-        real=pc.existing_release_state
-        with patch.object(ap,'GitHub',return_value=client),patch.object(ap,'optional_release',side_effect=lambda c:c.release()), \
-             patch.object(ap,'existing_release_state',side_effect=lambda c,*args,**kwargs:real(c,*args,root=self.policyroot,**kwargs)):
+    def perform(self, client, records=None, error=None, verified=None):
+        with patch.object(ap,'GitHub',return_value=client), \
+             patch.object(ap,'optional_release',side_effect=lambda c:c.release()), \
+             patch('public_packages.verify_existing',return_value=(verified or client.release(),records),side_effect=error) as verify:
             ap.prepare(self.args)
+            if client.release() is None:verify.assert_not_called()
+            else:verify.assert_called_once_with(client,Client.tag,ap.ROOT)
+        return json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
 
     def test_create_plan_binds_current_contract_and_producer(self):
         self.payload(self.source,('amd64',),11,'b'*40)
-        self.perform(Client())
-        plan=json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
-        manifest=json.loads((self.args.work/'release'/'build-manifest.json').read_text())
+        plan=self.perform(Client())
         self.assertEqual(plan['operation'],'create')
         self.assertIsNone(plan['before'])
-        self.assertEqual(manifest['generations'][manifest['current_generation']]['producer_run_id'],11)
+        self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
 
-    def test_append_retains_exact_old_bytes_and_producer(self):
+    def test_append_preserves_public_pairs_without_merging_old_ci_controls(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        client,objects,_=self.old_release()
-        self.perform(client)
-        manifest=json.loads((self.args.work/'release'/'build-manifest.json').read_text())
-        selected={r['architecture']:r for r in manifest['artifacts']}
-        self.assertEqual(selected['amd64']['build_repository_commit'],'a'*40)
-        self.assertEqual(selected['arm64']['build_repository_commit'],'b'*40)
-        self.assertEqual((self.args.work/'release'/selected['amd64']['file']).read_bytes(),objects[selected['amd64']['file']])
+        client,records=self.old_release()
+        plan=self.perform(client,records)
+        self.assertEqual(plan['operation'],'append')
+        self.assertEqual(plan['preserved'],{a['name']:a for a in client.release()['assets']})
+        self.assertEqual((self.args.work/'release'/'build-manifest.json').read_bytes(),
+                         (self.source/'build-manifest.json').read_bytes())
+        self.assertFalse((self.args.work/'release'/records['amd64']['file']).exists())
 
-    def test_complete_old_policy_noop_revalidates_every_payload(self):
+    def test_verified_complete_public_packages_need_no_old_receipt_or_logs(self):
         self.payload(self.source,('amd64','arm64'),11,'b'*40)
-        client,objects,proof=self.old_release(('amd64','arm64'))
-        self.perform(client)
-        self.assertEqual(json.loads((self.args.work/'control'/'automatic-plan.json').read_text())['operation'],'unchanged')
-        self.assertTrue(any(p.name=='payloads' for p in self.payload_checks))
-        self.assertEqual((self.args.work/'control'/ap.PROOF).read_bytes(),objects[ap.PROOF])
+        client,records=self.old_release(('amd64','arm64'))
+        # Old source contracts may differ for no-op: the actual public bytes were verified.
+        for record in records.values():record['resolved_contract_sha256']='c'*64
+        before=client.release()
+        plan=self.perform(client,records)
+        self.assertEqual(plan['operation'],'unchanged')
+        self.assertEqual(client.release(),before)
+        self.assertEqual(client.calls,[])
+        self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
 
-    def test_legacy_arm_backup_pair_allows_complete_verified_noop(self):
-        from test_publication_lineage import producer_fixture
-        def armv7_fixture(*args,**kwargs):
-            return json.loads(json.dumps(producer_fixture(*args,**kwargs)).replace('arm64','armv7'))
-        with patch('test_publication_lineage.producer_fixture',side_effect=armv7_fixture):
-            self.payload(self.source,('amd64','arm64'),11,'b'*40)
-            client,objects,proof=self.old_release(('amd64','arm64'))
-        legacy=f'1panel-{Client.tag}-linux-arm.tar.gz'
-        for i,name in enumerate((legacy+'.backup-012345abcdef',legacy+'.sha256.backup-012345abcdef'),100):
-            client.value['assets'].append({'id':i,'name':name,'size':10,'digest':'sha256:'+'c'*64})
-        self.assertEqual(sum('.backup-' in a['name'] for a in client.value['assets']),2)
-        before=copy.deepcopy(client.value)
-        self.perform(client)
-        self.assertEqual(client.value,before)
-        self.assertEqual(json.loads((self.args.work/'control'/'automatic-plan.json').read_text())['operation'],'unchanged')
-        self.assertTrue(any(p.name=='payloads' for p in self.payload_checks))
-        self.assertEqual((self.args.work/'control'/ap.PROOF).read_bytes(),objects[ap.PROOF])
-
-    def test_bad_old_receipt_is_rejected_before_plan(self):
+    def test_legacy_partial_requires_explicit_format_migration(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        client,objects,_=self.old_release();objects[ap.PROOF]=b'{}'
-        with self.assertRaises(ValueError):self.perform(client)
+        client,records=self.old_release();records['amd64']['publication_format']=None
+        with self.assertRaisesRegex(ValueError,'explicit package-format migration'):self.perform(client,records)
+
+    def test_invalid_public_packages_reject_before_plan(self):
+        self.payload(self.source,('amd64','arm64'),11,'b'*40)
+        client,records=self.old_release(('amd64','arm64'))
+        with self.assertRaisesRegex(ValueError,'package checksum'):
+            self.perform(client,records,error=ValueError('package checksum mismatch'))
         self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
 
     def test_partial_contract_change_requires_explicit_repair(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        client,_,proof=self.old_release()
-        # Isolate the append policy after successful old-receipt authentication.
-        proof['files']['resolved-source.json']['sha256']='c'*64
-        client.download=lambda name,dest:(Path(dest)/name).write_text(json.dumps(proof))
-        with patch.object(ap,'GitHub',return_value=client),patch.object(ap,'optional_release',return_value=client.release()), \
-             patch.object(ap,'existing_release_state',return_value='verified'):
-            with self.assertRaisesRegex(ValueError,'explicit repair'):ap.prepare(self.args)
+        client,records=self.old_release();records['amd64']['resolved_contract_sha256']='c'*64
+        with self.assertRaisesRegex(ValueError,'explicit repair'):self.perform(client,records)
+        self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
 
-    def test_changed_noop_readback_rejects(self):
+    def test_changed_verification_snapshot_rejects(self):
         self.payload(self.source,('amd64','arm64'),11,'b'*40)
-        client,objects,_=self.old_release(('amd64','arm64'))
-        archive=next(name for name in objects if name.endswith('.tar.gz'));objects[archive]+=b'tampered'
-        with self.assertRaises(ValueError):self.perform(client)
+        client,records=self.old_release(('amd64','arm64'))
+        verified=client.release();verified['assets'][0]['id']+=100
+        with self.assertRaisesRegex(ValueError,'changed during verification'):
+            self.perform(client,records,verified=verified)
         self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
 
 

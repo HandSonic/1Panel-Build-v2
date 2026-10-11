@@ -40,6 +40,9 @@ def check_asset_names(assets,expected,extra=()):
         if not any(re.fullmatch(re.escape(base)+r'\.(backup|staged)-[0-9a-f]{12}',name) for base in expected):
             raise ValueError(f'Unexpected canonical asset requires review: {name}')
 
+def asset_identity(asset):
+    return {key:asset.get(key) for key in ('id','name','size','digest')}
+
 def release_snapshot(release):
     if release is None:return None
     return {'id':release['id'],'draft':release['draft'],'tag_name':release['tag_name'],
@@ -60,7 +63,7 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
     preserved_assets=preserved_assets or {}
     if set(preserved_assets)&allowed:raise ValueError('Preserved recovery inventory overlaps canonical mutation')
     for name,asset in preserved_assets.items():
-        if assets.get(name)!=asset:raise ValueError('Preserved recovery asset changed before transaction')
+        if not assets.get(name) or asset_identity(assets[name])!=asset_identity(asset):raise ValueError('Preserved recovery asset changed before transaction')
     check_asset_names(before['assets'],allowed,preserved_assets)
     token=uuid.uuid4().hex[:12]
     state={'repo':client.repo,'tag':client.tag,'phase':'staging','old_notes':before.get('body') or '',
@@ -151,7 +154,7 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
             check_asset_names(final_assets,allowed,preserved_assets)
             after={a['name']:a for a in final_assets}
             for name,asset in preserved_assets.items():
-                if after.get(name)!=asset:raise ValueError('Preserved recovery asset changed during transaction')
+                if not after.get(name) or asset_identity(after[name])!=asset_identity(asset):raise ValueError('Preserved recovery asset changed during transaction')
             if set(retire) & set(after):
                 raise ValueError('A failed branch canonical asset appeared concurrently')
             for retirement in state['retirements']:

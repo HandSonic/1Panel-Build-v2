@@ -94,12 +94,14 @@ The build checks frontend embed output, compiles each architecture, then validat
 ELF class/endianness/machine without executing target binaries.
 
 Each `1panel-VERSION-linux-ARCH.tar.gz` has one matching root directory and contains
-Core/Agent, install.sh, 1pctl, GeoIP, all eight init scripts, five language files,
-root systemd services, and `manifest.json`. The manifest records community edition,
+Core/Agent, install.sh, 1pctl, GeoIP, the source installer’s service layout,
+language files, root systemd services, and `manifest.json`. The manifest records community edition,
 version/architecture, source/installer/build commits, toolchains, mode, and SHA256
 and size for every other regular file. Each archive has a relative-basename
-`.sha256` sidecar. `checksums.txt` and `build-manifest.json` cover the selected
-matrix. Archive traversal, symlinks, duplicate/missing/empty members, wrong ELF,
+`.sha256` sidecar. These packages and sidecars are the only new Release assets.
+The ordinary tar member directory `build-metadata/` carries `resolved-source.json`
+and a generated frontend lock only when needed, covered by the same manifest.
+`checksums.txt`, aggregate manifests and validation receipts stay inside CI artifacts. Archive traversal, symlinks, duplicate/missing/empty members, wrong ELF,
 wrong resource digests, stale extra outputs and checksum mismatches are rejected.
 
 Pinned inputs improve repeatability, but this does not promise bit-identical
@@ -137,13 +139,17 @@ attempts to return that exact release to draft. No publication failure warning i
 added to the Release body.
 
 Automatic reruns can append newly successful missing architectures while keeping
-existing verified archives unchanged. A schema-3 aggregate preserves each selected
-architecture's original schema-2 producer generation; old bytes are never claimed
-as outputs of a newer run. Every generation has an exact nonempty producer
-inventory and is independently authenticated. Changed source/toolchain/lock
-contracts or changed existing archive bytes require explicit repair. A fully
-verified unchanged release is a no-op only after current validators check its
-complete requested inventory and stable remote asset snapshot.
+existing verified archives unchanged. Public consumption trusts the canonical
+GitHub repository, release/tag and architecture, verifies asset/sidecar SHA256,
+and validates the complete package manifest, ELF and immutable source inputs.
+It does not require old CI logs to remain online. This trusts repository release
+permissions; SHA256 alone cannot protect against a publisher replacing both a
+package and its checksum. CI producer checks still run before publication.
+Changed source/toolchain/lock contracts require explicit repair. A fully verified
+unchanged release is a no-op after current validators check its complete requested
+inventory and stable remote asset snapshot. Legacy packages can still use their
+existing source-control assets during migration. Explicit format migration renames old public controls to recoverable backups.
+All backups remain until separately approved cleanup; publication never deletes them.
 
 Scheduled builds discover the official channel version and immediately pin its
 immutable inputs. CNB honors the pushed tag, installs Bash/Python and the pinned
