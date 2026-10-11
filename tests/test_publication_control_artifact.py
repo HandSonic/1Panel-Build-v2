@@ -82,3 +82,19 @@ class PublicationControlArtifact(unittest.TestCase):
         commands = '\n'.join(step.get('run', '') for step in job['steps'])
         self.assertIn('automatic_publication.py publish', commands)
         self.assertNotIn('gh release delete', commands)
+
+    def test_repair_writer_overrides_skipped_ancestors_but_fails_closed(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        job = data['jobs']['publication_repair']
+        self.assertEqual(job['needs'], 'publication_prepare')
+        expression = job['if'].removeprefix('${{').removesuffix('}}').strip()
+        self.assertIn('!cancelled()', expression)
+        for cancelled in (False, True):
+            for prepared in ('success', 'failure', 'cancelled', 'skipped'):
+                for event in ('workflow_dispatch', 'schedule', 'push', 'pull_request'):
+                    for operation in ('promote-existing', 'validate-promotion', 'validate-automatic', 'build-only', 'build'):
+                        evaluated = expression.replace('cancelled()', repr(cancelled)).replace('needs.publication_prepare.result', repr(prepared)).replace('github.event_name', repr(event)).replace('inputs.operation', repr(operation))
+                        enabled = eval(evaluated.replace('!', ' not ').replace('&&', ' and '), {'__builtins__': {}})
+                        expected = not cancelled and prepared == 'success' and event == 'workflow_dispatch' and operation == 'promote-existing'
+                        self.assertEqual(enabled, expected)
+        self.assertEqual(job['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
