@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Publish new canonical releases and append verified missing branches without replacements."""
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from manual_publication import check_identity, github_json
+from publication_contract import (PROOF, ROOT, digest_bytes, existing_release_state,
+                                  make_proof, matrix_validate, validate_payloads)
+from publication_lineage import compose
+from release_asset_repair import GitHub, digest, repair, release_snapshot as snapshot, Journal
+
+
+
+def optional_release(client):
+    try:return client.release()
+    except subprocess.CalledProcessError as error:
+        # Only the API's explicit not-found response means a release can be created.
+        if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):return None
+        raise
+
+
+def eligible(event, ref, default_branch, operation, candidate):
+    if event=='schedule':return ref=='refs/heads/'+default_branch
+    if event=='push':return ref.startswith('refs/tags/v')
+    if event=='workflow_dispatch':return operation=='build' and candidate is False
+    return False
+
+
+def operation_allowed(action,event,ref,default_branch,mode,candidate):
+    if action not in ('prepare','publish') or type(candidate) is not bool:return False
+    if action=='prepare' and event=='workflow_dispatch' and mode=='validate-automatic' and not candidate:return True
+    return eligible(event,ref,default_branch,mode,candidate)
+
+
+def current_producer(manifest,commit):
+    from matrix_contract import verify_current_jobs
+    run_id=int(os.environ['GITHUB_RUN_ID']);attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
+    run=github_json(f'repos/{GitHubRepo}/actions/runs/{run_id}/attempts/{attempt}')
+    jobs=[];page=1
+    while True:
+        result=github_json(f'repos/{GitHubRepo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100&page={page}')
+        jobs.extend(result['jobs'])
+        if len(jobs)>=result['total_count']:break
+        page+=1
+        if page>10:raise ValueError('Excessive job inventory')
+    verify_current_jobs(manifest,run,jobs,commit,run_id,attempt)
+
+
+GitHubRepo='HandSonic/1Panel-Build-v2'
+
+
+def prepare(args):
+    contract=check_identity(args.version,args.version,args.repository)
+    work=Path(args.work);source=Path(args.input)
+    if work.exists():raise ValueError('Automatic preparation directory already exists')
+    from resolved_contract import activate_release
+    activate_release(source,args.version)
+    files=validate_payloads(source,contract,args.version)
+    current=json.loads((source/'build-manifest.json').read_text())
+    current_producer(current,os.environ['GITHUB_SHA'])
+    contract_sha=digest(source/'resolved-source.json')['sha256']
+    client=GitHub(args.repository,args.version)
+    before=optional_release(client)
+    previous=None
+    work.mkdir();control=work/'control';control.mkdir();destination=work/'release';destination.mkdir()
+    if before is not None:
+        if before.get('draft'):raise ValueError('Existing draft requires recovery review; it is not adopted')
+        old=work/'previous';old.mkdir()
+        client.download(PROOF,old)
+        oldproof=json.loads((old/PROOF).read_text())
+        if oldproof.get('successful_architectures')==current['requested_architectures'] and oldproof.get('requested_architectures')==current['requested_architectures']:
+            if existing_release_state(client,contract,args.version,args.version,complete_noop_arches=current['requested_architectures'])!='verified-current-noop':
+                raise ValueError('Existing complete release failed current validation')
+            if snapshot(client.release())!=snapshot(before):raise ValueError('Existing release changed during verification')
+            plan={'schema':1,'operation':'unchanged','before':snapshot(before),'version':args.version}
+            (control/'automatic-plan.json').write_text(json.dumps(plan,sort_keys=True)+'\n')
+            shutil.copyfile(old/PROOF,control/PROOF)
+            print('AUTOMATIC_PUBLICATION_UNCHANGED=1')
+            return
+        if existing_release_state(client,contract,args.version,args.version)!='verified':raise ValueError('Existing release is not verified')
+        if oldproof['files'].get('resolved-source.json',{}).get('sha256')!=contract_sha:
+            raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
+        for name,facts in oldproof['files'].items():
+            client.download(name,old)
+            if digest(old/name)!=facts:raise ValueError('Existing release changed during readback')
+        previous=json.loads((old/'build-manifest.json').read_text())
+    merged=compose(previous,current,contract_sha)
+    for path in files:
+        if not path.name.endswith(('.tar.gz','.tar.gz.sha256')):shutil.copyfile(path,destination/path.name)
+    for row in merged['artifacts']:
+        origin=work/'previous' if previous is not None and row['architecture'] in matrix_validate(previous) else source
+        for name in (row['file'],row['file']+'.sha256'):shutil.copyfile(origin/name,destination/name)
+    (destination/'build-manifest.json').write_text(json.dumps(merged,indent=2)+'\n')
+    (destination/'checksums.txt').write_text(''.join((destination/(r['file']+'.sha256')).read_text() for r in merged['artifacts']))
+    files=validate_payloads(destination,contract,args.version)
+    proof=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
+    (control/PROOF).write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
+    plan={'schema':1,'operation':'create' if before is None else 'append','version':args.version,
+          'before':snapshot(before),'receipt_sha256':digest(control/PROOF)['sha256'],
+          'preserved':{r['file']:oldproof['files'][r['file']] for r in previous['artifacts']} if previous else {}}
+    (control/'automatic-plan.json').write_text(json.dumps(plan,indent=2,sort_keys=True)+'\n')
+
+
+def verify_new_release(release,created,files,draft):
+    if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
+        release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
+        raise ValueError('Created release identity or visibility changed')
+    expected={p.name:digest(p) for p in files}
+    assets=release.get('assets',[])
+    if len(assets)!=len(expected) or {a['name'] for a in assets}!=set(expected):
+        raise ValueError('Created release canonical inventory changed')
+    for asset in assets:
+        facts=expected[asset['name']]
+        if asset.get('digest')!='sha256:'+facts['sha256'] or asset.get('size')!=facts['bytes']:
+            raise ValueError('Created release canonical bytes changed')
+
+
+def publish(args,client=None):
+    contract=check_identity(args.version,args.version,args.repository)
+    work=Path(args.work);control=work/'control'
+    plan=json.loads((control/'automatic-plan.json').read_text())
+    if plan.get('schema')!=1 or plan.get('version')!=args.version or plan.get('operation') not in ('create','append','unchanged'):
+        raise ValueError('Invalid automatic publication plan')
+    client=client or GitHub(args.repository,args.version)
+    if snapshot(optional_release(client))!=plan['before']:raise ValueError('Release changed after validation; retry discovery under the writer lock')
+    if plan['operation']=='unchanged':return 'unchanged'
+    proof_path=control/PROOF
+    if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256') or digest(proof_path)['sha256']!=plan['receipt_sha256']:
+        raise ValueError('Automatic receipt differs from successful preparation')
+    from resolved_contract import activate_release
+    activate_release(work/'release',args.version)
+    files=validate_payloads(work/'release',contract,args.version)
+    proof=json.loads(proof_path.read_text())
+    expected=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
+    if proof!=expected:raise ValueError('Automatic publication contract changed')
+    manifest=json.loads((work/'release'/'build-manifest.json').read_text())
+    current=manifest['generations'][manifest['current_generation']] if manifest['schema_version']==3 else manifest
+    current_producer(current,os.environ['GITHUB_SHA'])
+    if plan['operation']=='append':
+        existing={a['name']:a for a in plan['before']['assets'] if a['name'].endswith(('.tar.gz','.tar.gz.sha256'))}
+        for name,asset in existing.items():
+            facts=proof['files'].get(name,{})
+            if asset.get('digest')!='sha256:'+facts.get('sha256','') or asset['size']!=facts.get('bytes'):
+                raise ValueError('Automatic append would replace an existing canonical artifact')
+    for name,facts in plan['preserved'].items():
+        if proof['files'].get(name)!=facts:raise ValueError('Automatic publication cannot replace an existing archive')
+    journal=control/'automatic-journal.json'
+    if journal.exists() or (control/'creation-journal.json').exists():raise ValueError('Existing automatic journal requires recovery review')
+    expected_snapshot=plan['before']
+    created=None
+    if plan['operation']=='create':
+        creation=Journal(control/'creation-journal.json',{'phase':'creating','tag':client.tag,'repository':client.repo})
+        created=json.loads(client.run('api','--method','POST',f'repos/{client.repo}/releases','-f',f'tag_name={client.tag}',
+                   '-f',f'target_commitish={os.environ["GITHUB_SHA"]}','-f',f'name={client.tag}',
+                   '-F','draft=true','-F',f'prerelease={str("-" in client.tag).lower()}'))
+        if type(created.get('id')) is not int or created['id']<=0 or not created.get('draft') or created.get('tag_name')!=client.tag or created.get('assets')!=[]:
+            raise ValueError('New draft identity is not empty and exact')
+        creation.state.update(phase='created',release_id=created['id']);creation.save()
+        if snapshot(client.release())!=snapshot(created):raise ValueError('Created draft differs from POST identity')
+        expected_snapshot=snapshot(created)
+    ordered=[p for p in files if p.name!='checksums.txt']+[proof_path]+[p for p in files if p.name=='checksums.txt']
+    recovery={}
+    if plan['operation']=='append':
+        recovery={a['name']:a for a in client.release()['assets'] if re.search(r'\.(?:backup|staged)-[0-9a-f]{12}$',a['name'])}
+    state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery)
+    if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
+    if plan['operation']=='create':
+        current_producer(current,os.environ['GITHUB_SHA'])
+        verify_new_release(client.release(),created,ordered,True)
+        creation.state['phase']='finalizing';creation.save()
+        try:
+            client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
+                       '-F','draft=false','-f','make_latest=legacy')
+            verify_new_release(client.release(),created,ordered,False)
+        except Exception:
+            # A failed HTTP response may follow a successful write. Restore this
+            # exact owned release to draft rather than assuming PATCH did nothing.
+            try:
+                client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}','-F','draft=true')
+                restored=json.loads(client.run('api',f'repos/{client.repo}/releases/{created["id"]}'))
+                if restored.get('id')!=created['id'] or restored.get('draft') is not True:raise ValueError('Draft recovery readback failed')
+                creation.state['phase']='returned_to_draft';creation.save()
+            except Exception as recovery_error:
+                creation.state.update(phase='recovery_required',recovery_error=str(recovery_error));creation.save()
+            raise
+        creation.state['phase']='complete';creation.save()
+    return 'published'
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('operation',choices=['prepare','publish'])
+    parser.add_argument('--repository',required=True);parser.add_argument('--version',required=True)
+    parser.add_argument('--work',type=Path,required=True);parser.add_argument('--input',type=Path)
+    args=parser.parse_args()
+    event=os.environ.get('GITHUB_EVENT_NAME');operation=os.environ.get('PUBLICATION_OPERATION','build')
+    candidate=os.environ.get('PUBLISH_CANDIDATE','false')
+    if candidate not in ('true','false'):raise SystemExit('Invalid candidate selection')
+    if not operation_allowed(args.operation,event,os.environ.get('GITHUB_REF',''),os.environ.get('DEFAULT_BRANCH','master'),operation,candidate=='true'):
+        raise SystemExit('Canonical publication requires a normal schedule, tag or non-candidate build; validation never writes')
+    if args.operation=='prepare':prepare(args)
+    else:print(publish(args))

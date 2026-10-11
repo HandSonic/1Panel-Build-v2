@@ -111,3 +111,27 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None):
     if actual != declared or (run['conclusion'] == 'success') != (not declared):
         raise ValueError('Overall producer failure is not explained by declared branches')
     return successful
+
+
+def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
+    """Validate the current non-PR producer before its own publication jobs finish."""
+    if run.get('event') not in ('push', 'schedule', 'workflow_dispatch'):
+        raise ValueError('Automatic publication requires a trusted non-PR execution')
+    if value.get('producer_run_id') != run_id or value.get('producer_run_attempt') != attempt:
+        raise ValueError('Automatic publication must consume its own exact attempt')
+    if run.get('status') not in ('in_progress', 'completed') or run.get('conclusion') not in (None, 'success', 'failure'):
+        raise ValueError('Current workflow is cancelled or unavailable')
+    if run.get('status')=='completed':
+        return verify_jobs(value,run,jobs,expected_commit)
+    pending = {'publication_prepare', 'automatic_publication', 'publication_repair', 'candidate'}
+    checked = []
+    for job in jobs:
+        if job.get('run_id') != run_id or job.get('run_attempt') != attempt or job.get('head_sha') != value.get('producer_head_sha'):
+            raise ValueError('Current job identity mismatch')
+        if job.get('status') != 'completed':
+            if job.get('name') not in pending or job.get('conclusion') is not None:
+                raise ValueError('Unfinished shared or architecture gate')
+            continue
+        checked.append(job)
+    terminal = dict(run, status='completed', conclusion='failure' if any(r['status']=='failure' for r in value['outcomes']) else 'success')
+    return verify_jobs(value, terminal, checked, expected_commit)

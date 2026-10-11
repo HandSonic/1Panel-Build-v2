@@ -22,9 +22,10 @@ compressed size/hash and member size/hash checks, so later updates to the
 standalone GeoIP URL do not change the resolved build. Discovery also
 selects toolchains satisfying both Go modules and every declared npm engine,
 and retains `npm ci --engine-strict`, archive integrity and all architecture gates.
-A source without a lock can reuse only an exact-manifest-bound verified repair
-lock. An unsupported workspace, package manager, dependency source, missing new
-lock or incompatible installer fails clearly before publication. Such failures
+A source without a lock first reuses an exact-manifest-bound reviewed repair.
+Otherwise discovery generates a per-run lock using pinned Node 22.22.1/npm 10.9.4
+and the official npm registry. Unsupported workspaces, package managers,
+dependency sources or incompatible installers fail clearly before publication. Such failures
 need a compatibility repair; they are never silently accepted. The source
 contract digest follows every shard, package, aggregate and publication receipt.
 
@@ -36,8 +37,20 @@ Dependency repairs are selected by exact package-manifest and original-lock
 hashes in `config/repair-locks.json`, including an explicit absent-lock selector.
 The three stored lock payloads are content-addressed and shared across matching
 source manifests. Repairs never upgrade arbitrary existing dependencies or
-resolve floating versions during replay. Unknown missing-lock inputs stop with
-an actionable compatibility error until a suitable repair is reviewed.
+resolve floating versions during replay. New missing-lock inputs are resolved
+only during preparation. The generated lock, exact source manifest, generator
+identity and lock digest travel in the authenticated contract and
+`resolved-frontend-package-lock.json` sidecar. Every later job replays the same
+bytes offline. A present but invalid upstream lock is not silently replaced.
+
+Generation rejects non-registry direct sources before npm, disables lifecycle
+scripts, and runs the pinned npm process without Node child-process, worker or
+native-addon permission. A real spawn-denial preflight is required. This restricts
+trusted npm preparation paths; it is not a sandbox for arbitrary malicious code.
+The generated graph is checked for registry origins, integrity and compatible
+engines. Bundled dependencies inherit only an explicitly declared pinned parent;
+its entire compressed archive and actual child manifests are verified. The real
+frontend build still runs `npm ci --engine-strict` against that fixed lock.
 
 Release config is embedded before compiling: stable releases use `stable` and
 `info`; beta/dev versions use their matching channel and the same discovery gates. Demo, enterprise and fxplay remain false. `is_offline` remains false:
@@ -47,7 +60,11 @@ and avoids dev-only external app.yaml override behavior.
 
 ## Build and verify
 
-Requires Docker, Git and Python 3. Run from a clean committed checkout so the
+Requires Docker, Git, Python 3 and PyYAML 6.0.3, plus Node/npm with npm's
+`npm-package-arg` and `semver` modules for validation. Missing-lock discovery
+requires the exact host resolver versions Node 22.22.1 and npm 10.9.4.
+The hosted workflows install these prerequisites before discovery.
+Run from a clean committed checkout so the
 recorded build-repository commit identifies the build scripts actually used.
 
 ```bash
@@ -93,7 +110,15 @@ do not replace real builds or installed-service runtime tests on each target.
 ## CI and publication
 
 GitHub Actions runs regression tests, builds the requested matrix and preserves
-verified pipeline artifacts. Existing tags/releases do not suppress validation.
+verified pipeline artifacts. Normal scheduled runs, version-tag pushes and
+non-candidate manual `build` runs then prepare and publish a canonical release.
+`validate-automatic` exercises the same preparation and publication plan without
+enabling a writer. It is an optional validation mode, not a required step for new
+versions. Existing tags/releases do not suppress validation.
+`build-only` creates verified CI source artifacts without publication preparation
+or release writes, for example when repairing an old release without a trusted
+receipt. It uses the same discovery, build and aggregate gates. Normal `build`
+remains the default and publishes automatically; new releases need no extra step.
 Matrix jobs use `fail-fast: false`. A failed architecture is omitted while successful
 branches are independently validated and aggregated. The schema-2 manifest records
 every requested architecture, its exact producer attempt/job identity, and its
@@ -105,9 +130,24 @@ assets are moved to recoverable backup names during an explicitly selected repai
 checksum/receipt updates include only validated successful payloads.
 An explicit `publish_candidate` dispatch creates a **new draft** tag/release,
 downloads its assets again and verifies exact byte identity. It never overwrites
-public release assets. Promotion requires separate review after downstream
-regression. Scheduled builds discover the official channel version and immediately
-pin its immutable inputs. CNB honors the pushed tag, installs Bash/Python, runs the same validation,
+public release assets. Explicit historical replacement retains the backed-up
+`promote-existing` path. Normal new releases are staged as owned drafts, fully
+read back, then made public. A failed finalization leaves recovery evidence and
+attempts to return that exact release to draft. No publication failure warning is
+added to the Release body.
+
+Automatic reruns can append newly successful missing architectures while keeping
+existing verified archives unchanged. A schema-3 aggregate preserves each selected
+architecture's original schema-2 producer generation; old bytes are never claimed
+as outputs of a newer run. Every generation has an exact nonempty producer
+inventory and is independently authenticated. Changed source/toolchain/lock
+contracts or changed existing archive bytes require explicit repair. A fully
+verified unchanged release is a no-op only after current validators check its
+complete requested inventory and stable remote asset snapshot.
+
+Scheduled builds discover the official channel version and immediately pin its
+immutable inputs. CNB honors the pushed tag, installs Bash/Python and the pinned
+resolver toolchain with its runtime libraries, runs the same validation,
 and runs each architecture independently from a shared prepared image. Its failure
 stage preserves only the final validated subset while retaining a failed pipeline
 status. CNB automatic publication is intentionally

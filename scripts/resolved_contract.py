@@ -12,14 +12,12 @@ import json
 from pathlib import PurePosixPath
 import re
 from urllib.parse import urlsplit
+from installer_resources import MODERN, resource_layout
 
 ARCHES = ('amd64', 'arm64', 'armv7', 'ppc64le', 's390x', 'loong64', 'riscv64')
 NATIVE = ('amd64', 'arm64')
 SOURCES = ('official', 'custom', 'enterprise-original', 'enterprise-docker')
-INSTALLER_REQUIRED = {'install.sh', '1pctl'} | {
-    f'initscript/1panel-{part}.{kind}' for part in ('core', 'agent')
-    for kind in ('service', 'init', 'openrc', 'procd')} | {
-    f'lang/{language}.sh' for language in ('en', 'fa', 'pt-BR', 'ru', 'zh')}
+INSTALLER_REQUIRED = MODERN  # Compatibility name for existing modern-layout fixtures.
 VERSION = re.compile(r'v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:beta|dev)\.(?:0|[1-9][0-9]*)))?')
 MAX_CONTROL = 1024 * 1024
 
@@ -130,7 +128,7 @@ def source_contract(raw, expected_digest, version, mode):
     require(installer['repository'] == '1Panel-dev/installer', 'Unexpected installer repository')
     commit_value(installer['commit'])
     file_map(installer['resources'])
-    require(INSTALLER_REQUIRED == set(installer['resources']), 'Incomplete installer resource contract')
+    resource_layout(installer['resources'])
     require(isinstance(installer['original_version'], str) and
             (installer['original_version'] == 'version' or VERSION.fullmatch(installer['original_version'])),
             'Invalid original installer version')
@@ -168,11 +166,15 @@ def source_contract(raw, expected_digest, version, mode):
                 'Configuration is not bound to immutable source bytes')
         hash_value(profile['normalized_sha256'])
     lock = value['frontend_lock']
-    require(isinstance(lock, dict) and lock.get('kind') in ('source', 'derived'), 'Unsupported frontend lock origin')
-    fields = ('kind', 'sha256', 'manifest_sha256') + (('recipe_sha256',) if lock['kind'] == 'derived' else ())
-    exact_keys(lock, fields, 'frontend lock')
-    for key in fields[1:]:
-        hash_value(lock[key])
+    require(isinstance(lock, dict) and lock.get('kind') in ('source', 'derived', 'resolved'), 'Unsupported frontend lock origin')
+    if lock['kind'] == 'resolved':
+        from automatic_frontend_lock import validate_descriptor
+        validate_descriptor(lock, source)
+    else:
+        fields = ('kind', 'sha256', 'manifest_sha256') + (('recipe_sha256',) if lock['kind'] == 'derived' else ())
+        exact_keys(lock, fields, 'frontend lock')
+        for key in fields[1:]:
+            hash_value(lock[key])
     require(source['files'].get('frontend/package.json', {}).get('sha256') == lock['manifest_sha256'],
             'Frontend dependency manifest is not bound to source')
     if lock['kind'] == 'source':
@@ -188,7 +190,8 @@ def apply_contract(path, expected_digest, root, version):
     """Install a verified generated contract into this disposable CI checkout only."""
     from pathlib import Path
     root, path = Path(root), Path(path)
-    raw = path.read_bytes()
+    from automatic_frontend_lock import SIDECAR, read_regular, read_payload, write_payload
+    raw = read_regular(path, MAX_CONTROL)
     mode = object_bytes(raw).get('mode')
     contract = source_contract(raw, expected_digest, version, mode)
     inputs = contract['source']
@@ -196,8 +199,7 @@ def apply_contract(path, expected_digest, root, version):
     absent = inputs['absent']
     require(absent in ([], ['frontend/package-lock.json']), 'Unsupported dependency absence contract')
     require(set(inputs['files']) == required - set(absent) | {f'{c}/cmd/server/conf/app.yaml' for c in ('core', 'agent')}, 'Unexpected source input set')
-    from discover_inputs import INSTALLER_FILES
-    require(set(contract['installer']['resources']) == set(INSTALLER_FILES), 'Incomplete installer resources')
+    resource_layout(contract['installer']['resources'])
     for component, profile in contract['configuration'].items():
         require(profile['path'] == f'{component}/cmd/server/conf/app.yaml' and type(profile['source_bytes']) is int and 0 < profile['source_bytes'] <= 65536, 'Unsupported embedded source contract')
     lock = contract['frontend_lock']
@@ -212,13 +214,19 @@ def apply_contract(path, expected_digest, root, version):
             require(recipe.get('reviewed_lock_file') == 'frontend-locks/' + lock['sha256'] + '.package-lock.json', 'Unexpected content-addressed lock path')
             lock_file = root / 'config' / recipe['reviewed_lock_file']
             require(not lock_file.is_symlink() and lock_file.is_file() and hashlib.sha256(lock_file.read_bytes()).hexdigest() == lock['sha256'], 'Derived lock bytes mismatch')
-    else:
+    elif lock['kind'] == 'source':
         require(not absent, 'Source lock cannot be absent')
+    payload = read_payload(path.parent, contract)
     # Runtime facts live in one authenticated per-run artifact, never a version registry.
     target = root / 'config/resolved-source.json'
+    require(not target.parent.is_symlink(), 'Linked resolved input directory rejected')
     require(not target.is_symlink(), 'Linked resolved run contract rejected')
-    if target.exists() and target.read_bytes() != canonical(contract):
+    if target.exists() and read_regular(target, MAX_CONTROL) != canonical(contract):
         raise ValueError('Refusing to replace a different resolved run contract')
+    if payload is not None:
+        write_payload(root / 'config' / SIDECAR, payload)
+    else:
+        read_payload(root / 'config', contract)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(canonical(contract))
     return contract

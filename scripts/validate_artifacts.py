@@ -3,6 +3,7 @@
 import gzip,hashlib,json,pathlib,re,struct,sys,tarfile
 from resolve_inputs import resolve
 from embedded_configuration import validate_binary
+from installer_resources import service_copies, resource_layout, validate_root_interface
 ARCHES={'amd64':(2,1,62),'arm64':(2,1,183),'armv7':(1,1,40),'ppc64le':(2,1,21),'s390x':(2,2,22),'loong64':(2,1,258),'riscv64':(2,1,243)}
 def architectures(value):
     arches=value.replace(',',' ').replace(';',' ').split()
@@ -53,8 +54,10 @@ def validate_package(path, version, arch):
                 continue
             if hashlib.sha256(data[rel]).hexdigest()!=digest: raise ValueError(f'Installer resource mismatch {rel}')
         if f'ORIGINAL_VERSION={version}'.encode() not in data['1pctl']: raise ValueError('1pctl version mismatch')
-        for part in ('core','agent'):
-            if data[f'1panel-{part}.service'] != data[f'initscript/1panel-{part}.service']: raise ValueError('Service copy mismatch')
+        if resource_layout(entry['installer_sha256']) == 'root-systemd':
+            validate_root_interface(data['install.sh'], entry['installer_sha256'])
+        for source, target in service_copies(entry['installer_sha256']):
+            if data[target] != data[source]: raise ValueError('Service copy mismatch')
         return manifest
 
 def validate_dist(dist,version,arches):
@@ -69,7 +72,13 @@ def validate_dist(dist,version,arches):
     if entry.get('resolved_contract_sha256'):
         for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
         contract_file=dist/'resolved-source.json'
-        if hashlib.sha256(contract_file.read_bytes()).hexdigest()!=entry['resolved_contract_sha256']: raise ValueError('Resolved contract bytes mismatch')
+        from automatic_frontend_lock import read_regular, read_payload, required_sidecars
+        from resolved_contract import MAX_CONTROL, object_bytes, source_contract
+        raw=read_regular(contract_file,MAX_CONTROL)
+        if hashlib.sha256(raw).hexdigest()!=entry['resolved_contract_sha256']: raise ValueError('Resolved contract bytes mismatch')
+        contract=source_contract(raw,entry['resolved_contract_sha256'],version,object_bytes(raw)['mode'])
+        read_payload(dist,contract)
+        expected.update(required_sidecars(contract))
         expected.add('resolved-source.json')
     expected|={'checksums.txt','build-manifest.json'}
     # CI may attach the resolved inputs alongside the immutable manifests.
@@ -82,6 +91,10 @@ def validate_dist(dist,version,arches):
         from matrix_contract import validate
         if validate(aggregate_manifest, version) != list(arches) or aggregate_manifest['artifacts'] != records:
             raise ValueError('Partial release manifest mismatch')
+    elif aggregate_manifest.get('schema_version') == 3:
+        from publication_lineage import validate
+        if validate(aggregate_manifest, version) != list(arches) or aggregate_manifest['artifacts'] != records:
+            raise ValueError('Publication lineage manifest mismatch')
     elif aggregate_manifest != {'schema_version':1,'version':version,'artifacts':records}:
         raise ValueError('Release manifest mismatch')
     return records

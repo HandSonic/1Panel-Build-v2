@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile
 from resolve_inputs import resolve
+from installer_resources import service_copies, resource_layout, validate_root_interface
 
 def download(url, dest, expected):
     subprocess.run(['curl','--fail','--location','--silent','--show-error','--retry','3','--connect-timeout','20','--max-time','180','--output',str(dest),url],check=True)
@@ -25,7 +26,10 @@ def main(version, destination):
                 raise ValueError('Version-bound GeoIP member mismatch')
         else:
             download(entry['geoip_url'],stage/'GeoIP.mmdb',entry['geoip_sha256'])
-        for part in ('core','agent'): shutil.copy2(stage/f'initscript/1panel-{part}.service',stage/f'1panel-{part}.service')
+        if resource_layout(entry['installer_sha256']) == 'root-systemd':
+            validate_root_interface((stage/'install.sh').read_bytes(), entry['installer_sha256'])
+        for source, target in service_copies(entry['installer_sha256']):
+            shutil.copy2(stage/source,stage/target)
         for file in stage.rglob('*'):
             if file.is_file():
                 target=destination/file.relative_to(stage); target.parent.mkdir(parents=True,exist_ok=True)

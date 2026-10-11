@@ -11,6 +11,8 @@ def repair(root, version):
     apply(root, contract)
     if contract['frontend_lock']['kind'] == 'derived':
         print('Applied content-addressed repair: ' + contract['frontend_lock']['sha256'])
+    elif contract['frontend_lock']['kind'] == 'resolved':
+        print('Replayed immutable per-run lock: ' + contract['frontend_lock']['sha256'])
 
 
 if __name__ == '__main__':

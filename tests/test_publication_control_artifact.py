@@ -4,6 +4,43 @@ import unittest
 import yaml
 
 class PublicationControlArtifact(unittest.TestCase):
+    def test_artifact_only_mode_runs_source_but_never_publication_jobs(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        jobs = data['jobs']
+        def enabled(expression, candidate=False):
+            expression = expression.removeprefix('${{').removesuffix('}}').strip()
+            for old, new in {
+                'github.event_name': repr('workflow_dispatch'),
+                'github.ref': repr('refs/heads/master'),
+                'inputs.operation': repr('build-only'),
+                'inputs.publish_candidate': repr(candidate),
+                'needs.tests.result': repr('success'),
+                'needs.build.result': repr('success'),
+                'needs.publication_prepare.result': repr('success'),
+                'cancelled()': 'False',
+                "startsWith('refs/heads/master', 'refs/tags/v')": 'False',
+            }.items():
+                expression = expression.replace(old, new)
+            expression = expression.replace('!=', '<>').replace('!', ' not ').replace('<>', '!=')
+            return eval(expression.replace('&&', ' and ').replace('||', ' or '), {'__builtins__': {}})
+        self.assertTrue(enabled(jobs['prepare']['if']))
+        for candidate in (False, True):
+            for job in ('candidate', 'publication_prepare', 'publication_repair', 'automatic_publication'):
+                self.assertFalse(enabled(jobs[job]['if'], candidate), job)
+
+    def test_id_selected_automatic_input_uses_flat_validated_directory(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        steps = data['jobs']['publication_prepare']['steps']
+        selected = [step for step in steps if step.get('uses') == 'actions/download-artifact@v4']
+        self.assertEqual(len(selected), 1)
+        download = selected[0]
+        self.assertEqual(download['with']['artifact-ids'], '${{ needs.build.outputs.artifact_id }}')
+        self.assertEqual(download['with']['path'], 'automatic-input')
+        self.assertIs(download['with']['merge-multiple'], True)
+        prepare = next(step for step in steps if step.get('name') == 'Prepare normal automatic canonical publication')
+        self.assertIn('--input automatic-input', prepare['run'])
+        self.assertEqual(download['if'], prepare['if'])
+
     def test_exact_control_only_paths_after_receipt_binding(self):
         data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
         job = data['jobs']['publication_prepare']
@@ -22,6 +59,7 @@ class PublicationControlArtifact(unittest.TestCase):
             'publication-work/release/build-manifest.json',
             'publication-work/release/build-inputs.env',
             'publication-work/release/resolved-source.json',
+            'publication-work/release/resolved-frontend-package-lock.json',
         ])
         self.assertEqual(args['if-no-files-found'], 'error')
         self.assertEqual(args['retention-days'], 14)
@@ -32,3 +70,15 @@ class PublicationControlArtifact(unittest.TestCase):
         repair = data['jobs']['publication_repair']
         self.assertEqual(repair['permissions']['contents'], 'write')
         self.assertEqual(repair['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
+
+    def test_automatic_writer_requires_successful_preparation_and_receipt_binding(self):
+        data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        job = data['jobs']['automatic_publication']
+        self.assertIn("needs.publication_prepare.result == 'success'", job['if'])
+        self.assertIn('!cancelled()', job['if'])
+        self.assertEqual(job['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
+        self.assertEqual(job['permissions']['contents'], 'write')
+        self.assertNotIn('id-token', job['permissions'])
+        commands = '\n'.join(step.get('run', '') for step in job['steps'])
+        self.assertIn('automatic_publication.py publish', commands)
+        self.assertNotIn('gh release delete', commands)

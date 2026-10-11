@@ -10,7 +10,7 @@ for ARCH in $TARGET_ARCHES; do
     if [[ "$ARCH" == armv7 ]]; then GOARCH=arm; GOARM=7; fi
     for component in core agent; do
         (cd "$component"; CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" GOARM="$GOARM" \
-            go build -trimpath -buildvcs=false -ldflags '-s -w' -o "../build/1panel-$component" ./cmd/server/main.go)
+            python3 "$TOOLS/go_arch_compat.py" "$GOARCH" "../build/1panel-$component")
     done
     python3 "$TOOLS/package_release.py" package "$PWD" "$VERSION" "$ARCH"
 done

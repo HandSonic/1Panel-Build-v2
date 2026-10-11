@@ -20,9 +20,9 @@ on:
         default: 'amd64 arm64 armv7 ppc64le s390x loong64 riscv64'
       operation:
         type: choice
-        options: [build, validate-promotion, promote-existing]
+        options: [build, build-only, validate-automatic, validate-promotion, promote-existing]
         default: build
-        description: Normal build, read-only promotion validation, or explicit backed-up promotion
+        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit backed-up promotion
       upstream_run_id:
         description: Exact successful build run ID
         default: ''
@@ -55,9 +55,12 @@ jobs:
           "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
           echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.1'
       - run: python3 -m unittest discover -s tests -v
   prepare:
-    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build'
+    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic'
     needs: tests
     runs-on: ubuntu-latest
     outputs:
@@ -126,6 +129,7 @@ jobs:
           test "$(git -C prepared-source rev-parse HEAD)" = "$SOURCE_COMMIT"
           extra=()
           if [[ -f resolved-source.json ]]; then extra+=(resolved-source.json); fi
+          if [[ -f resolved-frontend-package-lock.json ]]; then extra+=(resolved-frontend-package-lock.json); fi
           tar -czf prepared-source.tar.gz prepared-source build-inputs.env "${extra[@]}"
           echo "sha256=$(sha256sum prepared-source.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
@@ -185,6 +189,14 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: upstream-${{ runner.os }}-${{ needs.prepare.outputs.version }}-go${{ needs.prepare.outputs.go_version }}-${{ matrix.arch }}-${{ hashFiles('config/**', 'scripts/**', 'prepared-source/core/go.sum', 'prepared-source/agent/go.sum') }}
+      - name: Verify SQLite compatibility on native and loong64 engines
+        if: matrix.arch == 'loong64'
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user
+          python3 scripts/verify_go_sqlite_compat.py prepared-source --qemu qemu-loongarch64
       - name: Build and validate every requested architecture
         run: |
           set -euo pipefail
@@ -213,6 +225,7 @@ jobs:
     outputs:
       version: ${{ needs.prepare.outputs.version }}
       arches: ${{ needs.prepare.outputs.arches }}
+      artifact_id: ${{ steps.bundle.outputs.artifact-id }}
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TARGET_ARCHES: ${{ needs.prepare.outputs.arches }}
@@ -239,6 +252,7 @@ jobs:
           python3 scripts/resolved_contract.py activate dist "$VERSION"
           python3 scripts/validate_artifacts.py dist "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("dist/build-manifest.json"))["artifacts"]))')"
       - uses: actions/upload-artifact@v4
+        id: bundle
         with:
           name: verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}
           path: dist/*
@@ -295,19 +309,23 @@ jobs:
           PY
 
   publication_prepare:
-    needs: tests
+    needs: [tests, build]
     permissions:
       contents: read
       actions: read
-    if: github.event_name == 'workflow_dispatch' && (inputs.operation == 'validate-promotion' || inputs.operation == 'promote-existing')
+    if: ${{ !cancelled() && needs.tests.result == 'success' && ((github.event_name == 'workflow_dispatch' && (inputs.operation == 'validate-promotion' || inputs.operation == 'promote-existing')) || (((github.event_name == 'schedule' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && !inputs.publish_candidate)) || (github.event_name == 'workflow_dispatch' && inputs.operation == 'validate-automatic')) && needs.build.result == 'success')) }}
     runs-on: ubuntu-latest
     outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       receipt_sha256: ${{ steps.receipt.outputs.sha256 }}
+      version: ${{ inputs.version || needs.build.outputs.version }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      VERSION: ${{ inputs.version }}
+      VERSION: ${{ inputs.version || needs.build.outputs.version }}
       RELEASE_TAG: ${{ inputs.version }}
+      PUBLICATION_OPERATION: ${{ inputs.operation || 'build' }}
+      PUBLISH_CANDIDATE: ${{ inputs.publish_candidate && 'true' || 'false' }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       UPSTREAM_SOURCE: verified-ci
       UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
       UPSTREAM_ARTIFACT_ID: ${{ inputs.upstream_artifact_id }}
@@ -323,7 +341,19 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        if: inputs.operation != 'validate-promotion' && inputs.operation != 'promote-existing'
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: automatic-input
+          merge-multiple: true
+      - name: Prepare normal automatic canonical publication
+        if: inputs.operation != 'validate-promotion' && inputs.operation != 'promote-existing'
+        run: |
+          python3 scripts/automatic_publication.py prepare --repository "$GITHUB_REPOSITORY" \
+            --version "$VERSION" --input automatic-input --work publication-work
       - name: Validate selected inputs and prepare the complete contract
+        if: github.event_name == 'workflow_dispatch' && (inputs.operation == 'validate-promotion' || inputs.operation == 'promote-existing')
         run: |
           RELEASE_TAG=${RELEASE_TAG:-$VERSION}
           python3 scripts/manual_publication.py prepare \
@@ -355,6 +385,7 @@ jobs:
             publication-work/release/build-manifest.json
             publication-work/release/build-inputs.env
             publication-work/release/resolved-source.json
+            publication-work/release/resolved-frontend-package-lock.json
           if-no-files-found: error
           retention-days: 14
   publication_repair:
@@ -400,6 +431,52 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: publication-journal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: publication-work/control/
+          if-no-files-found: warn
+          retention-days: 90
+
+  automatic_publication:
+    needs: publication_prepare
+    if: ${{ !cancelled() && needs.publication_prepare.result == 'success' && (github.event_name == 'schedule' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && !inputs.publish_candidate)) }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: upstream-release-${{ github.repository }}-${{ needs.publication_prepare.outputs.version }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.publication_prepare.outputs.version }}
+      PUBLICATION_OPERATION: ${{ inputs.operation || 'build' }}
+      PUBLISH_CANDIDATE: ${{ inputs.publish_candidate && 'true' || 'false' }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      EXPECTED_VALIDATION_RECEIPT_SHA256: ${{ needs.publication_prepare.outputs.receipt_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up isolated configuration parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-python"
+          "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.publication_prepare.outputs.artifact_id }}
+          path: publication-work
+          merge-multiple: true
+      - name: Create or append verified canonical artifacts
+        run: |
+          python3 scripts/automatic_publication.py publish --repository "$GITHUB_REPOSITORY" \
+            --version "$VERSION" --work publication-work
+      - name: Preserve automatic publication recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automatic-publication-journal-${{ github.run_id }}-${{ github.run_attempt }}
           path: publication-work/control/
           if-no-files-found: warn
           retention-days: 90
