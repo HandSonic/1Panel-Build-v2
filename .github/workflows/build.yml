@@ -189,6 +189,14 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: upstream-${{ runner.os }}-${{ needs.prepare.outputs.version }}-go${{ needs.prepare.outputs.go_version }}-${{ matrix.arch }}-${{ hashFiles('config/**', 'scripts/**', 'prepared-source/core/go.sum', 'prepared-source/agent/go.sum') }}
+      - name: Verify SQLite compatibility on native and loong64 engines
+        if: matrix.arch == 'loong64'
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user
+          python3 scripts/verify_go_sqlite_compat.py prepared-source --qemu qemu-loongarch64
       - name: Build and validate every requested architecture
         run: |
           set -euo pipefail
