@@ -150,8 +150,7 @@ def publish(args):
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
     retired=retired_upstream_assets(proof,args.version,release) if contract=='upstream-matrix' else []
-    # Migration retires old public controls into the same recoverable transaction.
-    # Historical consumers may still read their original bytes by backup identity.
+    # Existing controls require explicit removal review before package-only publication.
     from public_packages import CONTROLS
     retired.extend(asset['name'] for asset in release['assets'] if asset['name'] in CONTROLS)
     preserved={name:asset for name,asset in recovery_assets(release,args.version).items() if name not in retired}

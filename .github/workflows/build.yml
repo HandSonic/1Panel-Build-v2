@@ -420,7 +420,7 @@ jobs:
           artifact-ids: ${{ needs.publication_prepare.outputs.artifact_id }}
           path: publication-work
           merge-multiple: true
-      - name: Revalidate, stage, read back and repair recoverably
+      - name: Revalidate and publish missing assets without backups
         run: |
           RELEASE_TAG=${RELEASE_TAG:-$VERSION}
           python3 scripts/manual_publication.py publish \

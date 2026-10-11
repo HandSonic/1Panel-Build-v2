@@ -314,12 +314,14 @@ class RealAppendTransactions(unittest.TestCase):
         with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
         for key in before:self.assertEqual(c.assets[key],before[key])
 
-    def test_real_transaction_uncertain_switch_rolls_back(self):
+    def test_real_transaction_failed_upload_preserves_existing_assets(self):
         from release_asset_repair import repair
-        c=self.client('switch');before=copy.deepcopy(c.assets)
+        c=self.client();before=copy.deepcopy(c.assets)
+        def failed_upload(path):raise RuntimeError('upload failed')
+        c.upload=failed_upload
         with patch.object(ap,'repair',repair),self.assertRaises(RuntimeError):ap.publish(self.args,c)
         for i in before:self.assertEqual(c.assets[i],before[i])
-        self.assertEqual(json.loads((self.work/'control'/'automatic-journal.json').read_text())['phase'],'rolled_back')
+        self.assertEqual(json.loads((self.work/'control'/'automatic-journal.json').read_text())['phase'],'incomplete')
 
     def test_real_transaction_rejects_entry_race_without_touching_new_asset(self):
         from release_asset_repair import repair
