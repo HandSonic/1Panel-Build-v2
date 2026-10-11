@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import publication_contract as contracts
-from test_matrix_contract import MatrixContractTests
+import test_matrix_contract
 
 class ReceiptLogDiagnostics(unittest.TestCase):
  def test_only_controlled_failure_facts_are_disclosed(self):
@@ -47,7 +47,7 @@ class ReceiptTests(unittest.TestCase):
   self.runtime_patch=patch('resolved_contract.runtime_contract',return_value={'frontend_lock':{'kind':'source'}})
   self.runtime_patch.start();self.addCleanup(self.runtime_patch.stop)
  def fixture(self,root):
-  manifest,producer,jobs=MatrixContractTests().fixture();manifest['version']='v2.99.0'
+  manifest,producer,jobs=test_matrix_contract.MatrixContractTests().fixture();manifest['version']='v2.99.0'
   names=contracts.expected_names('upstream-matrix','v2.99.0',root,['amd64']);files=[];sums=[]
   for name in sorted(names-{'checksums.txt'}):
    p=root/name;p.write_bytes(json.dumps(manifest).encode() if name=='build-manifest.json' else ('verified '+name).encode());files.append(p)

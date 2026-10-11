@@ -17,6 +17,8 @@ def validate_elf(data, arch):
 
 def validate_package(path, version, arch):
     entry=resolve(version); root=f'1panel-{version}-linux-{arch}'
+    from package_metadata import read
+    read(path, version, arch)
     required=set(entry['installer_sha256'])|{'1panel-core','1panel-agent','1panel-core.service','1panel-agent.service','GeoIP.mmdb','manifest.json'}
     # tar readers may stop at end-of-archive before checking the gzip trailer.
     with gzip.open(path,'rb') as stream:

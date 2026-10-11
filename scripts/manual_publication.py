@@ -138,12 +138,19 @@ def publish(args):
     client=GitHub(args.repository,args.tag)
     release=client.release()
     if release.get('draft'):raise ValueError('Existing-release repair requires an existing public release')
-    # Recovery metadata switches before checksums; the public checksum file is last.
-    files=[p for p in files if p.name!='checksums.txt']+[proof_path]+[p for p in files if p.name=='checksums.txt']
+    # Public downloads contain only packages and their standard SHA sidecars.
+    from public_packages import package_files, recovery_assets, require_embedded
+    require_embedded(files,args.version)
+    files=package_files(files)
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
     retired=retired_upstream_assets(proof,args.version,release) if contract=='upstream-matrix' else []
-    state=repair(client,files,journal,retire=retired)
+    # Migration retires old public controls into the same recoverable transaction.
+    # Historical consumers may still read their original bytes by backup identity.
+    from public_packages import CONTROLS
+    retired.extend(asset['name'] for asset in release['assets'] if asset['name'] in CONTROLS)
+    preserved={name:asset for name,asset in recovery_assets(release,args.version).items() if name not in retired}
+    state=repair(client,files,journal,retire=retired,preserved_assets=preserved)
     print(json.dumps({'state':state['phase'],'repository':args.repository,'tag':args.tag}))
 
 if __name__=='__main__':
