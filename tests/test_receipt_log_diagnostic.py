@@ -44,19 +44,18 @@ class ReceiptLogDiagnostic(unittest.TestCase):
         self.assertEqual(diagnostic.summarize(self.result('log\nHTTP/2.0 403\n\n'), True)['http_status'], 'unknown')
         self.assertFalse(diagnostic.summarize(self.result('HTTP/2.0 200 OK\nX-Forged: ' + marker), True)['receipt_matches'])
 
-    def test_exact_two_get_calls_capture_only_and_fail_closed(self):
+    def test_safe_transport_fixed_job_and_redacted_failure(self):
         marker = 'VERIFIED_RELEASE_RECEIPT_SHA256=' + diagnostic.RECEIPT
-        with patch.object(diagnostic.subprocess, 'run', side_effect=[self.result(marker), self.result('HTTP/2.0 200 OK\n\n' + marker)]) as run:
+        job = {'id': diagnostic.JOB_ID, 'name': 'publication_prepare', 'conclusion': 'success', 'run_attempt': 1}
+        with patch('release_asset_repair.GitHub.run', return_value=json.dumps(job)) as run, patch('publication_contract.sanitized_validation_log', return_value=marker) as safe:
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(diagnostic.main(), 0)
-            self.assertEqual(run.call_count, 2)
-            for index, call in enumerate(run.call_args_list):
-                self.assertEqual(call.args[0], ['gh', 'api', diagnostic.ENDPOINT] + (['--include'] if index else []))
-                self.assertEqual(call.kwargs, dict(capture_output=True, text=True, check=False, timeout=60))
+            safe.assert_called_once()
+            self.assertEqual(safe.call_args.args[1:], (diagnostic.JOB_ID, 1))
+            self.assertEqual(run.call_args.args, ('api', f'repos/{diagnostic.REPOSITORY}/actions/jobs/{diagnostic.JOB_ID}'))
             self.assertNotIn(marker, output.getvalue())
-            self.assertTrue(json.loads(output.getvalue())['diagnostic_only'])
-        with patch.object(diagnostic.subprocess, 'run', side_effect=[subprocess.TimeoutExpired(['gh'], 60), OSError('secret')]):
+        with patch('release_asset_repair.GitHub.run', side_effect=OSError('secret')):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(diagnostic.main(), 1)

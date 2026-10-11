@@ -169,6 +169,25 @@ def validation_log_failure_note(error):
     return f'Receipt log fetch failed: exit={code}; http_status={status[1] if status else "unknown"}; network={category}'
 
 
+def sanitized_validation_log(client, job_id, attempt):
+    """Use gh's patched log renderer; never disable terminal-output protection.
+
+    GHSA-crc3-h8v6-qh57 documents sanitization in gh >= 2.92.0.
+    The caller authenticates the job/run/attempt/commit before invoking this.
+    """
+    if type(job_id) is not int or job_id <= 0 or type(attempt) is not int or attempt <= 0:
+        raise ValueError('Invalid validation log identity')
+    version = re.match(r'\Agh version ([0-9]+)\.([0-9]+)\.([0-9]+)(?:\s|$)', client.run('--version'))
+    if not version or tuple(map(int, version.groups())) < (2, 92, 0):
+        raise ValueError('Receipt validation requires GitHub CLI 2.92.0 or newer with sanitized log output')
+    logs = client.run('run', 'view', '--repo', client.repo, '--job', str(job_id),
+                      '--attempt', str(attempt), '--log')
+    # Defense in depth: unexpected terminal controls must fail closed, never print.
+    if any(ord(c) < 32 and c not in '\t\n\r' or 127 <= ord(c) <= 159 for c in logs):
+        raise ValueError('Receipt log renderer returned unsafe terminal controls')
+    return logs
+
+
 def verify_validation_log(client,proof,receipt_sha):
     run_id=proof.get('workflow_run_id')
     if type(run_id) is not int or run_id<=0 or not re.fullmatch('[0-9a-f]{40}',proof.get('workflow_commit','')):
@@ -179,7 +198,7 @@ def verify_validation_log(client,proof,receipt_sha):
         if job.get('name') not in ['build','publication_prepare'] or job.get('conclusion')!='success':continue
         if type(job.get('id')) is not int or job.get('run_id')!=run_id or job.get('run_attempt')!=proof['workflow_run_attempt'] or job.get('head_sha')!=proof['workflow_commit']:continue
         try:
-            logs=client.run('api',f'repos/{client.repo}/actions/jobs/{job['id']}/logs')
+            logs=sanitized_validation_log(client,job['id'],proof['workflow_run_attempt'])
         except subprocess.CalledProcessError as error:
             error.add_note(validation_log_failure_note(error))
             raise

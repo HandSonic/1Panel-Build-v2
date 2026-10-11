@@ -30,13 +30,14 @@ class ReceiptLogDiagnostics(unittest.TestCase):
    def __init__(self):self.calls=[]
    def run(self,*args):
     self.calls.append(args)
+    if args == ('--version',):return 'gh version 2.92.0 (2026-05-13)'
     if len(self.calls)==1:return json.dumps({'jobs':[job]})
     raise error
   client=Client()
   with self.assertRaises(subprocess.CalledProcessError) as caught:
    contracts.verify_validation_log(client,proof,'b'*64)
   self.assertIs(caught.exception,error)
-  self.assertEqual(len(client.calls),2)
+  self.assertEqual(len(client.calls),3)
   self.assertEqual(error.__notes__,['Receipt log fetch failed: exit=1; http_status=403; network=unclassified'])
   self.assertNotIn('secret', '\n'.join(error.__notes__))
 
@@ -116,6 +117,7 @@ class ValidationLogTests(unittest.TestCase):
   class Client:
    repo=contracts.REPOS['upstream-matrix']
    def run(self,*args):
+    if args == ('--version',):return 'gh version 2.92.0 (2026-05-13)'
     if '/jobs?' in args[-1]:return json.dumps({'jobs':[{'id':17,'name':'publication_prepare','conclusion':'success','run_id':123,'run_attempt':1,'head_sha':'a'*40}]})
     return 'timestamp VERIFIED_RELEASE_RECEIPT_SHA256='+'b'*64
   proof={'workflow_run_id':123,'workflow_run_attempt':1,'workflow_commit':'a'*40}
@@ -127,3 +129,31 @@ class ValidationLogTests(unittest.TestCase):
    repo=contracts.REPOS['upstream-matrix']
    def run(self,*args):raise AssertionError('API must not be called')
   with self.assertRaises(ValueError):contracts.verify_validation_log(Client(),{'workflow_run_id':'../../user','workflow_commit':'a'*40},'b'*64)
+
+class SafeReceiptTransportTests(unittest.TestCase):
+ def client(self, version='gh version 2.92.0 (2026-05-13)', logs='safe receipt'):
+  class Client:
+   repo='example/project'
+   def __init__(self):self.calls=[]
+   def run(self,*args):
+    self.calls.append(args)
+    return version if args == ('--version',) else logs
+  return Client()
+ def test_exact_safe_command(self):
+  client=self.client()
+  self.assertEqual(contracts.sanitized_validation_log(client,456,2),'safe receipt')
+  self.assertEqual(client.calls,[('--version',),('run','view','--repo','example/project','--job','456','--attempt','2','--log')])
+ def test_unpatched_unknown_and_prerelease_cli_fail_before_fetch(self):
+  for version in ('gh version 2.91.9','gh version 2.92.0-rc1','malformed','gh version 1.99.0'):
+   client=self.client(version)
+   with self.subTest(version=version),self.assertRaises(ValueError):contracts.sanitized_validation_log(client,456,2)
+   self.assertEqual(client.calls,[('--version',)])
+ def test_controls_fail_closed_without_being_rendered(self):
+  for control in ('\x1b[31m','\x00','\x07','\x7f','\x9b'):
+   with self.subTest(control=repr(control)),self.assertRaises(ValueError):
+    contracts.sanitized_validation_log(self.client(logs='receipt'+control),456,2)
+ def test_invalid_identity_never_fetches(self):
+  for job,attempt in ((True,1),(0,1),('456',1),(456,False),(456,0)):
+   client=self.client()
+   with self.subTest(job=job,attempt=attempt),self.assertRaises(ValueError):contracts.sanitized_validation_log(client,job,attempt)
+   self.assertEqual(client.calls,[])

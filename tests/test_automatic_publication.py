@@ -379,6 +379,8 @@ class PrepareControlFlow(unittest.TestCase):
         def download(name,dest):(Path(dest)/name).write_bytes(objects[name])
         client.download=download
         def api(*args):
+            if args == ('--version',):return 'gh version 2.92.0 (2026-05-13)'
+            if args[:2] == ('run','view'):return 'VERIFIED_RELEASE_RECEIPT_SHA256='+hashlib.sha256(proofraw).hexdigest()
             path=args[-1]
             if '/jobs?' in path:
                 if '--paginate' in args:return json.dumps([{'jobs':jobs}])

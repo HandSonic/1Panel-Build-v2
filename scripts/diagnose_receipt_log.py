@@ -49,22 +49,23 @@ def summarize(result, include=False):
 
 
 def main():
-    results = []
-    for include in (False, True):
-        args = ['gh', 'api', ENDPOINT] + (['--include'] if include else [])
-        try:
-            result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=60)
-            results.append(summarize(result, include))
-        except subprocess.TimeoutExpired:
-            results.append({'probe': 'include-status' if include else 'original-command',
-                            'exit_code': 'timeout', 'http_status': 'unknown',
-                            'error_category': 'timeout', 'receipt_matches': False})
-        except OSError:
-            results.append({'probe': 'include-status' if include else 'original-command',
-                            'exit_code': 'unavailable', 'http_status': 'unknown',
-                            'error_category': 'process-start', 'receipt_matches': False})
-    print(json.dumps({'diagnostic_only': True, 'results': results}, sort_keys=True))
-    return 0 if all(row['receipt_matches'] for row in results) else 1
+    from publication_contract import sanitized_validation_log
+    from release_asset_repair import GitHub
+    client = GitHub(REPOSITORY, '')
+    matched = False
+    category = 'validation-failed'
+    try:
+        job = json.loads(client.run('api', f'repos/{REPOSITORY}/actions/jobs/{JOB_ID}'))
+        if job.get('id') != JOB_ID or job.get('name') != 'publication_prepare' or job.get('conclusion') != 'success':
+            raise ValueError('Unexpected fixed validation job')
+        logs = sanitized_validation_log(client, JOB_ID, job['run_attempt'])
+        matched = re.findall(r'VERIFIED_RELEASE_RECEIPT_SHA256=([0-9a-f]{64})', logs) == [RECEIPT]
+        category = 'none' if matched else 'receipt-mismatch'
+    except (ValueError, KeyError, subprocess.CalledProcessError, OSError):
+        pass
+    print(json.dumps({'diagnostic_only': True, 'transport': 'gh-sanitized-job-log',
+                      'receipt_matches': matched, 'error_category': category}, sort_keys=True))
+    return 0 if matched else 1
 
 
 if __name__ == '__main__':
