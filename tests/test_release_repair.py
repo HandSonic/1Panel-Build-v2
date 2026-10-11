@@ -18,6 +18,8 @@ class FakeGitHub:
     def download(self,name,directory):
         data=next(b for n,b in self.assets.values() if n==name)
         (directory/name).write_bytes(data if self.failure!='bad_readback' or '.staged-' not in name else b'bad')
+    def download_asset(self,asset,directory):
+        (directory/asset['name']).write_bytes(self.assets[asset['id']][1])
     def rename(self,asset_id,name):
         self.calls.append(('rename',asset_id,name))
         if self.failure=='switch' and asset_id>2 and '.staged-' not in name and not self.failed:
@@ -64,6 +66,43 @@ class RepairTests(unittest.TestCase):
             self.assertEqual(repair(client,files,journal)['phase'],'complete')
             self.assertEqual(client.calls,[])
             self.assertEqual(client.body,'old release notes')
+
+    def test_legacy_readback_is_pinned_to_asset_id_during_name_reuse(self):
+        client,files,journal=self.fixture();files=files[:1]
+        original=b'oldAA';replacement=b'newBB';name=files[0].name
+        client.assets={1:(name,original)};files[0].write_bytes(replacement)
+        before=copy.deepcopy(client.assets)
+        release=client.release;download=client.download;download_asset=client.download_asset
+        pinned_ids=[]
+        def missing_digest():
+            result=release()
+            for asset in result['assets']:asset.pop('digest')
+            return result
+        def while_name_is_reused(read):
+            # An ABA race restores the original inventory before either recheck.
+            client.assets[1]=('temporarily-hidden.tar.gz',original)
+            client.assets[2]=(name,replacement)
+            try:return read()
+            finally:
+                client.assets.pop(2);client.assets[1]=(name,original)
+        def by_id(asset,directory):
+            pinned_ids.append(asset['id'])
+            return while_name_is_reused(lambda:download_asset(asset,directory))
+        client.release=missing_digest
+        client.download=lambda asset_name,directory:while_name_is_reused(lambda:download(asset_name,directory))
+        client.download_asset=by_id
+        with self.assertRaisesRegex(ValueError,'specific deletion confirmation'):
+            repair(client,files,journal)
+        state=json.loads(journal.read_text())
+        self.assertEqual(state['phase'],'confirmation_required')
+        self.assertEqual(state['conflicts'],[{
+            'id':1,'name':name,'size':len(original),
+            'digest':'sha256:'+hashlib.sha256(original).hexdigest(),
+            'reason':'different_content',
+            'replacement':{'bytes':len(replacement),'sha256':hashlib.sha256(replacement).hexdigest()}}])
+        self.assertEqual(pinned_ids,[1])
+        self.assertEqual(client.calls,[])
+        self.assertEqual(client.assets,before)
 
     def test_missing_files_upload_under_final_names(self):
         client,files,journal=self.fixture();before=copy.deepcopy(client.assets)

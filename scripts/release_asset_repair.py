@@ -20,6 +20,9 @@ class GitHub:
     def release(self):return json.loads(self.run('api',f'repos/{self.repo}/releases/tags/{self.tag}'))
     def upload(self,path):self.run('release','upload',self.tag,str(path),'--repo',self.repo)
     def download(self,name,directory):self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
+    def download_asset(self,asset,directory):
+        with (Path(directory)/asset['name']).open('wb') as stream:
+            subprocess.run(['gh','api',f"repos/{self.repo}/releases/assets/{asset['id']}",'-H','Accept: application/octet-stream'],check=True,stdout=stream)
     def notes(self,body):self.run('release','edit',self.tag,'--repo',self.repo,'--notes',body)
 
 class Journal:
@@ -80,7 +83,7 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
                 old_sha=old.get('digest')
                 if not old_sha:
                     readback=temp/str(old['id']);readback.mkdir()
-                    client.download(name,readback)
+                    client.download_asset(old,readback)
                     facts=digest(readback/name)
                     if facts['bytes']!=old['size']:raise ValueError('Original asset failed readback verification')
                     old_sha='sha256:'+facts['sha256']
