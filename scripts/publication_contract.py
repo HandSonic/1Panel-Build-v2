@@ -126,7 +126,16 @@ def verify_receipt(proof,checksums,assets,run,contract,version,tag,repository,ro
     if len(by_name)!=len(assets):raise ValueError('Repair-needed: duplicate remote asset names')
     canonical=expected|{PROOF}
     if not canonical<=set(by_name):raise ValueError('Repair-needed: incomplete canonical asset matrix')
+    legacy_recovery=set()
+    if contract=='upstream-matrix' and 'armv7' in proof.get('successful_architectures',[]):
+        legacy=f'1panel-{version}-linux-arm.tar.gz'
+        for name in by_name:
+            match=re.fullmatch(re.escape(legacy)+r'\.backup-([0-9a-f]{12})',name)
+            if match:
+                sidecar=legacy+'.sha256.backup-'+match[1]
+                if sidecar in by_name:legacy_recovery.update((name,sidecar))
     for name in set(by_name)-canonical:
+        if name in legacy_recovery:continue
         # Known noncanonical recovery names are retained deliberately, never deleted.
         recoverable=canonical
         if contract=='upstream-matrix':recoverable=canonical|expected_names(contract,version,root,proof['requested_architectures'])

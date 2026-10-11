@@ -104,6 +104,24 @@ def prepare(args):
     print(json.dumps({'contract':contract,'version':args.version,'package_count':sum(p.name.endswith('.tar.gz') for p in files),'publication_file_count':len(files)+1,'state':'validated_no_release_writes'}))
 
 
+def retired_upstream_assets(proof, version, release):
+    retired=[]
+    for row in proof['outcomes']:
+        if row['status']=='failure':
+            name=f'1panel-{version}-linux-{row["architecture"]}.tar.gz'
+            retired.extend([name,name+'.sha256'])
+    # Historical `arm` is superseded only by this exact version's verified armv7.
+    # Both old members must exist; unknown/incomplete names still fail in repair().
+    replacement=f'1panel-{version}-linux-armv7.tar.gz'
+    legacy=f'1panel-{version}-linux-arm.tar.gz'
+    names=[asset['name'] for asset in release.get('assets',[])]
+    if (any(row['architecture']=='armv7' and row['status']=='success' for row in proof['outcomes'])
+            and replacement in proof['files'] and replacement+'.sha256' in proof['files']
+            and names.count(legacy)==1 and names.count(legacy+'.sha256')==1):
+        retired.extend([legacy,legacy+'.sha256'])
+    return retired
+
+
 def publish(args):
     contract=check_identity(args.version,args.tag,args.repository)
     work=Path(args.work)
@@ -124,12 +142,7 @@ def publish(args):
     files=[p for p in files if p.name!='checksums.txt']+[proof_path]+[p for p in files if p.name=='checksums.txt']
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
-    retired=[]
-    if contract=='upstream-matrix':
-        for row in proof['outcomes']:
-            if row['status']=='failure':
-                name=f'1panel-{args.version}-linux-{row["architecture"]}.tar.gz'
-                retired.extend([name,name+'.sha256'])
+    retired=retired_upstream_assets(proof,args.version,release) if contract=='upstream-matrix' else []
     state=repair(client,files,journal,retire=retired)
     print(json.dumps({'state':state['phase'],'repository':args.repository,'tag':args.tag}))
 

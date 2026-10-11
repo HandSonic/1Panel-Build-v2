@@ -426,6 +426,24 @@ class PrepareControlFlow(unittest.TestCase):
         self.assertTrue(any(p.name=='payloads' for p in self.payload_checks))
         self.assertEqual((self.args.work/'control'/ap.PROOF).read_bytes(),objects[ap.PROOF])
 
+    def test_legacy_arm_backup_pair_allows_complete_verified_noop(self):
+        from test_publication_lineage import producer_fixture
+        def armv7_fixture(*args,**kwargs):
+            return json.loads(json.dumps(producer_fixture(*args,**kwargs)).replace('arm64','armv7'))
+        with patch('test_publication_lineage.producer_fixture',side_effect=armv7_fixture):
+            self.payload(self.source,('amd64','arm64'),11,'b'*40)
+            client,objects,proof=self.old_release(('amd64','arm64'))
+        legacy=f'1panel-{Client.tag}-linux-arm.tar.gz'
+        for i,name in enumerate((legacy+'.backup-012345abcdef',legacy+'.sha256.backup-012345abcdef'),100):
+            client.value['assets'].append({'id':i,'name':name,'size':10,'digest':'sha256:'+'c'*64})
+        self.assertEqual(sum('.backup-' in a['name'] for a in client.value['assets']),2)
+        before=copy.deepcopy(client.value)
+        self.perform(client)
+        self.assertEqual(client.value,before)
+        self.assertEqual(json.loads((self.args.work/'control'/'automatic-plan.json').read_text())['operation'],'unchanged')
+        self.assertTrue(any(p.name=='payloads' for p in self.payload_checks))
+        self.assertEqual((self.args.work/'control'/ap.PROOF).read_bytes(),objects[ap.PROOF])
+
     def test_bad_old_receipt_is_rejected_before_plan(self):
         self.payload(self.source,('arm64',),11,'b'*40)
         client,objects,_=self.old_release();objects[ap.PROOF]=b'{}'
