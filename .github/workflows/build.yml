@@ -22,7 +22,7 @@ on:
         type: choice
         options: [build, build-only, validate-automatic, validate-promotion, promote-existing]
         default: build
-        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit backed-up promotion
+        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit reviewed promotion
       upstream_run_id:
         description: Exact successful build run ID
         default: ''
@@ -420,7 +420,7 @@ jobs:
           artifact-ids: ${{ needs.publication_prepare.outputs.artifact_id }}
           path: publication-work
           merge-multiple: true
-      - name: Revalidate, stage, read back and repair recoverably
+      - name: Revalidate and publish missing assets without backups
         run: |
           RELEASE_TAG=${RELEASE_TAG:-$VERSION}
           python3 scripts/manual_publication.py publish \

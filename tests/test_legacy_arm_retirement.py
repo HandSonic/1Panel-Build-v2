@@ -37,29 +37,20 @@ class LegacyArmRetirement(unittest.TestCase):
         old,new,proof,release=self.fixture();proof['outcomes'].append({'architecture':'s390x','status':'failure'})
         self.assertEqual(manual.retired_upstream_assets(proof,'v2.0.8',release),['1panel-v2.0.8-linux-s390x.tar.gz','1panel-v2.0.8-linux-s390x.tar.gz.sha256',old,old+'.sha256'])
 
-    def test_pair_backup_retains_original_ids_and_bytes(self):
-        self.run_transaction(None)
-
-    def test_pair_is_restored_after_uncertain_switch(self):
-        self.run_transaction('switch')
-
-    def run_transaction(self,failure):
+    def test_legacy_pair_retirement_requires_specific_confirmation(self):
+        import json
         old,new,proof,release=self.fixture()
         with tempfile.TemporaryDirectory() as t:
-            root=Path(t);client=FakeGitHub(failure)
+            root=Path(t);client=FakeGitHub();before=copy.deepcopy(client.assets)
             client.assets[9]=(old,b'old arm archive');client.assets[10]=(old+'.sha256',b'old arm checksum')
             files=[]
-            for name in ('package.tar.gz','checksums.txt'):
-                p=root/name;p.write_bytes(b'new bytes');files.append(p)
+            for name,body in before.values():
+                p=root/name;p.write_bytes(body);files.append(p)
             retired=manual.retired_upstream_assets(proof,'v2.0.8',client.release())
             journal=root/'journal.json'
-            if failure:
-                with self.assertRaises(RuntimeError):repair(client,files,journal,retire=retired)
-                self.assertEqual(client.assets[9],(old,b'old arm archive'))
-                self.assertEqual(client.assets[10],(old+'.sha256',b'old arm checksum'))
-            else:
-                state=repair(client,files,journal,retire=retired)
-                self.assertEqual(state['phase'],'complete')
-                for asset_id,name,data in ((9,old,b'old arm archive'),(10,old+'.sha256',b'old arm checksum')):
-                    self.assertTrue(client.assets[asset_id][0].startswith(name+'.backup-'))
-                    self.assertEqual(client.assets[asset_id][1],data)
+            with self.assertRaisesRegex(ValueError,'specific deletion confirmation'):
+                repair(client,files,journal,retire=retired)
+            self.assertEqual({a['id'] for a in json.loads(journal.read_text())['conflicts']},{9,10})
+            self.assertEqual(client.calls,[])
+            self.assertEqual(client.assets[9],(old,b'old arm archive'))
+            self.assertEqual(client.assets[10],(old+'.sha256',b'old arm checksum'))

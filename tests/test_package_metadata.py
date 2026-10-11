@@ -47,22 +47,18 @@ class PackageMetadata(unittest.TestCase):
         self.assertEqual(set(pp.inventory(release,'v2.99.0')),{'amd64'})
         release['assets'].append({'name':'unrelated'})
         with self.assertRaises(ValueError):pp.inventory(release,'v2.99.0')
-    def test_control_migration_retains_old_bytes_and_rolls_back_on_failure(self):
+    def test_control_removal_requires_confirmation_without_creating_backup(self):
         from test_release_repair import FakeGitHub
         from release_asset_repair import repair
-        for failure in (None,'switch'):
-            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as temporary:
-                root=Path(temporary);client=FakeGitHub(failure)
-                archive=root/'package.tar.gz';archive.write_bytes(b'new package')
-                sha=root/'package.tar.gz.sha256';sha.write_bytes(b'new checksum')
-                if failure:
-                    with self.assertRaises(RuntimeError):repair(client,[archive,sha],root/'journal.json',retire=['checksums.txt'])
-                    self.assertEqual(client.assets[2],('checksums.txt',b'old checksum'))
-                else:
-                    repair(client,[archive,sha],root/'journal.json',retire=['checksums.txt'])
-                    self.assertTrue(client.assets[2][0].startswith('checksums.txt.backup-'))
-                    self.assertEqual(client.assets[2][1],b'old checksum')
-                    self.assertNotIn('checksums.txt',[row[0] for row in client.assets.values()])
+        client=FakeGitHub()
+        archive=self.root/'package.tar.gz';archive.write_bytes(b'old archive')
+        sha=self.root/'package.tar.gz.sha256';sha.write_bytes(b'new checksum')
+        journal=self.root/'journal.json'
+        with self.assertRaisesRegex(ValueError,'specific deletion confirmation'):
+            repair(client,[archive,sha],journal,retire=['checksums.txt'])
+        self.assertEqual(client.calls,[])
+        self.assertEqual(client.assets[2],('checksums.txt',b'old checksum'))
+        self.assertEqual([a['id'] for a in json.loads(journal.read_text())['conflicts']],[2])
 
     def test_legacy_repack_preserves_payload_bytes_modes_build_identity_and_is_idempotent(self):
         manifest=dict(self.manifest)
