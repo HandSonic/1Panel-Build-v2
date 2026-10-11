@@ -389,7 +389,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   publication_repair:
-    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote-existing'
+    if: ${{ !cancelled() && needs.publication_prepare.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.operation == 'promote-existing' }}
     needs: publication_prepare
     runs-on: ubuntu-latest
     # Every ref repairing the same canonical tag shares one writer; other tags overlap.
