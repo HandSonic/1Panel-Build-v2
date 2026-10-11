@@ -92,6 +92,29 @@ class ReceiptTests(unittest.TestCase):
    root=Path(t);p,c,a,r=self.fixture(root)
    a.append({'name':'1panel-v2.99.0-linux-arm64.tar.gz.backup-012345abcdef','size':10})
    self.assertTrue(self.check(root,(p,c,a,r)))
+ def test_legacy_arm_recovery_pair_needs_verified_armv7_and_exact_suffix(self):
+  for mutation in ('none','missing-sidecar','different-suffix','wrong-version','canonical','staged','unknown','no-armv7'):
+   with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as t:
+    root=Path(t);proof,checksums,assets,run=self.fixture(root)
+    if mutation!='no-armv7':
+     proof=json.loads(json.dumps(proof).replace('amd64','armv7'))
+     checksums=checksums.replace(b'amd64',b'armv7')
+     assets=json.loads(json.dumps(assets).replace('amd64','armv7'))
+     proof['files']['checksums.txt']=contracts.digest_bytes(checksums)
+     checksum_asset=next(a for a in assets if a['name']=='checksums.txt')
+     checksum_asset.update(size=len(checksums),digest='sha256:'+hashlib.sha256(checksums).hexdigest())
+    base='1panel-v2.99.0-linux-arm.tar.gz';suffix='.backup-012345abcdef'
+    names=[base+suffix,base+'.sha256'+suffix]
+    if mutation=='missing-sidecar':names.pop()
+    elif mutation=='different-suffix':names[1]=base+'.sha256.backup-fedcba543210'
+    elif mutation=='wrong-version':names=[n.replace('v2.99.0','v2.98.0') for n in names]
+    elif mutation=='canonical':names=[base,base+'.sha256']
+    elif mutation=='staged':names=[n.replace('.backup-','.staged-') for n in names]
+    elif mutation=='unknown':names=[n.replace('-arm.','-unknown.') for n in names]
+    assets.extend({'name':n,'size':10} for n in names)
+    if mutation=='none':self.assertTrue(self.check(root,(proof,checksums,assets,run)))
+    else:
+     with self.assertRaises(ValueError):self.check(root,(proof,checksums,assets,run))
  def test_expected_names_follow_accepted_inventory(self):
   names=contracts.expected_names('upstream-matrix','v2.99.0',accepted=['amd64'])
   self.assertEqual(sum(n.endswith('.tar.gz') for n in names),1)
