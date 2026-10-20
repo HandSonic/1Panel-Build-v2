@@ -4,7 +4,7 @@ Use the existing `build-offline` workflow in `.github/workflows/build.yml`.
 
 ## Daily updates
 
-At 07:00 UTC, GitHub checks the latest official stable Release and this
+At 08:00 UTC (16:00 Beijing time), GitHub checks the latest official stable Release and this
 repository's matching public Release attachment names. An architecture is
 present when its archive and `.sha256` attachment both exist. Existing pairs
 are trusted without downloading or validating their contents.
