@@ -138,6 +138,13 @@ read back, then made public. A failed finalization leaves recovery evidence and
 attempts to return that exact release to draft. No publication failure warning is
 added to the Release body.
 
+Draft publication binds all reads, uploads and download checks to the created
+Release ID. A retry can reuse a single empty draft created by GitHub Actions for
+the same version on this build's commit ancestry; the draft target is updated to
+the verified build commit before upload. Multiple drafts, existing draft assets,
+changed notes or a different author require recovery review instead of creating
+another draft or replacing anything.
+
 Automatic reruns can append newly successful missing architectures while keeping
 existing verified archives unchanged. Public consumption trusts the canonical
 GitHub repository, release/tag and architecture, verifies asset/sidecar SHA256,
@@ -152,7 +159,10 @@ existing source-control assets during migration. Explicit format migration renam
 All backups remain until separately approved cleanup; publication never deletes them.
 
 Scheduled builds discover the official channel version and immediately pin its
-immutable inputs. CNB honors the pushed tag, installs Bash/Python and the pinned
+immutable inputs. GitHub Actions has one maintained workflow, `build-offline`:
+seven parallel architecture jobs share one source/frontend preparation and one
+aggregation stage. Historical one-off lock probes and receipt diagnostics have
+been removed. CNB honors the pushed tag, installs Bash/Python and the pinned
 resolver toolchain with its runtime libraries, runs the same validation,
 and runs each architecture independently from a shared prepared image. Its failure
 stage preserves only the final validated subset while retaining a failed pipeline

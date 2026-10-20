@@ -34,6 +34,9 @@ class Client:
     def release(self):
         return copy.deepcopy(self.value)
 
+    def bind_release(self, release_id):
+        self.release_id = release_id
+
     def run(self, *args):
         self.calls.append(args)
         if 'POST' in args:
