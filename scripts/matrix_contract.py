@@ -90,7 +90,7 @@ def verify_execution(run, expected_commit, execution_commit=None):
         raise ValueError('PR merge parents do not match the recorded base/head')
 
 
-def verify_jobs(value, run, jobs, expected_commit, execution_commit=None):
+def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, allow_publication_failures=False):
     successful = validate(value)
     for job in jobs:
         if job.get('run_id') != value['producer_run_id'] or job.get('run_attempt') != value['producer_run_attempt'] or job.get('head_sha') != value['producer_head_sha']:
@@ -108,7 +108,10 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None):
         raise ValueError('Declared outcomes differ from exact API job identities')
     declared = {r['job_id'] for r in value['outcomes'] if r['status'] == 'failure'}
     actual = {j['id'] for j in jobs if j.get('conclusion') not in ('success', 'skipped')}
-    if actual != declared or (run['conclusion'] == 'success') != (not declared):
+    writers = {j['id'] for j in jobs if allow_publication_failures and
+               j.get('name') in ('candidate','automatic_publication','publication_repair') and
+               j.get('status')=='completed' and j.get('conclusion') in ('failure','timed_out')}
+    if actual != declared | writers or (run['conclusion'] == 'success') != (not actual):
         raise ValueError('Overall producer failure is not explained by declared branches')
     return successful
 

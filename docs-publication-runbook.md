@@ -7,11 +7,13 @@ run when the connected tool lacks workflow_dispatch.
 
 ## Default behavior
 
-Normal builds keep their existing triggers and version inputs. A public release
-is a successful no-op only when its exact canonical matrix, server content hashes,
-checksum bytes and `release-validation.json` identify a completed successful
-validation run under the current version-specific policy. Missing, stale or
-unverifiable receipts report repair-needed without modifying the release.
+Normal builds keep their existing triggers and version inputs. Scheduled runs
+skip compilation only after the requested public package matrix passes current
+content, SHA sidecar, embedded input and ELF validation. Public package trust does
+not depend on historical CI logs or receipts. Missing releases or architectures
+still build; API errors, corrupt bytes and snapshot changes stop the check.
+Publication-only/documentation/unit-test PRs run tests without the build matrix;
+unknown, build, input and workflow changes retain full integration.
 Known `.backup-*`/`.staged-*` recovery files are noncanonical. Unknown canonical
 assets block repair before any upload; concurrent additions also fail closed.
 
@@ -23,12 +25,14 @@ In `HandSonic/1Panel-Build-v2`, use existing `build-offline` / `build.yml`:
 - Read-only promotion validation: operation=validate-promotion.
 - Authorized same-tag promotion: operation=promote-existing.
 
-Promotion requires an explicit version and exact successful artifact provenance.
-It validates all seven upstream packages with the authoritative upstream validator,
+Promotion requires an explicit version and exact verified build-artifact provenance.
+The producer's source/preparation/compile/aggregate gates must pass; a failure in
+a known publication writer does not invalidate its already verified build output.
+It validates the producer's independently successful packages with the authoritative upstream validator,
 including ELF, all member hashes, pinned installer/GeoIP, exact normalized embedded
 Core/Agent YAML and Core version. It does not execute the binaries.
 
-The current reviewed v2.3.2 input is:
+The historical reviewed v2.3.2 input was:
 
 - Run ID: 37803686376
 - Artifact ID: 11562143708
@@ -38,8 +42,8 @@ The current reviewed v2.3.2 input is:
 The built commit is the actual synthetic PR merge commit, not the branch head or
 later master merge. Never relabel its provenance. Keep publish_candidate=false
 for existing-tag promotion; that older option remains a separate normal-build
-new-draft path. The arch input applies to normal builds; promotion requires the
-complete verified seven-architecture contract.
+new-draft path. The arch input applies to normal builds; promotion uses the exact
+verified producer matrix and its explicit failed-architecture outcomes.
 
 ## Downstream next
 
@@ -62,19 +66,25 @@ validation; all final archives remain for the complete release gate.
 
 ## Write boundaries and recovery
 
-Preparation is read-only. Only an explicitly selected workflow_dispatch repair or
-promotion mode can enter the separate write-enabled job. The exact preparation
+Preparation is read-only. Manual promotion requires the explicitly selected
+`workflow_dispatch` mode; normal automatic publication has its own serialized
+writer. The exact preparation
 receipt hash is bound through job outputs and checked again after download.
 The write job revalidates the entire appropriate contract before any release write.
 
-Every changed/new asset is staged under a unique name and checked by server digest
-and complete byte download. Existing bytes are also read back and hashed. Before
-each switch, asset IDs, names, sizes and hashes are checked again. GitHub does not
-provide atomic compare-and-swap across assets; a brief naming window is possible.
-Originals are retained under backup names, checksums switch last, and no asset is
-deleted. A concurrent edit or failure triggers observed-state rollback; an
-incomplete rollback requires journal review, not a blind retry. Journals are saved
-on success or failure. Concurrent human release-note edits are preserved.
+Release reads and transfers bind to the observed Release ID. Only missing assets
+are uploaded, then checked by server digest and complete byte download. Existing
+conflicting bytes or retirement requests stop before uploading; this code does
+not rename, replace or delete assets. Release identity and asset inventories are
+checked throughout the transaction. Journals are saved on success or failure;
+human edits to public release notes are preserved.
+
+New releases are verified as drafts before finalization. A lost finalization
+response attempts to return that exact owned Release ID to draft. Empty automatic
+drafts can be reused by a new normal build. For a nonempty owned draft, select
+`promote-existing` with its exact original CI artifact ID, ZIP hash and built
+commit. Its target must match that built commit; existing attachments must match
+the validated artifact and pass byte readback before it can become public.
 
 ## Historical versions
 
@@ -123,19 +133,20 @@ The compile matrix is limited to three concurrent runners and fails each shard
 independently. Each runner checks the shared archive digest, source commit,
 resolved input lock and exact Go version before using `GOTOOLCHAIN=local` to
 cross-compile the two binaries. Its cache key includes version, Go version,
-architecture, scripts, config and Go dependency locks; no broad restore prefix
+architecture, both Go module manifests/locks and the Go compatibility adapter;
+unrelated publication scripts do not invalidate it. No broad restore prefix
 is allowed. Intermediate source/shard artifacts expire after three days.
 
 The aggregate job requires all requested shards from the same immutable preparation artifact,
 validates each shard's packages and build commit, and then reconstructs the
 original `verified-1panel-VERSION-COMMIT` contract. It validates the combined
-bytes again. A full seven-architecture run therefore checks all fourteen
-binaries twice. Subset development builds remain available, but promotion
-still requires the unchanged complete seven-architecture contract. Missing,
+bytes again. Redundant outer workflow revalidation has been removed; downloaded
+shards and the final aggregate retain independent checks. Subset development
+builds remain available; promotion inherits the exact verified producer matrix. Missing,
 extra, corrupt, mismatched-version or mismatched-commit shards fail closed.
 
 CNB and local Docker full builds retain their serial behavior. Existing-release
-promotion, its reviewed receipt, readback, backups, and single publication
+promotion, its reviewed receipt, readback and single publication
 writer are unchanged. Neither push nor scheduled builds trigger repair.
 
 Performance must be measured on a new unpublished full build before adopting

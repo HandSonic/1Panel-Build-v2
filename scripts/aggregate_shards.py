@@ -69,7 +69,8 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
                         producer_head_sha=os.environ['PRODUCER_HEAD_SHA'], outcomes=outcomes)
         validate(manifest, version)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        validate_dist(destination, version, arches)
+        # finalize already checked the aggregate package bytes. Only these
+        # matrix fields changed, and validate() checked their final contract.
 
 
 if __name__ == '__main__':

@@ -11,9 +11,33 @@ def architectures(value):
     return arches
 
 def validate_elf(data, arch):
-    if len(data)<52 or data[:4]!=b'\x7fELF': raise ValueError('Missing ELF header')
+    if len(data)<20 or data[:4]!=b'\x7fELF': raise ValueError('Missing ELF header')
     found=(data[4],data[5],int.from_bytes(data[18:20],'little' if data[5]==1 else 'big'))
     if found!=ARCHES[arch]: raise ValueError(f'Wrong ELF target {found}; expected {ARCHES[arch]}')
+    endian='<' if data[5]==1 else '>'
+    header_format=endian+('HHIIIIIHHHHHH' if data[4]==1 else 'HHIQQQIHHHHHH')
+    header_size=16+struct.calcsize(header_format)
+    if len(data)<header_size: raise ValueError('Truncated ELF header')
+    kind,_,version,entry,phoff,_,_,ehsize,phentsize,phnum,_,_,_=struct.unpack_from(header_format,data,16)
+    if data[6]!=1 or version!=1 or kind not in (2,3) or ehsize!=header_size:
+        raise ValueError('Unsupported executable ELF header')
+    program_format=endian+('IIIIIIII' if data[4]==1 else 'IIQQQQQQ')
+    if (not phnum or phentsize!=struct.calcsize(program_format) or phoff<header_size or
+        phoff+phnum*phentsize>len(data)):
+        raise ValueError('Invalid ELF program header table')
+    executable_entry=False
+    for index in range(phnum):
+        row=struct.unpack_from(program_format,data,phoff+index*phentsize)
+        if data[4]==1:
+            segment,offset,address,_,filesize,memorysize,flags,_=row
+        else:
+            segment,flags,offset,address,_,filesize,memorysize,_=row
+        if segment!=1:continue  # PT_LOAD
+        if filesize>memorysize or (filesize and offset+filesize>len(data)):
+            raise ValueError('ELF load segment exceeds file or memory bounds')
+        if flags & 1 and address<=entry<address+filesize:executable_entry=True
+    if not executable_entry:
+        raise ValueError('ELF entry point is not in an executable load segment')
 
 def validate_package(path, version, arch):
     entry=resolve(version); root=f'1panel-{version}-linux-{arch}'
