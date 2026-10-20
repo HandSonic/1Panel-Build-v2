@@ -71,11 +71,18 @@ class TransportGitHub(GitHub):
         if args[:3] == ('api', '--method', 'PATCH'):
             if args[3] != f'repos/{self.repo}/releases/17':
                 raise AssertionError(args)
+            fields = dict(item.split('=', 1) for item in args[4:] if '=' in item)
             for item in args:
                 if item == 'draft=false': self.value['draft'] = False
                 if item == 'draft=true': self.value['draft'] = True
                 if item.startswith('target_commitish='):
                     self.value['target_commitish'] = item.split('=', 1)[1]
+                if item.startswith('tag_name='):
+                    self.value['tag_name'] = item.split('=', 1)[1]
+            # GitHub can replace an uncreated draft tag when retargeting it
+            # without also supplying tag_name (observed on the real release).
+            if 'target_commitish' in fields and 'tag_name' not in fields:
+                self.value['tag_name'] = 'untagged-7c790eb0db956d418c85'
             return json.dumps(self.value)
         if args == ('api', f'repos/{self.repo}/releases/17'):
             return json.dumps(self.value)
@@ -184,9 +191,14 @@ class DraftTransactions(unittest.TestCase):
         with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
             self.assertEqual(ap.publish(self.args, client), 'published')
         self.assertEqual(client.value['id'], 17)
+        self.assertEqual(client.value['tag_name'], client.tag)
         self.assertFalse(client.value['draft'])
         self.assertEqual(client.value['target_commitish'], os.environ['GITHUB_SHA'])
         self.assertEqual(len(client.value['assets']), 2)
+        retarget = next(call for call in client.calls
+                        if call[:3] == ('api', '--method', 'PATCH')
+                        and f'target_commitish={os.environ["GITHUB_SHA"]}' in call)
+        self.assertIn(f'tag_name={client.tag}', retarget)
         self.assertFalse(any(call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases')
                              for call in client.calls))
         journal = json.loads((self.work / 'control' / 'creation-journal.json').read_text())

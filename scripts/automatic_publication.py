@@ -209,7 +209,8 @@ def publish(args,client=None):
             if created['target_commitish']!=os.environ['GITHUB_SHA']:
                 wanted=draft_identity(created);wanted['target_commitish']=os.environ['GITHUB_SHA']
                 created=json.loads(client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
-                                             '-f',f'target_commitish={os.environ["GITHUB_SHA"]}'))
+                                             '-f',f'target_commitish={os.environ["GITHUB_SHA"]}',
+                                             '-f',f'tag_name={client.tag}'))
                 if draft_identity(created)!=wanted:raise ValueError('Resumed draft metadata changed')
         if type(created.get('id')) is not int or created['id']<=0 or not created.get('draft') or created.get('tag_name')!=client.tag or created.get('assets')!=[]:
             raise ValueError('New draft identity is not empty and exact')
