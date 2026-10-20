@@ -3,7 +3,7 @@
 import argparse,hashlib,json,os,re,shutil,stat,subprocess,sys,tempfile,zipfile
 from pathlib import Path,PurePosixPath
 from publication_contract import ARCHES,PROOF,REPOS,ROOT,contract_for_repo,make_proof,policy_fingerprint,validate_payloads
-from release_asset_repair import GitHub,digest,repair
+from release_asset_repair import GitHub,digest,repair,release_snapshot
 
 UPSTREAM=REPOS['upstream-matrix']
 
@@ -143,6 +143,7 @@ def publish(args):
     client=GitHub(args.repository,args.tag)
     release=client.release()
     if release.get('draft'):raise ValueError('Existing-release repair requires an existing public release')
+    client.bind_release(release['id'])
     # Public downloads contain only packages and their standard SHA sidecars.
     from public_packages import package_files, recovery_assets, require_embedded
     require_embedded(files,args.version)
@@ -154,7 +155,8 @@ def publish(args):
     from public_packages import CONTROLS
     retired.extend(asset['name'] for asset in release['assets'] if asset['name'] in CONTROLS)
     preserved={name:asset for name,asset in recovery_assets(release,args.version).items() if name not in retired}
-    state=repair(client,files,journal,retire=retired,preserved_assets=preserved)
+    state=repair(client,files,journal,retire=retired,preserved_assets=preserved,
+                 expected_snapshot=release_snapshot(release))
     print(json.dumps({'state':state['phase'],'repository':args.repository,'tag':args.tag}))
 
 if __name__=='__main__':

@@ -6,6 +6,7 @@ import tempfile
 import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from release_asset_repair import GitHub, repair
 
@@ -70,9 +71,39 @@ class DraftTransportTests(unittest.TestCase):
         c.bind_release(17)
         with self.assertRaises(ValueError):c.bind_release(18)
 
-class FakeGitHub:
+    def test_missing_bound_release_never_becomes_a_create_request(self):
+        from automatic_publication import optional_release
+        c=GitHub('owner/repo','v2.3.2');c.bind_release(17)
+        error=subprocess.CalledProcessError(1,['gh','api'],stderr='Not Found (HTTP 404)')
+        with patch.object(c,'run',side_effect=error) as run:
+            with self.assertRaises(subprocess.CalledProcessError):optional_release(c)
+        run.assert_called_once_with('api','repos/owner/repo/releases/17')
+
+    def test_bound_upload_uses_id_even_when_tag_would_resolve_elsewhere(self):
+        c=GitHub('owner/repo','v2.3.2');c.bind_release(17)
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'archive &.tar.gz';path.write_bytes(b'\x00\xffbytes')
+            with patch.object(c,'run',return_value='{}') as run:c.upload(path)
+            call=run.call_args.args
+            self.assertEqual(call[:4],('api','--method','POST',
+                'https://uploads.github.com/repos/owner/repo/releases/17/assets?name=archive%20%26.tar.gz'))
+            self.assertIn('Content-Length: 7',call)
+            self.assertEqual(call[-2:],('--input',str(path)))
+            self.assertNotIn('release',call)
+
+    def test_bound_download_uses_asset_id_from_bound_release(self):
+        c=GitHub('owner/repo','v2.3.2');c.bind_release(17)
+        asset={'id':42,'name':'archive.tar.gz'}
+        with patch.object(c,'run',return_value=json.dumps(dict(self.draft(),assets=[asset]))) as run, \
+             patch.object(c,'download_asset') as download:
+            c.download(asset['name'],Path('/unused'))
+        run.assert_called_once_with('api','repos/owner/repo/releases/17')
+        download.assert_called_once_with(asset,Path('/unused'))
+
+class FakeGitHub(GitHub):
     repo='owner/repo';tag='v2.3.2'
     def __init__(self, failure=None):
+        self.release_id=None
         self.assets={1:('package.tar.gz',b'old archive'),2:('checksums.txt',b'old checksum')}
         self.body='old release notes';self.failure=failure;self.failed=False;self.calls=[]
     def release(self):return {'body':self.body,'assets':[{'id':i,'name':n,'size':len(b),'digest':'sha256:'+hashlib.sha256(b).hexdigest()} for i,(n,b) in self.assets.items()]}

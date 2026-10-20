@@ -73,6 +73,7 @@ class AutomaticTransaction(unittest.TestCase):
         self.work = Path(self.tmp.name)
         (self.work / 'control').mkdir()
         (self.work / 'release').mkdir()
+        (self.work / 'release' / 'resolved-source.json').write_bytes(b'current validated source contract')
         self.files = []
         for name, body in [(f'1panel-{Client.tag}-linux-amd64.tar.gz', b'archive'),
                            (f'1panel-{Client.tag}-linux-amd64.tar.gz.sha256', b'archive checksum'),
@@ -94,6 +95,7 @@ class AutomaticTransaction(unittest.TestCase):
         self.producer_calls = 0
         self.before_repair = None
         self.after_repair = None
+        self.draft_records = {}
         for target, replacement in [
             ('check_identity', lambda *a: {}),
             ('validate_payloads', lambda *a: self.files),
@@ -106,6 +108,8 @@ class AutomaticTransaction(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         p = patch('public_packages.require_embedded', return_value=None)
+        p.start(); self.addCleanup(p.stop)
+        p = patch('public_packages.verify_draft', side_effect=lambda c,*a:(c.release(),self.draft_records))
         p.start(); self.addCleanup(p.stop)
         p = patch('resolved_contract.activate_release', lambda *a: None)
         p.start()
@@ -189,7 +193,11 @@ class AutomaticTransaction(unittest.TestCase):
                 size=facts(path)['bytes'],digest='sha256:'+facts(path)['sha256']))
         c.upload=upload
         c.download=lambda name,directory:(directory/name).write_bytes(data[name])
-        self.plan.update(operation='resume-draft',before=ap.snapshot(c.release()))
+        c.data=data
+        self.draft_records={'amd64':{'file':name,'sha256':hashlib.sha256(raw).hexdigest(),
+            'size':len(raw),'publication_format':'package-only-v1'}}
+        self.plan.update(operation='resume-draft',before=ap.snapshot(c.release()),
+            preserved={a['name']:ap.asset_identity(a) for a in c.value['assets']})
         self.save_plan()
         return c
 
@@ -202,14 +210,41 @@ class AutomaticTransaction(unittest.TestCase):
         self.assertEqual(c.value['assets'][0],before)
         self.assertEqual([call for call in c.calls if call[0]=='upload'],
                          [('upload',self.files[1].name)])
+        self.assertEqual(c.data[self.files[1].name],
+            (hashlib.sha256(b'archive').hexdigest()+'  '+self.files[0].name+'\n').encode())
 
-    def test_partial_draft_conflicting_bytes_never_upload_or_go_public(self):
+    def test_partial_draft_preserves_valid_original_when_rebuilt_bytes_differ(self):
         from release_asset_repair import repair
         c=self.partial_draft(b'other archive');before=copy.deepcopy(c.value)
-        with patch.object(ap,'repair',repair),self.assertRaisesRegex(ValueError,'deletion confirmation'):
-            ap.publish(self.args,c)
+        with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
+        self.assertEqual(c.value['assets'][0],before['assets'][0])
+        self.assertEqual(c.data[self.files[0].name],b'other archive')
+        self.assertEqual(c.data[self.files[1].name],
+            (hashlib.sha256(b'other archive').hexdigest()+'  '+self.files[0].name+'\n').encode())
+        self.assertFalse(c.value['draft'])
+
+    def test_partial_draft_invalid_original_is_not_admitted(self):
+        c=self.partial_draft();before=copy.deepcopy(c.value)
+        with patch('public_packages.verify_draft',side_effect=ValueError('payload validation failed')):
+            with self.assertRaisesRegex(ValueError,'payload validation failed'):ap.publish(self.args,c)
         self.assertEqual(c.value,before)
         self.assertFalse(any(call[0]=='upload' or 'PATCH' in call for call in c.calls))
+
+    def test_partial_draft_preserves_old_architecture_absent_from_current_successes(self):
+        from release_asset_repair import repair
+        c=self.partial_draft(b'original amd64');before=copy.deepcopy(c.value['assets'][0])
+        self.files=self.files[2:]
+        for suffix,body in [('',b'new arm64'),('.sha256',b'new arm64 sha')]:
+            path=self.work/'release'/f'1panel-{Client.tag}-linux-arm64.tar.gz{suffix}'
+            path.write_bytes(body);self.files.append(path)
+        self.proof={'files':{p.name:facts(p) for p in self.files}}
+        self.proofpath.write_text(json.dumps(self.proof))
+        self.plan['receipt_sha256']=facts(self.proofpath)['sha256'];self.save_plan()
+        os.environ['EXPECTED_VALIDATION_RECEIPT_SHA256']=facts(self.proofpath)['sha256']
+        with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
+        self.assertEqual(c.value['assets'][0],before)
+        self.assertEqual(len(c.value['assets']),4)
+        self.assertFalse(c.value['draft'])
 
     def test_substituted_created_draft_never_adopted(self):
         c = Client(); c.substitute = True
@@ -472,10 +507,13 @@ class PrepareControlFlow(unittest.TestCase):
     def perform(self, client, records=None, error=None, verified=None):
         with patch.object(ap,'GitHub',return_value=client), \
              patch.object(ap,'optional_release',side_effect=lambda c:c.release()), \
+             patch('public_packages.verify_draft',return_value=(client.release(),records or {})) as draft_verify, \
              patch('public_packages.verify_existing',return_value=(verified or client.release(),records),side_effect=error) as verify:
             ap.prepare(self.args)
             if client.release() is None or client.release().get('draft') is True:verify.assert_not_called()
             else:verify.assert_called_once_with(client,Client.tag,ap.ROOT)
+            if client.release() is not None and client.release().get('draft') is True:
+                draft_verify.assert_called_once_with(client,Client.tag,ap.ROOT,self.contract_sha)
         return json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
 
     def test_create_plan_binds_current_contract_and_producer(self):
@@ -506,14 +544,19 @@ class PrepareControlFlow(unittest.TestCase):
     def test_verified_complete_public_packages_need_no_old_receipt_or_logs(self):
         self.payload(self.source,('amd64','arm64'),11,'b'*40)
         client,records=self.old_release(('amd64','arm64'))
-        # Old source contracts may differ for no-op: the actual public bytes were verified.
-        for record in records.values():record['resolved_contract_sha256']='c'*64
         before=client.release()
         plan=self.perform(client,records)
         self.assertEqual(plan['operation'],'unchanged')
         self.assertEqual(client.release(),before)
         self.assertEqual(client.calls,[])
         self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
+
+    def test_complete_public_packages_with_old_contract_require_explicit_repair(self):
+        self.payload(self.source,('amd64','arm64'),11,'b'*40)
+        client,records=self.old_release(('amd64','arm64'))
+        for record in records.values():record['resolved_contract_sha256']='c'*64
+        with self.assertRaisesRegex(ValueError,'explicit repair'):self.perform(client,records)
+        self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
 
     def test_legacy_partial_requires_explicit_format_migration(self):
         self.payload(self.source,('arm64',),11,'b'*40)

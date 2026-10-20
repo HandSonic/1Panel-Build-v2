@@ -15,6 +15,7 @@ class PublicationControlArtifact(unittest.TestCase):
                 'inputs.operation': repr('build-only'),
                 'inputs.publish_candidate': repr(candidate),
                 'needs.tests.result': repr('success'),
+                'needs.tests.outputs.build_required': repr('true'),
                 'needs.build.result': repr('success'),
                 'needs.publication_prepare.result': repr('success'),
                 'cancelled()': 'False',

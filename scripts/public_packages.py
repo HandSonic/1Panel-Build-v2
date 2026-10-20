@@ -38,7 +38,11 @@ def recovery_assets(release, version):
 
 
 def inventory(release, version):
-    if release.get('draft') is not False or release.get('tag_name') != version or release.get('prerelease', False) is not ('-' in version):
+    return _inventory(release, version)
+
+
+def _inventory(release, version, *, draft=False):
+    if release.get('draft') is not draft or release.get('tag_name') != version or release.get('prerelease', False) is not ('-' in version):
         raise ValueError('Canonical public release identity mismatch')
     assets = {a['name']: a for a in release['assets']}
     if len(assets) != len(release['assets']):
@@ -47,10 +51,12 @@ def inventory(release, version):
     for arch in ARCHES:
         name = f'1panel-{version}-linux-{arch}.tar.gz'
         if name in assets or name + '.sha256' in assets:
-            if name not in assets or name + '.sha256' not in assets:
+            if name not in assets or (not draft and name + '.sha256' not in assets):
                 raise ValueError('Incomplete canonical package/checksum pair')
-            found[arch] = (assets[name], assets[name + '.sha256'])
-    allowed = set(recovery_assets(release, version)) | {a['name'] for pair in found.values() for a in pair}
+            found[arch] = (assets[name], assets.get(name + '.sha256'))
+    allowed = {a['name'] for pair in found.values() for a in pair if a is not None}
+    if not draft:
+        allowed |= set(recovery_assets(release, version))
     if set(assets) != allowed:
         raise ValueError('Unexpected canonical release asset')
     return found
@@ -70,21 +76,35 @@ def download(client, asset, directory):
 
 def verify_existing(client, version, root):
     """Independently validate each actual public package; return immutable pins."""
+    return _verify_packages(client, version, root)
+
+
+def verify_draft(client, version, root, contract_sha):
+    """Writer-only recovery of original bytes; never public source admission."""
+    release, records = _verify_packages(client, version, root, draft=True)
+    if any(row['publication_format'] != 'package-only-v1' or
+           row['resolved_contract_sha256'] != contract_sha for row in records.values()):
+        raise ValueError('Draft package source/toolchain/lock contract differs from current validated inputs')
+    return release, records
+
+
+def _verify_packages(client, version, root, *, draft=False):
     from resolved_contract import apply_contract
     from automatic_frontend_lock import required_sidecars
     import json
     if client.repo != 'HandSonic/1Panel-Build-v2' or client.tag != version:
         raise ValueError('Unexpected public package repository or tag')
     release = client.release()
-    pairs = inventory(release, version)
+    pairs = _inventory(release, version, draft=draft)
     records = {}
     for arch, (asset, sidecar) in pairs.items():
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             archive = download(client, asset, work)
-            checksum = download(client, sidecar, work)
-            if checksum.read_text() != asset['digest'][7:] + '  ' + asset['name'] + '\n':
-                raise ValueError('Canonical package SHA sidecar mismatch')
+            if sidecar is not None:
+                checksum = download(client, sidecar, work)
+                if checksum.read_text() != asset['digest'][7:] + '  ' + asset['name'] + '\n':
+                    raise ValueError('Canonical package SHA sidecar mismatch')
             embedded = read(archive, version, arch)
             if embedded is None:
                 # Legacy format can still supply its source inputs as old assets.

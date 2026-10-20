@@ -20,6 +20,7 @@ def optional_release(client):
     try:return client.release()
     except subprocess.CalledProcessError as error:
         # Only the API's explicit not-found response means a release can be created.
+        if getattr(client,'release_id',None) is not None:raise
         if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):return client.find_draft()
         raise
 
@@ -73,22 +74,23 @@ def prepare(args):
     preserved={}
     operation='create'
     if before is not None and before.get('draft') is True:
-        # Drafts are unpublished work, never verified public source packages.
-        # Bind their exact ID/snapshot now; repair checks every existing byte
-        # against this run's independently validated packages before resuming.
+        from public_packages import verify_draft
+        verified,records=verify_draft(client,args.version,ROOT,contract_sha)
+        if snapshot(verified)!=snapshot(before):raise ValueError('Draft changed during verification')
+        preserved={a['name']:asset_identity(a) for a in before['assets']}
         operation='resume-draft'
     elif before is not None:
         from public_packages import verify_existing
         verified,records=verify_existing(client,args.version,ROOT)
         if snapshot(verified)!=snapshot(before):raise ValueError('Existing release changed during verification')
+        if any(row['resolved_contract_sha256']!=contract_sha for row in records.values()):
+            raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
         if set(records)>=set(current['requested_architectures']):
             operation='unchanged'
             print('AUTOMATIC_PUBLICATION_UNCHANGED=1')
         else:
             if any(row.get('publication_format')!='package-only-v1' for row in records.values()):
                 raise ValueError('Legacy partial release requires explicit package-format migration')
-            if any(row['resolved_contract_sha256']!=contract_sha for row in records.values()):
-                raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
             operation='append'
         names={row['file']+suffix for row in records.values() for suffix in ('','.sha256')}
         preserved={a['name']:asset_identity(a) for a in before['assets'] if a['name'] in names}
@@ -98,11 +100,13 @@ def prepare(args):
     (control/'automatic-plan.json').write_text(json.dumps(plan,indent=2,sort_keys=True)+'\n')
 
 
-def verify_new_release(release,created,files,draft):
+def verify_new_release(release,created,files,draft,preserved=None):
     if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
         release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
         raise ValueError('Created release identity or visibility changed')
-    expected={p.name:digest(p) for p in files}
+    expected={name:{'bytes':asset['size'],'sha256':asset['digest'][7:]}
+              for name,asset in (preserved or {}).items()}
+    expected.update({p.name:digest(p) for p in files})
     assets=release.get('assets',[])
     if len(assets)!=len(expected) or {a['name'] for a in assets}!=set(expected):
         raise ValueError('Created release canonical inventory changed')
@@ -119,8 +123,10 @@ def publish(args,client=None):
     if plan.get('schema')!=1 or plan.get('version')!=args.version or plan.get('operation') not in ('create','resume-draft','append','unchanged'):
         raise ValueError('Invalid automatic publication plan')
     client=client or GitHub(args.repository,args.version)
-    if snapshot(optional_release(client))!=plan['before']:raise ValueError('Release changed after validation; retry discovery under the writer lock')
+    observed=optional_release(client)
+    if snapshot(observed)!=plan['before']:raise ValueError('Release changed after validation; retry discovery under the writer lock')
     if plan['operation']=='unchanged':return 'unchanged'
+    if observed is not None:client.bind_release(observed['id'])
     proof_path=control/PROOF
     if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256') or digest(proof_path)['sha256']!=plan['receipt_sha256']:
         raise ValueError('Automatic receipt differs from successful preparation')
@@ -134,7 +140,7 @@ def publish(args,client=None):
     current=manifest['generations'][manifest['current_generation']] if manifest['schema_version']==3 else manifest
     current_producer(current,os.environ['GITHUB_SHA'])
     # Existing successful architecture packages are never automatically replaced.
-    from public_packages import package_files, recovery_assets, require_embedded, inventory
+    from public_packages import package_files, recovery_assets, require_embedded, inventory, verify_draft
     require_embedded(files,args.version)
     published=package_files(files)
     if plan['operation']=='append':
@@ -143,6 +149,25 @@ def publish(args,client=None):
         actual={asset['name']:asset for pair in pairs.values() for asset in pair}
         if {name:asset_identity(asset) for name,asset in plan['preserved'].items()}!={name:asset_identity(asset) for name,asset in actual.items()}:raise ValueError('Preserved package inventory changed')
         published=[path for path in published if path.name not in actual]
+    elif plan['operation']=='resume-draft':
+        # A later build can have different archive bytes (timestamps or producer
+        # metadata). Authenticate original draft payloads independently and retain
+        # them, rather than comparing them with rebuilt same-name candidates.
+        contract_sha=digest(work/'release'/'resolved-source.json')['sha256']
+        verified,records=verify_draft(client,args.version,ROOT,contract_sha)
+        actual={asset['name']:asset for asset in verified['assets']}
+        if {name:asset_identity(asset) for name,asset in actual.items()}!=plan['preserved']:
+            raise ValueError('Prepared draft package inventory changed')
+        preserved_names={row['file']+suffix for row in records.values() for suffix in ('','.sha256')}
+        published=[path for path in published if path.name not in preserved_names]
+        for record in records.values():
+            name=record['file']+'.sha256'
+            if name not in actual:
+                sidecars=control/'draft-sidecars';sidecars.mkdir(exist_ok=True)
+                path=sidecars/name
+                if path.exists():raise ValueError('Draft sidecar workspace already exists')
+                path.write_text(record['sha256']+'  '+record['file']+'\n')
+                published.append(path)
     journal=control/'automatic-journal.json'
     if journal.exists() or (control/'creation-journal.json').exists():raise ValueError('Existing automatic journal requires recovery review')
     expected_snapshot=plan['before']
@@ -171,16 +196,18 @@ def publish(args,client=None):
         current_release=client.release()
         recovery=recovery_assets(current_release,args.version)
         recovery.update(actual)
+    elif plan['operation']=='resume-draft':
+        recovery=actual
     state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery)
     if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
     if plan['operation'] in ('create','resume-draft'):
         current_producer(current,os.environ['GITHUB_SHA'])
-        verify_new_release(client.release(),created,ordered,True)
+        verify_new_release(client.release(),created,ordered,True,recovery)
         creation.state['phase']='finalizing';creation.save()
         try:
             client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
                        '-F','draft=false','-f','make_latest=legacy')
-            verify_new_release(client.release(),created,ordered,False)
+            verify_new_release(client.release(),created,ordered,False,recovery)
         except Exception:
             # A failed HTTP response may follow a successful write. Restore this
             # exact owned release to draft rather than assuming PATCH did nothing.

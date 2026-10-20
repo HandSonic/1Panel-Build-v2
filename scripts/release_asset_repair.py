@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import hashlib
+from urllib.parse import quote
 
 def digest(path):
     h=hashlib.sha256()
@@ -51,8 +52,19 @@ class GitHub:
         if release_snapshot(release)!=release_snapshot(matches[0]):
             raise ValueError('Draft changed during release discovery')
         return release
-    def upload(self,path):self.run('release','upload',self.tag,str(path),'--repo',self.repo)
-    def download(self,name,directory):self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
+    def upload(self,path):
+        if self.release_id is None:
+            return self.run('release','upload',self.tag,str(path),'--repo',self.repo)
+        path=Path(path)
+        endpoint=f'https://uploads.github.com/repos/{self.repo}/releases/{self.release_id}/assets?name='+quote(path.name,safe='')
+        return self.run('api','--method','POST',endpoint,'-H','Content-Type: application/octet-stream',
+                        '-H',f'Content-Length: {path.stat().st_size}','--input',str(path))
+    def download(self,name,directory):
+        if self.release_id is None:
+            return self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
+        matches=[asset for asset in self.release()['assets'] if asset.get('name')==name]
+        if len(matches)!=1:raise ValueError('Missing or ambiguous bound release asset')
+        return self.download_asset(matches[0],directory)
     def download_asset(self,asset,directory):
         with (Path(directory)/asset['name']).open('wb') as stream:
             subprocess.run(['gh','api',f"repos/{self.repo}/releases/assets/{asset['id']}",'-H','Accept: application/octet-stream'],check=True,stdout=stream)

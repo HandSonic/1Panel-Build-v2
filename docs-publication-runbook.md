@@ -116,9 +116,14 @@ Automatic publication reads newly created drafts by their returned Release ID.
 If an earlier run left a draft, the next normal run discovers the exact tag in
 the releases list, binds that ID and its snapshot, and resumes the same draft.
 The public source reader still requires a published release; discovering a
-draft never makes it an accepted upstream input. Existing draft assets must
-match the newly validated package bytes. Only missing package assets are
-uploaded, and conflicting bytes stop before any upload or public finalization.
+draft never makes it an accepted upstream input. Each existing draft archive is
+downloaded and passes the current full semantic package validator and exact
+source/toolchain/lock contract check. Its original bytes and asset ID are retained
+even if rebuilding produces different archive timestamps or producer metadata.
+Only missing assets are uploaded; a missing sidecar is derived from the verified
+original archive hash. Invalid existing packages stop before upload or public
+finalization. Bound uploads and downloads use the Release ID and asset ID, so a
+concurrent tag change cannot redirect writes to another release.
 
 GitHub normal builds now use `prepare -> compile[arch] -> build` before the
 existing optional draft-candidate stage. `prepare` uses the same Dockerfile's
@@ -288,3 +293,10 @@ Build checks use operational source/configuration/repair inputs. The historical 
 ## v2.1.7 through v2.1.5 shared frontend inputs
 
 These three source commits have the same frontend package manifest and no original lock. They share the same fixed derived repair-lock bytes, stored at each version's validated repair path. Go remains version-specific: v2.1.7 and v2.1.6 use 1.25.7; v2.1.5 uses 1.24.9. Each source/configuration contract and installer resource set is pinned independently. Use parallel build runs for the three versions with publication disabled; each must pass its own seven-architecture aggregation and subsequent publication gates. The shared frontend lock does not substitute for per-version build or downstream installation checks.
+# Avoiding unnecessary compilation
+
+Publication-only, documentation-only and ordinary unit-test-only pull requests run
+unit CI without preparing the frontend or compiling seven architectures. Changes
+to build inputs, build scripts, workflow logic or the real Go SQLite smoke source
+still compile. Unknown paths and unavailable diffs also compile; renames preserve
+both the removed and added paths for this decision.

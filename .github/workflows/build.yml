@@ -48,6 +48,8 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    outputs:
+      build_required: ${{ steps.scope.outputs.build_required }}
     steps:
       - name: Set up isolated configuration parser
         run: |
@@ -55,12 +57,20 @@ jobs:
           "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
           echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select compilation scope
+        id: scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci_scope.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.1'
       - run: python3 -m unittest discover -s tests -v
   prepare:
-    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic'
+    if: needs.tests.outputs.build_required == 'true' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic')
     needs: tests
     runs-on: ubuntu-latest
     outputs:
