@@ -20,7 +20,7 @@ def optional_release(client):
     try:return client.release()
     except subprocess.CalledProcessError as error:
         # Only the API's explicit not-found response means a release can be created.
-        if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):return None
+        if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):return client.find_draft()
         raise
 
 
@@ -72,7 +72,12 @@ def prepare(args):
     (control/PROOF).write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
     preserved={}
     operation='create'
-    if before is not None:
+    if before is not None and before.get('draft') is True:
+        # Drafts are unpublished work, never verified public source packages.
+        # Bind their exact ID/snapshot now; repair checks every existing byte
+        # against this run's independently validated packages before resuming.
+        operation='resume-draft'
+    elif before is not None:
         from public_packages import verify_existing
         verified,records=verify_existing(client,args.version,ROOT)
         if snapshot(verified)!=snapshot(before):raise ValueError('Existing release changed during verification')
@@ -111,7 +116,7 @@ def publish(args,client=None):
     contract=check_identity(args.version,args.version,args.repository)
     work=Path(args.work);control=work/'control'
     plan=json.loads((control/'automatic-plan.json').read_text())
-    if plan.get('schema')!=1 or plan.get('version')!=args.version or plan.get('operation') not in ('create','append','unchanged'):
+    if plan.get('schema')!=1 or plan.get('version')!=args.version or plan.get('operation') not in ('create','resume-draft','append','unchanged'):
         raise ValueError('Invalid automatic publication plan')
     client=client or GitHub(args.repository,args.version)
     if snapshot(optional_release(client))!=plan['before']:raise ValueError('Release changed after validation; retry discovery under the writer lock')
@@ -150,8 +155,16 @@ def publish(args,client=None):
         if type(created.get('id')) is not int or created['id']<=0 or not created.get('draft') or created.get('tag_name')!=client.tag or created.get('assets')!=[]:
             raise ValueError('New draft identity is not empty and exact')
         creation.state.update(phase='created',release_id=created['id']);creation.save()
+        client.bind_release(created['id'])
         if snapshot(client.release())!=snapshot(created):raise ValueError('Created draft differs from POST identity')
         expected_snapshot=snapshot(created)
+    elif plan['operation']=='resume-draft':
+        created=client.release()
+        if created.get('draft') is not True or created.get('tag_name')!=client.tag:
+            raise ValueError('Resume requires the exact prepared draft')
+        client.bind_release(created['id'])
+        creation=Journal(control/'creation-journal.json',{'phase':'resuming','tag':client.tag,
+            'repository':client.repo,'release_id':created['id']})
     ordered=published
     recovery={}
     if plan['operation']=='append':
@@ -160,7 +173,7 @@ def publish(args,client=None):
         recovery.update(actual)
     state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery)
     if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
-    if plan['operation']=='create':
+    if plan['operation'] in ('create','resume-draft'):
         current_producer(current,os.environ['GITHUB_SHA'])
         verify_new_release(client.release(),created,ordered,True)
         creation.state['phase']='finalizing';creation.save()

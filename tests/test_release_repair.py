@@ -3,10 +3,72 @@ import hashlib
 import json
 import sys
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from release_asset_repair import repair
+from release_asset_repair import GitHub, repair
+
+
+class DraftTransportTests(unittest.TestCase):
+    def client(self, pages, exact=None, status=404):
+        class Transport(GitHub):
+            def __init__(self):
+                super().__init__('owner/repo', 'v2.3.2')
+                self.calls=[]
+            def run(self, *args):
+                self.calls.append(args)
+                endpoint=args[1]
+                if '/releases/tags/' in endpoint:
+                    raise subprocess.CalledProcessError(1,args,stderr=f'error (HTTP {status})')
+                if '/releases?' in endpoint:
+                    return json.dumps(pages[int(endpoint.rsplit('=',1)[1])-1])
+                if endpoint.endswith('/releases/17'):
+                    return json.dumps(exact or pages[-1][-1])
+                raise AssertionError(args)
+        return Transport()
+
+    def draft(self):
+        return dict(id=17,tag_name='v2.3.2',draft=True,body='',assets=[])
+
+    def test_only_explicit_writer_lookup_discovers_and_binds_draft(self):
+        from automatic_publication import optional_release
+        c=self.client([[self.draft()]])
+        with self.assertRaises(subprocess.CalledProcessError):c.release()
+        self.assertIsNone(c.release_id)
+        self.assertEqual(optional_release(c)['id'],17)
+        self.assertEqual(c.release_id,17)
+        self.assertTrue(c.calls[-1][1].endswith('/releases/17'))
+
+    def test_draft_discovery_reads_all_pages(self):
+        from automatic_publication import optional_release
+        first=[dict(id=i+100,tag_name=f'other-{i}',draft=False,assets=[]) for i in range(100)]
+        c=self.client([first,[self.draft()]])
+        self.assertEqual(optional_release(c)['id'],17)
+        self.assertEqual(sum('/releases?' in call[1] for call in c.calls),2)
+
+    def test_no_draft_and_non_404_are_distinct(self):
+        from automatic_publication import optional_release
+        self.assertIsNone(optional_release(self.client([[]])))
+        c=self.client([[]],status=403)
+        with self.assertRaises(subprocess.CalledProcessError):optional_release(c)
+        self.assertEqual(len(c.calls),1)
+
+    def test_ambiguous_public_or_changed_drafts_are_rejected(self):
+        from automatic_publication import optional_release
+        for rows,exact in (([self.draft(),dict(self.draft(),id=18)],None),
+                           ([dict(self.draft(),draft=False)],None),
+                           ([self.draft()],dict(self.draft(),id=18)),
+                           ([self.draft()],dict(self.draft(),tag_name='other'))):
+            with self.subTest(rows=rows,exact=exact),self.assertRaises(ValueError):
+                optional_release(self.client([rows],exact))
+
+    def test_binding_cannot_be_silently_replaced(self):
+        c=GitHub('owner/repo','v2.3.2')
+        for release_id in (0,True,'17'):
+            with self.assertRaises(ValueError):c.bind_release(release_id)
+        c.bind_release(17)
+        with self.assertRaises(ValueError):c.bind_release(18)
 
 class FakeGitHub:
     repo='owner/repo';tag='v2.3.2'

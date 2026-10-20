@@ -112,6 +112,14 @@ work is pending and is not included in the current v2.3.2 completion claim.
 
 ## Bounded upstream architecture matrix
 
+Automatic publication reads newly created drafts by their returned Release ID.
+If an earlier run left a draft, the next normal run discovers the exact tag in
+the releases list, binds that ID and its snapshot, and resumes the same draft.
+The public source reader still requires a published release; discovering a
+draft never makes it an accepted upstream input. Existing draft assets must
+match the newly validated package bytes. Only missing package assets are
+uploaded, and conflicting bytes stop before any upload or public finalization.
+
 GitHub normal builds now use `prepare -> compile[arch] -> build` before the
 existing optional draft-candidate stage. `prepare` uses the same Dockerfile's
 `prepared-builder` target: the reviewed source commit, compatibility patches,

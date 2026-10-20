@@ -15,9 +15,42 @@ def digest(path):
     return {"bytes":Path(path).stat().st_size,"sha256":h.hexdigest()}
 
 class GitHub:
-    def __init__(self, repo, tag):self.repo=repo;self.tag=tag
+    def __init__(self, repo, tag):self.repo=repo;self.tag=tag;self.release_id=None
     def run(self,*args):return subprocess.run(['gh',*args],check=True,text=True,capture_output=True).stdout
-    def release(self):return json.loads(self.run('api',f'repos/{self.repo}/releases/tags/{self.tag}'))
+    def bind_release(self,release_id):
+        if type(release_id) is not int or release_id<=0:raise ValueError('Invalid bound release ID')
+        if self.release_id not in (None,release_id):raise ValueError('Bound release identity changed')
+        self.release_id=release_id
+    def release(self):
+        endpoint=f'repos/{self.repo}/releases/'
+        endpoint+=str(self.release_id) if self.release_id is not None else 'tags/'+self.tag
+        release=json.loads(self.run('api',endpoint))
+        if (type(release.get('id')) is not int or release['id']<=0 or release.get('tag_name')!=self.tag or
+                (self.release_id is not None and release['id']!=self.release_id)):
+            raise ValueError('Release identity mismatch')
+        return release
+    def find_draft(self):
+        """Explicit writer-only discovery; ordinary source reads stay public/tag based."""
+        matches=[];seen=set()
+        for page in range(1,101):
+            rows=json.loads(self.run('api',f'repos/{self.repo}/releases?per_page=100&page={page}'))
+            if not isinstance(rows,list) or len(rows)>100:raise ValueError('Invalid release discovery page')
+            for release in rows:
+                release_id=release.get('id') if isinstance(release,dict) else None
+                if type(release_id) is not int or release_id<=0 or release_id in seen:
+                    raise ValueError('Invalid or duplicated discovered release identity')
+                seen.add(release_id)
+                if release.get('tag_name')==self.tag:matches.append(release)
+            if len(rows)<100:break
+        else:raise ValueError('Release discovery page limit exceeded')
+        if not matches:return None
+        if len(matches)!=1 or matches[0].get('draft') is not True:
+            raise ValueError('Ambiguous or non-draft release discovery')
+        self.bind_release(matches[0]['id'])
+        release=self.release()
+        if release_snapshot(release)!=release_snapshot(matches[0]):
+            raise ValueError('Draft changed during release discovery')
+        return release
     def upload(self,path):self.run('release','upload',self.tag,str(path),'--repo',self.repo)
     def download(self,name,directory):self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
     def download_asset(self,asset,directory):

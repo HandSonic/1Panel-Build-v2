@@ -12,6 +12,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import automatic_publication as ap
+from release_asset_repair import GitHub
+
+optional_release = ap.optional_release
 
 
 def facts(path):
@@ -19,11 +22,12 @@ def facts(path):
     return {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
 
 
-class Client:
+class Client(GitHub):
     repo = 'HandSonic/1Panel-Build-v2'
     tag = 'v2.99.0'
 
     def __init__(self, release=None):
+        self.release_id = None
         self.value = copy.deepcopy(release)
         self.calls = []
         self.substitute = False
@@ -32,6 +36,8 @@ class Client:
         self.recovery_failure = False
 
     def release(self):
+        if self.release_id is not None and self.value['id'] != self.release_id:
+            raise ValueError('Release identity mismatch')
         return copy.deepcopy(self.value)
 
     def run(self, *args):
@@ -140,6 +146,70 @@ class AutomaticTransaction(unittest.TestCase):
         self.assertEqual(kw['expected_snapshot']['id'], 17)
         self.assertEqual(self.producer_calls, 2)
         self.assertFalse(any('body=' in item for call in c.calls for item in call))
+
+    def test_create_uses_post_id_when_tag_endpoint_cannot_read_a_draft(self):
+        import subprocess
+        class HiddenDraft(Client):
+            release = GitHub.release
+            def run(self, *args):
+                if args == ('api', f'repos/{self.repo}/releases/tags/{self.tag}'):
+                    self.calls.append(args)
+                    raise subprocess.CalledProcessError(1, args, stderr='Not Found (HTTP 404)')
+                if args == ('api', f'repos/{self.repo}/releases?per_page=100&page=1'):
+                    self.calls.append(args)
+                    return '[]'
+                return super().run(*args)
+        c = HiddenDraft()
+        with patch.object(ap, 'optional_release', optional_release):
+            self.assertEqual(ap.publish(self.args, c), 'published')
+        self.assertEqual(c.release_id, 17)
+        self.assertFalse(c.value['draft'])
+        self.assertEqual(sum('POST' in call for call in c.calls), 1)
+
+    def test_existing_empty_draft_is_resumed_without_a_second_post(self):
+        c = Client({'id': 17, 'tag_name': Client.tag, 'draft': True,
+                    'body': 'saved notes', 'assets': []})
+        self.plan.update(operation='resume-draft', before=ap.snapshot(c.release()))
+        self.save_plan()
+        self.assertEqual(ap.publish(self.args, c), 'published')
+        self.assertFalse(c.value['draft'])
+        self.assertEqual(c.value['body'], 'saved notes')
+        self.assertEqual(c.release_id, 17)
+        self.assertFalse(any('POST' in call for call in c.calls))
+
+    def partial_draft(self, raw=b'archive'):
+        name=self.files[0].name
+        c=Client({'id':17,'tag_name':Client.tag,'draft':True,'body':'saved notes',
+            'assets':[dict(id=91,name=name,size=len(raw),
+                           digest='sha256:'+hashlib.sha256(raw).hexdigest())]})
+        data={name:raw}
+        def upload(path):
+            c.calls.append(('upload',path.name));data[path.name]=path.read_bytes()
+            c.value['assets'].append(dict(id=100+len(data),name=path.name,
+                size=facts(path)['bytes'],digest='sha256:'+facts(path)['sha256']))
+        c.upload=upload
+        c.download=lambda name,directory:(directory/name).write_bytes(data[name])
+        self.plan.update(operation='resume-draft',before=ap.snapshot(c.release()))
+        self.save_plan()
+        return c
+
+    def test_partial_draft_preserves_existing_asset_and_fills_only_missing_pair(self):
+        from release_asset_repair import repair
+        c=self.partial_draft();before=copy.deepcopy(c.value['assets'][0])
+        with patch.object(ap,'repair',repair):
+            self.assertEqual(ap.publish(self.args,c),'published')
+        self.assertFalse(c.value['draft'])
+        self.assertEqual(c.value['assets'][0],before)
+        self.assertEqual([call for call in c.calls if call[0]=='upload'],
+                         [('upload',self.files[1].name)])
+
+    def test_partial_draft_conflicting_bytes_never_upload_or_go_public(self):
+        from release_asset_repair import repair
+        c=self.partial_draft(b'other archive');before=copy.deepcopy(c.value)
+        with patch.object(ap,'repair',repair),self.assertRaisesRegex(ValueError,'deletion confirmation'):
+            ap.publish(self.args,c)
+        self.assertEqual(c.value,before)
+        self.assertFalse(any(call[0]=='upload' or 'PATCH' in call for call in c.calls))
 
     def test_substituted_created_draft_never_adopted(self):
         c = Client(); c.substitute = True
@@ -404,7 +474,7 @@ class PrepareControlFlow(unittest.TestCase):
              patch.object(ap,'optional_release',side_effect=lambda c:c.release()), \
              patch('public_packages.verify_existing',return_value=(verified or client.release(),records),side_effect=error) as verify:
             ap.prepare(self.args)
-            if client.release() is None:verify.assert_not_called()
+            if client.release() is None or client.release().get('draft') is True:verify.assert_not_called()
             else:verify.assert_called_once_with(client,Client.tag,ap.ROOT)
         return json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
 
@@ -414,6 +484,14 @@ class PrepareControlFlow(unittest.TestCase):
         self.assertEqual(plan['operation'],'create')
         self.assertIsNone(plan['before'])
         self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
+
+    def test_existing_draft_is_prepared_as_unpublished_work(self):
+        self.payload(self.source,('amd64',),11,'b'*40)
+        c = Client({'id': 17, 'tag_name': Client.tag, 'draft': True,
+                    'body': 'saved notes', 'assets': []})
+        plan = self.perform(c)
+        self.assertEqual(plan['operation'], 'resume-draft')
+        self.assertEqual(plan['before'], ap.snapshot(c.release()))
 
     def test_append_preserves_public_pairs_without_merging_old_ci_controls(self):
         self.payload(self.source,('arm64',),11,'b'*40)
