@@ -46,7 +46,25 @@ concurrency:
   group: upstream-run-${{ github.run_id }}-${{ github.run_attempt }}
   cancel-in-progress: false
 jobs:
+  check_update:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      arches: ${{ steps.check.outputs.arches }}
+      build_required: ${{ steps.check.outputs.build_required }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check version and missing architecture packages
+        id: check
+        run: |
+          set -euo pipefail
+          python3 scripts/scheduled_release.py --repository "$GITHUB_REPOSITORY" --github-output "$GITHUB_OUTPUT"
   tests:
+    needs: check_update
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.check_update.outputs.build_required == 'true') }}
     runs-on: ubuntu-latest
     outputs:
       build_required: ${{ steps.scope.outputs.build_required }}
@@ -71,8 +89,8 @@ jobs:
           [[ "$required" == true || "$required" == false ]]
           echo "build_required=$required" >> "$GITHUB_OUTPUT"
   prepare:
-    if: needs.tests.outputs.build_required == 'true' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic')
-    needs: tests
+    if: ${{ !cancelled() && needs.tests.result == 'success' && needs.tests.outputs.build_required == 'true' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic') }}
+    needs: [check_update, tests]
     runs-on: ubuntu-latest
     outputs:
       build_required: ${{ steps.inputs.outputs.build_required }}
@@ -88,6 +106,8 @@ jobs:
       INPUT_VERSION: ${{ inputs.version }}
       INPUT_CHANNEL: ${{ inputs.channel || 'stable' }}
       INPUT_ARCHES: ${{ inputs.arch }}
+      SCHEDULED_VERSION: ${{ needs.check_update.outputs.version }}
+      SCHEDULED_ARCHES: ${{ needs.check_update.outputs.arches }}
     steps:
       - name: Set up isolated configuration parser
         run: |
@@ -102,12 +122,17 @@ jobs:
         id: inputs
         run: |
           set -euo pipefail
-          arches=$(printf '%s' "${INPUT_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}" | tr ',;' ' ')
+          version=${INPUT_VERSION:-}
+          requested=${INPUT_ARCHES:-amd64 arm64 armv7 ppc64le s390x loong64 riscv64}
+          if [[ "${GITHUB_EVENT_NAME:-}" == schedule ]]; then
+            version=${SCHEDULED_VERSION:?Missing scheduled version}
+            requested=${SCHEDULED_ARCHES:?Missing scheduled architectures}
+          fi
+          arches=$(printf '%s' "$requested" | tr ',;' ' ')
           for arch in $arches; do
             case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac
           done
           [[ -n "$arches" ]]
-          version=${INPUT_VERSION:-}
           if [[ -z "$version" && "$GITHUB_REF" == refs/tags/* ]]; then version=$GITHUB_REF_NAME; fi
           if [[ -z "$version" ]]; then
             version=$(python3 scripts/discover_inputs.py --latest --mode "$INPUT_CHANNEL")
@@ -116,16 +141,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "arches=$arches" >> "$GITHUB_OUTPUT"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          build_required=true
-          if [[ "${GITHUB_EVENT_NAME:-}" == schedule ]]; then
-            build_required=$(python3 scripts/scheduled_release.py --repository "$GITHUB_REPOSITORY" --version "$version" --arches "$arches")
-          fi
-          [[ "$build_required" == true || "$build_required" == false ]]
-          echo "build_required=$build_required" >> "$GITHUB_OUTPUT"
-          if [[ "$build_required" == false ]]; then
-            echo "::notice::$version: all requested public packages passed validation; scheduled rebuild skipped."
-            exit 0
-          fi
+          echo "build_required=true" >> "$GITHUB_OUTPUT"
           contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
           python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
           echo "resolved_contract_sha256=$contract_sha" >> "$GITHUB_OUTPUT"

@@ -291,3 +291,16 @@ Build checks use operational source/configuration/repair inputs. The historical 
 ## v2.1.7 through v2.1.5 shared frontend inputs
 
 These three source commits have the same frontend package manifest and no original lock. They share the same fixed derived repair-lock bytes, stored at each version's validated repair path. Go remains version-specific: v2.1.7 and v2.1.6 use 1.25.7; v2.1.5 uses 1.24.9. Each source/configuration contract and installer resource set is pinned independently. Use parallel build runs for the three versions with publication disabled; each must pass its own seven-architecture aggregation and subsequent publication gates. The shared frontend lock does not substitute for per-version build or downstream installation checks.
+
+
+## Daily update selection
+
+At 07:00 UTC, check the latest official stable Release and this repository's
+matching public Release attachment names. Do not download or revalidate existing
+packages. If all seven archive/SHA-256 pairs exist, stop before unit tests and
+source preparation. Otherwise build only the missing architecture subset and
+append its validated output, preserving existing attachments. A missing Release
+selects all seven architectures; API/authentication failures stop the check.
+Newly uploaded files still receive readback verification. A half-present pair
+can be completed only when its existing member matches the new candidate's
+server digest and size; conflicting bytes require explicit repair.

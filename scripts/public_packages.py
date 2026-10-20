@@ -14,7 +14,6 @@ import sys
 import tempfile
 
 from release_asset_repair import digest, release_snapshot
-from package_metadata import read
 
 ARCHES = ('amd64', 'arm64', 'armv7', 'ppc64le', 's390x', 'loong64', 'riscv64')
 CONTROLS = {'build-inputs.env', 'build-manifest.json', 'checksums.txt',
@@ -37,19 +36,31 @@ def recovery_assets(release, version):
     return keep
 
 
-def inventory(release, version):
+def metadata_inventory(release, version):
+    """List complete architecture pairs and individual canonical members.
+
+    Scheduled gap checks trust the repository's asset names. They deliberately
+    do not download packages or require historical digest/size metadata.
+    """
     if release.get('draft') is not False or release.get('tag_name') != version or release.get('prerelease', False) is not ('-' in version):
         raise ValueError('Canonical public release identity mismatch')
     assets = {a['name']: a for a in release['assets']}
     if len(assets) != len(release['assets']):
         raise ValueError('Duplicate release asset names')
-    found = {}
+    found = {};members = {}
     for arch in ARCHES:
         name = f'1panel-{version}-linux-{arch}.tar.gz'
-        if name in assets or name + '.sha256' in assets:
-            if name not in assets or name + '.sha256' not in assets:
-                raise ValueError('Incomplete canonical package/checksum pair')
+        for member in (name,name+'.sha256'):
+            if member in assets:members[member]=assets[member]
+        if name in assets and name + '.sha256' in assets:
             found[arch] = (assets[name], assets[name + '.sha256'])
+    return found,members
+
+
+def inventory(release, version):
+    found,members=metadata_inventory(release,version)
+    if len(members)!=2*len(found):raise ValueError('Incomplete canonical package/checksum pair')
+    assets = {a['name']: a for a in release['assets']}
     allowed = set(recovery_assets(release, version)) | {a['name'] for pair in found.values() for a in pair}
     if set(assets) != allowed:
         raise ValueError('Unexpected canonical release asset')
@@ -70,6 +81,7 @@ def download(client, asset, directory):
 
 def verify_existing(client, version, root):
     """Independently validate each actual public package; return immutable pins."""
+    from package_metadata import read
     from resolved_contract import apply_contract
     from automatic_frontend_lock import required_sidecars
     import json
@@ -123,6 +135,7 @@ def verify_existing(client, version, root):
 
 
 def require_embedded(files, version):
+    from package_metadata import read
     for path in package_files(files):
         if not path.name.endswith('.tar.gz'):
             continue

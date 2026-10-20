@@ -117,9 +117,12 @@ list do not trigger seven architecture builds; unknown, build, input or workflow
 changes do. Manual `build-only` remains available for a full integration run.
 Version-tag pushes and non-candidate manual `build` runs build the requested
 matrix, preserve verified artifacts and publish a canonical release.
-Scheduled runs first discover the channel version and validate its actual public
-packages. A complete requested matrix skips compilation; a missing release or
-missing architecture still builds. Corrupt packages or API errors stop the check.
+Daily runs check the latest official stable version and the names of this
+repository's public release attachments before running tests. Existing archive
+and SHA-256 pairs are trusted without downloading them. A complete seven-architecture
+release ends the run immediately; otherwise only missing architectures enter the
+build matrix. New packages are validated and read back after upload; existing
+packages are preserved. API errors stop the check instead of triggering a rebuild.
 `validate-automatic` exercises the same preparation and publication plan without
 enabling a writer. It is an optional validation mode, not a required step for new
 versions. Existing tags/releases do not suppress validation.

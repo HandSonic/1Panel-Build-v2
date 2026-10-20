@@ -90,30 +90,41 @@ def prepare(args):
     proof=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
     (control/PROOF).write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
     preserved={}
+    metadata_only=False
     operation='create'
     if before is not None and before.get('draft') is True:
         empty_automatic_draft(before,client,os.environ['GITHUB_SHA'])
         operation='resume'
     elif before is not None:
         client.bind_release(before['id'])
-        from public_packages import verify_existing
-        verified,records=verify_existing(client,args.version,ROOT)
-        if snapshot(verified)!=snapshot(before):raise ValueError('Existing release changed during verification')
-        if set(records)>=set(current['requested_architectures']):
-            operation='unchanged'
-            print('AUTOMATIC_PUBLICATION_UNCHANGED=1')
+        if os.environ.get('GITHUB_EVENT_NAME')=='schedule':
+            from public_packages import metadata_inventory
+            pairs,_=metadata_inventory(before,args.version)
+            metadata_only=True
+            operation='unchanged' if set(pairs)>=set(current['requested_architectures']) else 'append'
+            # Keep every existing attachment, including legacy controls and
+            # unrelated files, outside the append transaction's payload set.
+            preserved={a['name']:asset_identity(a) for a in before['assets']}
         else:
-            if any(row.get('publication_format')!='package-only-v1' for row in records.values()):
-                raise ValueError('Legacy partial release requires explicit package-format migration')
-            if any(row['resolved_contract_sha256']!=contract_sha for row in records.values()):
-                raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
-            operation='append'
-        names={row['file']+suffix for row in records.values() for suffix in ('','.sha256')}
-        preserved={a['name']:asset_identity(a) for a in before['assets'] if a['name'] in names}
+            from public_packages import verify_existing
+            verified,records=verify_existing(client,args.version,ROOT)
+            if snapshot(verified)!=snapshot(before):raise ValueError('Existing release changed during verification')
+            if set(records)>=set(current['requested_architectures']):
+                operation='unchanged'
+            else:
+                if any(row.get('publication_format')!='package-only-v1' for row in records.values()):
+                    raise ValueError('Legacy partial release requires explicit package-format migration')
+                if any(row['resolved_contract_sha256']!=contract_sha for row in records.values()):
+                    raise ValueError('Existing source/toolchain/lock contract requires explicit repair')
+                operation='append'
+            names={row['file']+suffix for row in records.values() for suffix in ('','.sha256')}
+            preserved={a['name']:asset_identity(a) for a in before['assets'] if a['name'] in names}
+        if operation=='unchanged':print('AUTOMATIC_PUBLICATION_UNCHANGED=1')
     plan={'schema':1,'operation':operation,'version':args.version,
           'before':snapshot(before),'receipt_sha256':digest(control/PROOF)['sha256'],
           'preserved':preserved}
     if operation=='resume':plan['draft_identity']=draft_identity(before)
+    if metadata_only:plan['metadata_only']=True
     (control/'automatic-plan.json').write_text(json.dumps(plan,indent=2,sort_keys=True)+'\n')
 
 
@@ -123,6 +134,9 @@ def publish(args,client=None):
     plan=json.loads((control/'automatic-plan.json').read_text())
     if plan.get('schema')!=1 or plan.get('version')!=args.version or plan.get('operation') not in ('create','resume','append','unchanged'):
         raise ValueError('Invalid automatic publication plan')
+    metadata_only=plan.get('metadata_only',False)
+    if type(metadata_only) is not bool or (metadata_only and os.environ.get('GITHUB_EVENT_NAME')!='schedule'):
+        raise ValueError('Metadata-only publication is restricted to scheduled gap fills')
     client=client or GitHub(args.repository,args.version)
     observed=optional_release(client)
     # A read-only preparation token may not see drafts. The serialized writer
@@ -159,9 +173,24 @@ def publish(args,client=None):
     published=package_files(files)
     if plan['operation']=='append':
         current_release=client.release()
-        pairs=inventory(current_release,args.version)
-        actual={asset['name']:asset for pair in pairs.values() for asset in pair}
-        if {name:asset_identity(asset) for name,asset in plan['preserved'].items()}!={name:asset_identity(asset) for name,asset in actual.items()}:raise ValueError('Preserved package inventory changed')
+        if metadata_only:
+            from public_packages import metadata_inventory
+            pairs,actual=metadata_inventory(current_release,args.version)
+            preserved={asset['name']:asset for asset in current_release['assets']}
+            complete_names={asset['name'] for pair in pairs.values() for asset in pair}
+            # A half-present pair can only be completed using these exact new
+            # verified bytes. Never combine a rebuilt package with an old,
+            # incompatible checksum or replace an existing member.
+            for path in published:
+                if path.name in actual and path.name not in complete_names:
+                    facts=digest(path);old=actual[path.name]
+                    if old.get('size')!=facts['bytes'] or old.get('digest')!='sha256:'+facts['sha256']:
+                        raise ValueError('Incomplete public pair differs from this build; explicit repair required')
+        else:
+            pairs=inventory(current_release,args.version)
+            actual={asset['name']:asset for pair in pairs.values() for asset in pair}
+            preserved=actual
+        if {name:asset_identity(asset) for name,asset in plan['preserved'].items()}!={name:asset_identity(asset) for name,asset in preserved.items()}:raise ValueError('Preserved package inventory changed')
         published=[path for path in published if path.name not in actual]
     journal=control/'automatic-journal.json'
     if journal.exists() or (control/'creation-journal.json').exists():raise ValueError('Existing automatic journal requires recovery review')
@@ -196,8 +225,11 @@ def publish(args,client=None):
     recovery={}
     if plan['operation']=='append':
         current_release=client.release()
-        recovery=recovery_assets(current_release,args.version)
-        recovery.update(actual)
+        if metadata_only:
+            recovery={asset['name']:asset for asset in current_release['assets']}
+        else:
+            recovery=recovery_assets(current_release,args.version)
+            recovery.update(actual)
     state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery,expected_draft=created)
     if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
     if plan['operation'] in ('create','resume'):
