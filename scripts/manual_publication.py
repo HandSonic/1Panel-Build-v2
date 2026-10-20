@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Manual preparation and recoverable publication of validated architecture outputs."""
-import argparse,hashlib,json,os,re,shutil,stat,subprocess,sys,tempfile,zipfile
+import argparse,json,os,re,shutil,stat,subprocess,sys,tempfile,zipfile
 from pathlib import Path,PurePosixPath
-from publication_contract import ARCHES,PROOF,REPOS,ROOT,contract_for_repo,make_proof,policy_fingerprint,validate_payloads
+from publication_contract import PROOF,REPOS,ROOT,contract_for_repo,make_proof,validate_payloads
 from release_asset_repair import (GitHub,digest,repair,optional_release,require_owned_draft,
                                  release_snapshot,Journal,finalize_release)
 

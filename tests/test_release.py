@@ -110,9 +110,39 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(ValueError):download_resources.main('v2.3.2',self.root)
         self.assertEqual(before,{p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
     def test_truncated_gzip_rejected(self):
-        self.build(['amd64']);p=next((self.root/'dist').glob('*.tar.gz'));p.write_bytes(p.read_bytes()[:-6])
-        with self.assertRaises((EOFError,OSError)):
-            validate_artifacts.validate_package(p,'v2.3.2','amd64')
+        self.build(['amd64']);p=next((self.root/'dist').glob('*.tar.gz'));raw=p.read_bytes()
+        bad_crc=bytearray(raw);bad_crc[-8]^=1
+        for name,body in [('truncated',raw[:-6]),('bad_crc',bad_crc)]:
+            with self.subTest(case=name):
+                p.write_bytes(body)
+                with self.assertRaises((EOFError,OSError)):
+                    validate_artifacts.validate_package(p,'v2.3.2','amd64')
+    def test_unsafe_duplicate_or_linked_archive_members_are_rejected(self):
+        self.build(['amd64']);path=next((self.root/'dist').glob('*.tar.gz'))
+        with tarfile.open(path) as archive:
+            original=[(member,archive.extractfile(member).read() if member.isfile() else None) for member in archive.getmembers()]
+        prefix='1panel-v2.3.2-linux-amd64/'
+        for name,kind in [(prefix+'../escape',tarfile.REGTYPE),(prefix+'1pctl',tarfile.REGTYPE),
+                          (prefix+'unexpected-link',tarfile.SYMTYPE)]:
+            with self.subTest(name=name):
+                with tarfile.open(path,'w:gz') as archive:
+                    for member,body in original:archive.addfile(member,io.BytesIO(body) if body is not None else None)
+                    info=tarfile.TarInfo(name);info.type=kind;info.mode=0o755
+                    if kind==tarfile.SYMTYPE:info.linkname='../../outside';body=None
+                    else:body=b'x';info.size=len(body)
+                    archive.addfile(info,io.BytesIO(body) if body is not None else None)
+                with self.assertRaisesRegex(ValueError,'Unsafe|Duplicate|nonregular'):
+                    validate_artifacts.validate_package(path,'v2.3.2','amd64')
+    def test_unmarked_metadata_is_rejected_by_complete_package_validation(self):
+        self.build(['amd64']);path=next((self.root/'dist').glob('*.tar.gz'))
+        with tarfile.open(path) as archive:
+            original=[(member,archive.extractfile(member).read() if member.isfile() else None) for member in archive.getmembers()]
+        with tarfile.open(path,'w:gz') as archive:
+            for member,body in original:archive.addfile(member,io.BytesIO(body) if body is not None else None)
+            info=tarfile.TarInfo('1panel-v2.3.2-linux-amd64/build-metadata/unexpected.json')
+            body=b'{}';info.size=len(body);archive.addfile(info,io.BytesIO(body))
+        with self.assertRaisesRegex(ValueError,'Unmarked package metadata'):
+            validate_artifacts.validate_package(path,'v2.3.2','amd64')
     def test_1pctl_changes_rejected(self):
         p=self.root/'1pctl';p.write_text(p.read_text()+'# tampered\n');self.binaries('amd64')
         package_release.package(self.root,'v2.3.2','amd64')

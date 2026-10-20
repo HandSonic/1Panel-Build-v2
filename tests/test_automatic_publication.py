@@ -273,9 +273,9 @@ class RealAppendTransactions(unittest.TestCase):
     save_plan=AutomaticTransaction.save_plan
     producer=AutomaticTransaction.producer
     repair=AutomaticTransaction.repair
-    def client(self,failure=None):
+    def client(self):
         from test_release_repair import FakeGitHub
-        c=FakeGitHub(failure);c.repo=Client.repo;c.tag=Client.tag
+        c=FakeGitHub();c.repo=Client.repo;c.tag=Client.tag
         c.assets={1:(f'1panel-{Client.tag}-linux-amd64.tar.gz',b'archive'),2:('checksums.txt',b'old sums'),
                   3:(f'1panel-{Client.tag}-linux-amd64.tar.gz.sha256',b'archive checksum'),
                   4:(f'1panel-{Client.tag}-linux-arm.tar.gz.backup-012345abcdef',b'old missing branch')}
@@ -298,13 +298,14 @@ class RealAppendTransactions(unittest.TestCase):
     def test_real_transaction_preserves_existing_ids_and_recovery_assets(self):
         from release_asset_repair import repair
         c=self.client();before=copy.deepcopy(c.assets)
+        # A human note edit after preparation does not change package identity.
+        c.body='Human release notes updated while the missing architecture built'
         with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
         for i in before:self.assertEqual(c.assets[i],before[i])
         uploads=[call[1] for call in c.calls if call[0]=='upload']
         self.assertEqual(len(uploads),2)
         self.assertTrue(all('linux-arm64.tar.gz' in name for name in uploads))
-        self.assertFalse(any(call[0]=='rename' and call[1] in (1,3,4) for call in c.calls))
-        self.assertEqual(c.body,'old release notes')
+        self.assertEqual(c.body,'Human release notes updated while the missing architecture built')
 
     def test_download_counters_do_not_change_preserved_package_identity(self):
         from release_asset_repair import repair
@@ -372,7 +373,8 @@ class PrepareControlFlow(unittest.TestCase):
         p=patch('public_packages.require_embedded',return_value=None)
         p.start();self.addCleanup(p.stop)
         p=patch('resolved_contract.activate_release',return_value=None);p.start();self.addCleanup(p.stop)
-        p=patch.dict(os.environ,GITHUB_RUN_ID='11',GITHUB_RUN_ATTEMPT='2',GITHUB_SHA='b'*40)
+        p=patch.dict(os.environ,GITHUB_RUN_ID='11',GITHUB_RUN_ATTEMPT='2',GITHUB_SHA='b'*40,
+                     GITHUB_EVENT_NAME='workflow_dispatch')
         p.start();self.addCleanup(p.stop)
         self.args=types.SimpleNamespace(version=Client.tag,repository=Client.repo,
                     work=self.root/'work',input=self.source)

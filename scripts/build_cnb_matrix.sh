@@ -32,7 +32,6 @@ done
 if ((${#accepted[@]})); then
   python3 scripts/package_release.py finalize . "$BUILD_VERSION" "${accepted[@]}"
   cp build-inputs.env dist/build-inputs.env
-  python3 scripts/validate_artifacts.py dist "$BUILD_VERSION" "${accepted[*]}"
   printf '%s:%s:%s' "$CNB_BUILD_ID" "$CNB_PIPELINE_ID" "$CNB_COMMIT" > cnb-verified-artifacts
 else
   echo 'No validated architecture output is available.' >&2

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 TOOLS="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-python3 -c 'import sys;sys.path.insert(0,sys.argv[1]);from validate_artifacts import architectures;architectures(sys.argv[2])' "$TOOLS" "$TARGET_ARCHES"
+TARGET_ARCHES=$(python3 -c 'import sys;sys.path.insert(0,sys.argv[1]);from validate_artifacts import architectures;print(" ".join(architectures(sys.argv[2])))' "$TOOLS" "$TARGET_ARCHES")
 # A previous run must never contribute stale artifacts to this release.
 if [[ -d dist ]] && [[ -n "$(ls -A dist)" ]]; then echo 'dist must be empty' >&2; exit 1; fi
 mkdir -p build dist

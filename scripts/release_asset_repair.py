@@ -129,7 +129,9 @@ def asset_identity(asset):
 def release_snapshot(release):
     if release is None:return None
     return {'id':release['id'],'draft':release['draft'],'tag_name':release['tag_name'],
-            'body':release.get('body') or '',
+            # Public notes are editable prose; only owned draft transactions
+            # bind their exact text. No append operation writes public notes.
+            'body':(release.get('body') or '') if release.get('draft') is True else '',
             'assets':sorted([{'id':a['id'],'name':a['name'],'size':a['size'],'digest':a.get('digest')} for a in release['assets']],key=lambda a:a['id'])}
 
 def draft_metadata(release):

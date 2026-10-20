@@ -159,24 +159,19 @@ built commit; every existing draft asset must match and pass downloaded-byte
 verification before finalization. A run with successful build gates and only a
 known publication-writer failure can supply that artifact without another build.
 
-Automatic reruns can append newly successful missing architectures while keeping
-existing verified archives unchanged. Public consumption trusts the canonical
-GitHub repository, release/tag and architecture, verifies asset/sidecar SHA256,
-and validates the complete package manifest, ELF and immutable source inputs.
-It does not require old CI logs to remain online. This trusts repository release
-permissions; SHA256 alone cannot protect against a publisher replacing both a
-package and its checksum. CI producer checks still run before publication.
-Changed source/toolchain/lock contracts require explicit repair. A fully verified
-unchanged release is a no-op after current validators check its complete requested
-inventory and stable remote asset snapshot. Legacy packages can still use their
-existing source-control assets during migration. Existing controls and backups
-remain until separately reviewed cleanup; publication never deletes them.
+Scheduled runs trust existing archive/SHA-256 pairs by attachment name. They
+check the official stable version before tests, stop when all pairs exist, and
+build only missing architectures. Existing packages are not downloaded again.
+Only new output is validated and read back during the append transaction.
+Manual existing-release validation still checks actual package bytes, source
+inputs and architecture. It does not require old CI logs to remain online.
+Existing controls and recovery files are preserved; publication never deletes them.
 
-Scheduled builds discover the official channel version and immediately pin its
-immutable inputs. GitHub Actions has one maintained workflow, `build-offline`:
-seven parallel architecture jobs share one source/frontend preparation and one
-aggregation stage. Historical one-off lock probes and receipt diagnostics have
-been removed. CNB honors the pushed tag, installs Bash/Python and the pinned
+GitHub Actions owns the daily update check. Its one maintained workflow shares
+source/frontend preparation across the requested architecture subset and runs at
+most three compile jobs concurrently. Historical one-off lock probes and receipt
+diagnostics have been removed. CNB runs only on tags or manual requests.
+CNB honors the pushed tag, installs Bash/Python and the pinned
 resolver toolchain with its runtime libraries, runs the same validation,
 and runs each architecture independently from a shared prepared image. Its failure
 stage preserves only the final validated subset while retaining a failed pipeline

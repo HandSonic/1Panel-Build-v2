@@ -93,7 +93,6 @@ jobs:
     needs: [check_update, tests]
     runs-on: ubuntu-latest
     outputs:
-      build_required: ${{ steps.inputs.outputs.build_required }}
       version: ${{ steps.inputs.outputs.version }}
       arches: ${{ steps.inputs.outputs.arches }}
       matrix: ${{ steps.inputs.outputs.matrix }}
@@ -141,7 +140,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "arches=$arches" >> "$GITHUB_OUTPUT"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "build_required=true" >> "$GITHUB_OUTPUT"
           contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
           python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
           echo "resolved_contract_sha256=$contract_sha" >> "$GITHUB_OUTPUT"
@@ -151,7 +149,6 @@ jobs:
           echo "go_version=$GO_VERSION" >> "$GITHUB_OUTPUT"
       - name: Prepare pinned source and frontend once
         id: prepare
-        if: steps.inputs.outputs.build_required == 'true'
         run: |
           set -euo pipefail
           source build-inputs.env
@@ -173,7 +170,6 @@ jobs:
           echo "sha256=$(sha256sum prepared-source.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         id: source_upload
-        if: steps.inputs.outputs.build_required == 'true'
         with:
           name: prepared-source-${{ github.run_id }}-${{ github.run_attempt }}
           path: prepared-source.tar.gz
@@ -182,7 +178,7 @@ jobs:
           compression-level: 0
   compile:
     name: compile (${{ matrix.arch }})
-    if: needs.prepare.outputs.build_required == 'true'
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
@@ -256,7 +252,7 @@ jobs:
           retention-days: 3
           compression-level: 0
   build:
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.build_required == 'true' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     needs: [prepare, compile]
     permissions:
       contents: read

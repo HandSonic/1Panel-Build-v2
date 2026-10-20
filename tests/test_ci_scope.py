@@ -32,20 +32,47 @@ class CIScope(unittest.TestCase):
             with self.subTest(event=event):
                 self.assertTrue(ci_scope.event_requires_build(event, {}, lambda *args: b'README.md\0'))
 
-    def test_diff_includes_deleted_source_of_a_rename(self):
-        event = {'pull_request': {'base': {'sha': 'a' * 40}, 'head': {'sha': 'b' * 40}}}
-        self.assertFalse(ci_scope.event_requires_build('pull_request', event, lambda *args: b'README.md\0'))
-        self.assertTrue(ci_scope.event_requires_build('pull_request', event,
-            lambda *args: b'scripts/build_release.sh\0docs/build.md\0'))
+    def test_pr_scope_uses_merge_result_when_the_base_has_advanced(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=root, stderr=subprocess.DEVNULL)
+            def commit(message):
+                git('add', '.'); git('commit', '-m', message)
+                return git('rev-parse', 'HEAD').decode().strip()
+            git('init', '-b', 'main')
+            git('config', 'user.name', 'CI scope test')
+            git('config', 'user.email', 'ci-scope@example.invalid')
+            (root / 'scripts').mkdir()
+            (root / 'scripts/build_release.sh').write_text('original\n')
+            (root / 'README.md').write_text('original\n')
+            commit('base')
+            git('checkout', '-b', 'docs')
+            (root / 'README.md').write_text('docs-only PR\n')
+            head = commit('docs')
+            git('checkout', 'main')
+            (root / 'scripts/build_release.sh').write_text('base-only change\n')
+            base = commit('base advanced')
+            git('merge', '--no-ff', 'docs', '-m', 'synthetic merge')
+            merge = git('rev-parse', 'HEAD').decode().strip()
+            event = {'pull_request': {'base': {'sha': base}, 'head': {'sha': head}}}
+            diff = lambda left, right: git('diff', '--name-only', '--no-renames', '-z', left, right)
+            self.assertTrue(ci_scope.build_required(diff(base, head).decode().split('\0')[:-1]))
+            self.assertFalse(ci_scope.event_requires_build('pull_request', event, diff, merge_sha=merge))
+            (root / 'docs').mkdir()
+            git('mv', 'scripts/build_release.sh', 'docs/build.md')
+            renamed = commit('move build source to docs')
+            self.assertTrue(ci_scope.event_requires_build('pull_request', event, diff, merge_sha=renamed))
 
     def test_unavailable_or_malformed_diff_keeps_integration(self):
         event = {'pull_request': {'base': {'sha': 'a' * 40}, 'head': {'sha': 'b' * 40}}}
         def unavailable(*args):
             raise subprocess.CalledProcessError(128, ['git', 'diff'])
         for invalid in ({}, {'pull_request': {'base': {'sha': 'main'}, 'head': {'sha': 'b' * 40}}}):
-            self.assertTrue(ci_scope.event_requires_build('pull_request', invalid))
+            self.assertTrue(ci_scope.event_requires_build('pull_request', invalid, merge_sha='c' * 40))
+        self.assertTrue(ci_scope.event_requires_build('pull_request', event, lambda *args: b'README.md\0'))
         for diff in (unavailable, lambda *args: b'', lambda *args: b'\xff\0'):
-            self.assertTrue(ci_scope.event_requires_build('pull_request', event, diff))
+            self.assertTrue(ci_scope.event_requires_build('pull_request', event, diff, merge_sha='c' * 40))
 
     def test_workflow_does_not_treat_scope_script_failure_as_tests_only(self):
         workflow = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())

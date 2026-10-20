@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """Publish new canonical releases and append verified missing branches without replacements."""
 import argparse
-import hashlib
 import json
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from manual_publication import check_identity, github_json
-from publication_contract import (PROOF, ROOT, digest_bytes, existing_release_state,
-                                  make_proof, matrix_validate, validate_payloads)
-from publication_lineage import compose
+from publication_contract import PROOF, ROOT, make_proof, validate_payloads
 from release_asset_repair import (GitHub, digest, repair, release_snapshot as snapshot,
                                   Journal, asset_identity, optional_release,
-                                  finalize_release, verify_new_release)
+                                  finalize_release)
 
 
 def draft_identity(release):

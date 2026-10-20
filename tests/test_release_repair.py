@@ -10,29 +10,17 @@ from release_asset_repair import repair
 
 class FakeGitHub:
     repo='owner/repo';tag='v2.3.2'
-    def __init__(self, failure=None):
+    def __init__(self):
         self.assets={1:('package.tar.gz',b'old archive'),2:('checksums.txt',b'old checksum')}
-        self.body='old release notes';self.failure=failure;self.failed=False;self.calls=[]
+        self.body='old release notes';self.calls=[]
     def release(self):return {'body':self.body,'assets':[{'id':i,'name':n,'size':len(b),'digest':'sha256:'+hashlib.sha256(b).hexdigest()} for i,(n,b) in self.assets.items()]}
     def bind_release(self,release_id):self.release_id=release_id
     def upload(self,path):self.assets[max(self.assets)+1]=(path.name,path.read_bytes());self.calls.append(('upload',path.name))
     def download(self,name,directory):
         data=next(b for n,b in self.assets.values() if n==name)
-        (directory/name).write_bytes(data if self.failure!='bad_readback' or '.staged-' not in name else b'bad')
+        (directory/name).write_bytes(data)
     def download_asset(self,asset,directory):
         (directory/asset['name']).write_bytes(self.assets[asset['id']][1])
-    def rename(self,asset_id,name):
-        self.calls.append(('rename',asset_id,name))
-        if self.failure=='switch' and asset_id>2 and '.staged-' not in name and not self.failed:
-            self.failed=True
-            # Simulate successful server mutation followed by lost response.
-            self.assets[asset_id]=(name,self.assets[asset_id][1]);raise RuntimeError('uncertain PATCH result')
-        if name in [n for i,(n,b) in self.assets.items() if i!=asset_id]:raise RuntimeError('name collision')
-        self.assets[asset_id]=(name,self.assets[asset_id][1])
-    def notes(self,body):
-        if self.failure=='notes' and body!='old release notes' and not self.failed:
-            self.failed=True;raise RuntimeError('notes update failed')
-        self.body=body
 
 class RepairTests(unittest.TestCase):
     def fixture(self, unchanged=True):
@@ -134,7 +122,6 @@ class RepairTests(unittest.TestCase):
         client.download=lambda name,directory:(directory/name).write_bytes(b'bad')
         with self.assertRaisesRegex(ValueError,'download verification'):repair(client,files,journal)
         for key in before:self.assertEqual(client.assets[key],before[key])
-        self.assertFalse(any(call[0]=='rename' for call in client.calls))
 
     def test_concurrent_change_and_unknown_names_fail_closed(self):
         for race in (False,True):

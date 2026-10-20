@@ -1,306 +1,100 @@
-# Existing-version rebuild and publication
-
-Use the repositories' **existing version-based Actions workflows**. No new login,
-token, tag rewrite, push-triggered publication route or duplicate workflow entry
-is required. An authenticated GitHub Actions UI is needed to start a new manual
-run when the connected tool lacks workflow_dispatch.
-
-## Default behavior
-
-Normal builds keep their existing triggers and version inputs. Scheduled runs
-skip compilation only after the requested public package matrix passes current
-content, SHA sidecar, embedded input and ELF validation. Public package trust does
-not depend on historical CI logs or receipts. Missing releases or architectures
-still build; API errors, corrupt bytes and snapshot changes stop the check.
-Publication-only/documentation/unit-test PRs run tests without the build matrix;
-unknown, build, input and workflow changes retain full integration.
-Known `.backup-*`/`.staged-*` recovery files are noncanonical. Unknown canonical
-assets block repair before any upload; concurrent additions also fail closed.
-
-## Upstream first
-
-In `HandSonic/1Panel-Build-v2`, use existing `build-offline` / `build.yml`:
-
-- Normal compilation: operation=build; reuse version and arch inputs.
-- Read-only promotion validation: operation=validate-promotion.
-- Authorized same-tag promotion: operation=promote-existing.
-
-Promotion requires an explicit version and exact verified build-artifact provenance.
-The producer's source/preparation/compile/aggregate gates must pass; a failure in
-a known publication writer does not invalidate its already verified build output.
-It validates the producer's independently successful packages with the authoritative upstream validator,
-including ELF, all member hashes, pinned installer/GeoIP, exact normalized embedded
-Core/Agent YAML and Core version. It does not execute the binaries.
-
-The historical reviewed v2.3.2 input was:
-
-- Run ID: 37803686376
-- Artifact ID: 11562143708
-- Artifact ZIP SHA-256: 93b4ad31f6c8bc6f33a320a2b5ecb98b31e2abba23d175fdc99a5f9d654ac954
-- Built commit: 93474bc2959340b9880495002bb5645ee5c354ad
-
-The built commit is the actual synthetic PR merge commit, not the branch head or
-later master merge. Never relabel its provenance. Keep publish_candidate=false
-for existing-tag promotion; that older option remains a separate normal-build
-new-draft path. The arch input applies to normal builds; promotion uses the exact
-verified producer matrix and its explicit failed-architecture outcomes.
-
-## Downstream next
-
-In `HandSonic/1Panel-offline-installer-V2`, use existing
-`Build 1Panel v2 Offline` / `build-offline-v2.yml`:
-
-- operation=build keeps normal builds.
-- operation=validate-repair prepares and validates without release writes.
-- operation=repair-existing performs the reviewed same-release repair.
-
-Reuse version=v2.3.2 and release_tag=v2.3.2. Prefer upstream_source=release after
-upstream promotion. If explicitly using verified-ci, supply the exact four
-provenance values above. Do not create credentials if cross-repository artifact
-access is blocked; use upstream promotion and the public verified release path.
-
-v2.3.2 requires 17 packages: official6, custom7, enterprise original2 and enterprise
-Docker-enhanced2. Original enterprise archives stay byte-identical. Each generated
-expanded community directory is discarded only after its archive passes isolated
-validation; all final archives remain for the complete release gate.
-
-## Write boundaries and recovery
-
-Preparation is read-only. Manual promotion requires the explicitly selected
-`workflow_dispatch` mode; normal automatic publication has its own serialized
-writer. The exact preparation
-receipt hash is bound through job outputs and checked again after download.
-The write job revalidates the entire appropriate contract before any release write.
-
-Release reads and transfers bind to the observed Release ID. Only missing assets
-are uploaded, then checked by server digest and complete byte download. Existing
-conflicting bytes or retirement requests stop before uploading; this code does
-not rename, replace or delete assets. Release identity and asset inventories are
-checked throughout the transaction. Journals are saved on success or failure;
-human edits to public release notes are preserved.
-
-New releases are verified as drafts before finalization. A lost finalization
-response attempts to return that exact owned Release ID to draft. Empty automatic
-drafts can be reused by a new normal build. For a nonempty owned draft, select
-`promote-existing` with its exact original CI artifact ID, ZIP hash and built
-commit. Its target must match that built commit; existing attachments must match
-the validated artifact and pass byte readback before it can become public.
-
-## Historical versions
-
-Version inputs do not authorize using the latest installer for an older package.
-Each historical cohort needs its source commit, installer/resource pins, exact
-configuration schema, install/upgrade compatibility tests, architecture matrix
-and actual rebuild evidence. Unknown contracts fail closed. Old interactive-only
-installers must not receive unsupported modern CLI flags, and absent legacy
-configuration fields must not be injected merely to match today's schema.
-
-Historical binaries with dev/debug YAML or Core v2.0.0 require upstream production
-rebuilds first. Docker-only repacking is not a valid repair. Fixtures/configuration
-normalizer tests are separate from real builds and native install/upgrade tests;
-untested runtime conditions are not completion claims.
-
-## Compatibility policy and next-version discovery
-
-Authenticity hashes describe immutable inputs; they are not a claim that harmless
-formatting changes are incompatible. The current embedded-byte check proves that
-the configuration derived from that exact input reached both binaries. For a new
-source revision, discovery should compare parsed field meaning and installer
-function behavior, preserving comments, unrelated added fields and legacy absent
-optional fields. Formatting-only differences should pass or produce a warning,
-not require a new adapter. Reviewed contracts remain the publication provenance
-until this semantic discovery and its regression fixtures are implemented.
-
-Hard failures are reserved for unverifiable/corrupt artifacts, wrong architecture
-or version, missing required payloads, development behavior, ambiguous required
-keys/types, or failed install/upgrade safety tests. Renamed required keys or a
-rewritten control flow must report the specific unsupported behavior and diff.
-Discovery may propose a compatible contract; it must not silently bless changed
-source or count untested runtime behavior as safe. This future-version adapter
-work is pending and is not included in the current v2.3.2 completion claim.
-
-
-## Bounded upstream architecture matrix
-
-GitHub normal builds now use `prepare -> compile[arch] -> build` before the
-existing optional draft-candidate stage. `prepare` uses the same Dockerfile's
-`prepared-builder` target: the reviewed source commit, compatibility patches,
-locked Node/npm frontend build, exact per-version embedded configuration, and
-verified installer/GeoIP resources are prepared once. A SHA-256-bound source
-archive is downloaded by each compile job; it is not a release artifact.
-
-The compile matrix is limited to three concurrent runners and fails each shard
-independently. Each runner checks the shared archive digest, source commit,
-resolved input lock and exact Go version before using `GOTOOLCHAIN=local` to
-cross-compile the two binaries. Its cache key includes version, Go version,
-architecture, both Go module manifests/locks and the Go compatibility adapter;
-unrelated publication scripts do not invalidate it. No broad restore prefix
-is allowed. Intermediate source/shard artifacts expire after three days.
-
-The aggregate job requires all requested shards from the same immutable preparation artifact,
-validates each shard's packages and build commit, and then reconstructs the
-original `verified-1panel-VERSION-COMMIT` contract. It validates the combined
-bytes again. Redundant outer workflow revalidation has been removed; downloaded
-shards and the final aggregate retain independent checks. Subset development
-builds remain available; promotion inherits the exact verified producer matrix. Missing,
-extra, corrupt, mismatched-version or mismatched-commit shards fail closed.
-
-CNB and local Docker full builds retain their serial behavior. Existing-release
-promotion, its reviewed receipt, readback and single publication
-writer are unchanged. Neither push nor scheduled builds trigger repair.
-
-Performance must be measured on a new unpublished full build before adopting
-an expected speedup: frontend work is shared, but source download/extraction,
-runner queueing, seven Go environments and cold caches add overhead. Compare
-prepare, compile critical path and aggregate durations against a serial run
-with the same version/inputs. A first cold-cache run is not representative of
-warm-cache performance. This change has local unit/shell contract coverage;
-it does not itself establish that hosted CI builds or all historical versions
-have completed successfully.
-
-Failed-only and aggregate-only reruns retain successful dependency outputs.
-Compile downloads the exact preparation artifact ID; shard names are keyed by
-run ID plus that preparation ID, not the consumer's current run attempt. Each
-architecture may replace only its own intermediate shard on a failed-job rerun.
-A full preparation rerun gets a new artifact ID and isolated shard namespace.
-The final verified artifact remains immutable and is never overwritten; use a
-new workflow run when intentionally rebuilding an already successful aggregate.
-
-
-## Historical configuration compatibility and input readiness
-
-`semantic_configuration.py` uses pinned PyYAML 6.0.3 in an isolated Python
-environment. It rejects duplicate keys, aliases/anchors, explicit tags, malformed
-critical values and non-boolean known flags. It edits `base.mode`, Core
-`base.version`, `log.level`, and known boolean flags only when present. Other
-sections, unknown fields, comments and layout survive standalone normalization.
-An absent optional flag is never inserted.
-
-Build configuration must still match a SHA-pinned per-version source fixture
-semantically, or its already normalized form. Benign YAML spacing, key order,
-comments and line-ending differences are accepted. A typed comparison prevents
-Python's `false == 0` behavior from hiding a semantic change. The build emits the
-reviewed canonical normalized bytes and verifies their SHA, preserving exact
-binary-embedding checks. An unreviewed field/value change is a source-integrity
-failure, not an optional-field compatibility shortcut. Both components are
-validated before either is written.
-
-Fourteen configuration profiles are covered using cached immutable source
-snapshots, including older schemas without enterprise/FXPlay flags. Newly added
-profiles use current-tag snapshots for future reproducible rebuilds; they do not
-claim those commits produced an original historical release. Existing reviewed
-profiles retain their original source and normalized hashes.
-
-The supported historical input contracts are the entries in `config/sources.json`.
-Planning and one-off audit reports are not runtime inputs and are kept outside
-the build repository. A compatible immutable source contract still requires
-verified dependency inputs, toolchains satisfying both Go modules, installer
-resources, and GeoIP hashes. Every release must pass its own full architecture
-build and downstream install/upgrade checks before publication.
-
-## First historical immutable-input batch
-
-The source lock now includes v2.3.1, v2.3.0, and v2.2.5, with the existing
-v2.3.2 contract. These are reviewed build candidates, not rebuilt releases.
-The operational source contract pins immutable dependency file hashes, compatible
-toolchains, and installer resources. Raw installer hashes precede the expected
-1pctl version substitution. Detailed audit records are retained outside this repository.
-
-Node 22.14.0 built the previous frontend but did not satisfy all declared
-lockfile engines. This batch uses Node 22.22.1 and its bundled npm 10.9.4;
-`npm ci --engine-strict` now rejects unsupported dependency engines. Before any
-compatibility patch or package installation, `verify_source_inputs.py` verifies
-both go.mod files and the exact frontend package and lockfile. The immutable
-source commit additionally covers all remaining source files and Go checksums.
-
-Run the existing build workflow on the reviewed branch with operation `build`,
-publish_candidate false, explicit version, and all seven architectures. Build
-v2.3.1, v2.3.0, then v2.2.5 separately; do not publish a historical release until
-its complete verified upstream artifact and downstream runtime gate succeed.
-Existing release assets are unchanged by selecting these candidate inputs.
-
-## Second historical immutable-input batch
-
-v2.2.4 and v2.2.3 use their verified version-tag commits and byte-equivalent
-reviewed installers. Both require Go 1.26.1 for Core and Go 1.25.10 for Agent;
-the selected Go 1.26.1 satisfies both. Their committed frontend lockfiles
-accept Node 22.22.1 with bundled npm 10.9.4. These added contracts still require
-real seven-architecture build and downstream installation/upgrade validation.
-
-v2.2.3 original build logs have expired (HTTP 410). Its source pin describes a
-repair build from the verified version tag, not proof of the original checkout
-or bit-for-bit reproduction. v2.2.4 source checkout has matching historical log
-evidence. In both cases all 15 selected installer resources match historical
-package members after the expected 1pctl version substitution.
-
-v2.2.2 and v2.2.1 have a separate input batch below because their Go minima
-and interactive installer behavior differ.
-
-## Third historical immutable-input batch
-
-v2.2.2 and v2.2.1 select Go 1.25.10, satisfying Core's 1.25.7 and Agent's
-1.25.10 minima. Source commits are verified version-tag repair inputs; original
-published binary checkout provenance is not established. The selected immutable
-installer resources match every available cached architecture audit after the
-expected 1pctl version substitution. Missing cached architectures are not counted
-as checked. Real full seven-architecture build validation remains required.
-
-These installers predate non-interactive command-line flags. Enabling upstream
-source builds does not authorize applying modern installer flags downstream or
-claiming historical installation/upgrade runtime coverage. The downstream
-interactive compatibility and runtime gate remain separate prerequisites to
-publishing repaired offline installer packages.
-
-## Fourth historical immutable-input batch
-
-v2.1.13, v2.1.12 and v2.1.11 use Go 1.25.7 for both components and retain
-their committed frontend locks with Node 22.22.1/npm 10.9.4. Every selected
-installer resource matches the actual historical amd64 package after the
-expected 1pctl version substitution. Full compressed archive hashes and member
-hashes were streamed and verified; no other historical architecture resource
-comparison is implied. Original source checkout provenance remains unproven.
-
-These interactive installers lack the newer built-in offline Docker tree helper.
-Downstream must apply its reviewed historical Docker adapter and run installation
-and upgrade tests; upstream source/build validation alone does not establish that
-an offline installer package works. Full seven-architecture repair builds remain
-required before enabling release promotion.
-
-### Historical frontend lock repair
-
-The v2.1.13, v2.1.12 and v2.1.11 source locks omit cosmiconfig even though their locked @commitlint/load requires it. The original source and dependency hashes remain pinned. After verifying those inputs, the shared Docker build applies the explicit recipe in config/frontend-lock-repairs.json: add only cosmiconfig 9.0.2 with its registry resolution and verified integrity. Existing dependency entries are preserved. Both the original and derived lock SHA-256 must match before writing, then npm ci --engine-strict remains mandatory. These are derived repair builds, not reproductions of an established original checkout. All three hosted builds and current-version regression must pass before publication.
-
-## v2.1.10 absent-lock repair input
-
-v2.1.10 has no committed frontend lock. Its exact package.json is byte-identical to v2.1.11, with no workspaces, package-manager override, root package.json, or repository/frontend npmrc/shrinkwrap. Reuse the exact reviewed v2.1.11 derived lock already built successfully with Node 22.22.1/npm 10.9.4; do not resolve dependencies during CI. This file is explicitly a repair input, not an original v2.1.10 source file. Verify the three original dependency inputs and the required absence first; reject any unexpected existing lock, then create only the pinned repair lock and retain npm ci --engine-strict. Both Go modules require 1.25.7.
-
-All 15 installer resources match the actual historical amd64 archive after version substitution. This evidence does not establish other historical architectures or the original source checkout. The interactive installer still needs the downstream offline Docker adapter and native runtime checks. Fresh v2.1.10 seven-architecture and current-version builds remain mandatory before merge or promotion.
-
-## v2.1.9 input extension
-
-v2.1.9 uses the same byte-identical frontend package manifest and reviewed derived lock as v2.1.10, with original lock absence verified at its own immutable source commit. Both Go modules require 1.25.7. Core/Agent configuration hashes and immutable vendor paths are pinned to that source; the original YAML matches v2.1.10 and normalizes through the existing semantic rules. The sample configuration bytes are not committed as new fixtures. Build and artifact validation retrieve only the two bounded files directly from the exact official source commit, reject redirects and any size/hash mismatch, and verify the normalized SHA-256 before use. This path requires the vendor source host to remain reachable; retrieval failures stop validation rather than use an unverified fallback. Synthetic mocked fixtures cover the acquisition logic in offline unit tests, while fresh hosted builds validate the real source bindings. All 15 selected installer resources match the fully hashed historical amd64 archive after version substitution. This is repair-build evidence, not original checkout reproduction or other-architecture/runtime proof. Fresh all-seven builds, current regression, independent review and downstream native gates remain required at their respective stages.
-
-## v2.1.8 reproducible repair inputs
-
-v2.1.8 has no original frontend lock. Its fixed derived lock is bound to the exact original package manifest, Node 22.22.1 and npm 10.9.4. CI uses the committed lock with `npm ci --engine-strict`, never fresh dependency resolution. The lock is a repair input, not an original historical lock. npm 10.9.4 omits optional package libc metadata when serializing; retain the pinned bytes and require actual package integrity/native selection and full build checks.
-
-The source verifier checks both hashed Go modules directly against the selected compiler, including any toolchain directive, before applying patches. Both v2.1.8 modules require Go 1.25.7. Core/Agent configurations use the bounded immutable vendor-source route. Historical installer Docker/accelerator prompts do not default empty responses to yes; downstream adapters must preserve that behavior. Fresh seven-architecture builds, current-version regression and downstream native tests remain required at their respective publication stages.
-
-Build checks use operational source/configuration/repair inputs. The historical planning and audit documents are snapshots and do not enable versions or supply runtime verification data.
-
-## v2.1.7 through v2.1.5 shared frontend inputs
-
-These three source commits have the same frontend package manifest and no original lock. They share the same fixed derived repair-lock bytes, stored at each version's validated repair path. Go remains version-specific: v2.1.7 and v2.1.6 use 1.25.7; v2.1.5 uses 1.24.9. Each source/configuration contract and installer resource set is pinned independently. Use parallel build runs for the three versions with publication disabled; each must pass its own seven-architecture aggregation and subsequent publication gates. The shared frontend lock does not substitute for per-version build or downstream installation checks.
-
-
-## Daily update selection
-
-At 07:00 UTC, check the latest official stable Release and this repository's
-matching public Release attachment names. Do not download or revalidate existing
-packages. If all seven archive/SHA-256 pairs exist, stop before unit tests and
-source preparation. Otherwise build only the missing architecture subset and
-append its validated output, preserving existing attachments. A missing Release
-selects all seven architectures; API/authentication failures stop the check.
-Newly uploaded files still receive readback verification. A half-present pair
-can be completed only when its existing member matches the new candidate's
-server digest and size; conflicting bytes require explicit repair.
+# Build and publication
+
+Use the existing `build-offline` workflow in `.github/workflows/build.yml`.
+
+## Daily updates
+
+At 07:00 UTC, GitHub checks the latest official stable Release and this
+repository's matching public Release attachment names. An architecture is
+present when its archive and `.sha256` attachment both exist. Existing pairs
+are trusted without downloading or validating their contents.
+
+- All seven architectures present: stop before tests and source preparation.
+- Missing architectures: build only that subset and append its new output.
+- No matching public Release: build all seven architectures.
+- Authentication, network or API errors: fail the check.
+
+The selected version is fixed for the rest of the run. Successful new packages
+are validated before publication and read back after upload. Existing files are
+preserved. A half-present pair can be completed only if its existing member's
+server digest and size match the new candidate; a conflict stops publication.
+
+CNB retains tag and manual builds. It has no second daily build schedule.
+
+## Manual operations
+
+Use **Run workflow** with an explicit version, or leave it empty to discover the
+selected `stable`, `beta` or `dev` channel. The `arch` field selects normal build
+architectures; promotion takes its matrix from the selected producer artifact.
+
+| Operation | Result |
+| --- | --- |
+| `build` | Build and publish verified successful architectures. |
+| `build-only` | Build verified CI artifacts without publishing. |
+| `validate-automatic` | Build and prepare the automatic publication plan without writing a Release. |
+| `validate-promotion` | Validate an explicitly selected existing CI artifact without publishing. |
+| `promote-existing` | Publish missing files from that exact verified CI artifact. |
+
+`publish_candidate=true` with `build` creates a separate draft candidate instead
+of the canonical version Release. Its tag includes the build commit and run ID.
+
+To reuse an existing build, supply all four provenance inputs:
+
+- `upstream_run_id`
+- `upstream_artifact_id`
+- `upstream_artifact_sha256` (the exact artifact ZIP hash)
+- `upstream_build_commit` (the actual built commit, including a PR merge commit)
+
+The source/preparation/aggregate gates must have passed. Only independently
+successful architecture outputs are accepted. A known publication-writer failure
+does not invalidate already verified build output; it does not require a rebuild.
+Manual existing-release validation retains full package verification. Unlike the
+daily metadata check, it can reject corrupt bytes or incompatible source inputs.
+
+## Builds and PR checks
+
+PRs run unit tests. Documentation, Python unit tests and the explicit publication
+script list do not require an architecture build. Build inputs and unknown paths
+retain integration checks. A documentation branch does not inherit unrelated
+changes made later on the base branch.
+
+Source inputs, installer resources and toolchains are resolved once for the
+selected version. Source and frontend preparation is shared by the requested
+architecture matrix, with at most three compile runners active. The Go cache is
+separate by version, Go version and architecture; module inputs and the Go
+compatibility adapter invalidate it.
+
+Downloaded shards and the final aggregate are validated at their transfer
+boundaries. Shared preparation or validation failures block publication. A failed
+architecture is omitted while independently successful output can be published.
+Failure details stay in Actions, not Release notes.
+
+Intermediate source/shard artifacts expire after three days. Failed-only retries
+reuse the original preparation artifact and replace only their own intermediate
+shard. A new full preparation has a new artifact ID. Final verified build artifacts
+remain immutable.
+
+## Publication and recovery
+
+Preparation is read-only. One writer per canonical version checks the bound
+preparation receipt and artifact before writing. Release operations bind to the
+observed Release ID and retain its asset snapshot. Only missing files are
+uploaded; this code does not rename, replace or delete existing assets.
+
+A new canonical Release is staged as an owned draft. Its new attachments are
+verified before it becomes public. If finalization has an uncertain result, the
+writer attempts to return that same Release ID to draft and saves a journal.
+Public notes are preserved.
+
+- An empty draft created by this workflow can be resumed by a descendant build.
+- A nonempty owned draft needs `promote-existing` with its exact original build
+  artifact. The draft target and all existing attachment bytes must match that
+  verified artifact before finalization.
+- Conflicting assets or changed Release identity stop the transaction. Review
+  the preserved journal and choose an explicit recovery action.
+
+For historical versions, resolve that version's immutable source, installer,
+configuration and dependency inputs. Compatibility changes need checks for the
+affected behavior and architectures; unrelated historical or current-version
+rebuilds are not a routine prerequisite. Packaging checks establish archive
+integrity and metadata, not installed-service runtime behavior.

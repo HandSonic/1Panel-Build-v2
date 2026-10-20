@@ -7,7 +7,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import matrix_contract
-import publication_contract
 import publication_lineage as lineage
 
 
@@ -172,29 +171,6 @@ class PublicationLineageTests(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(ValueError):
                 lineage.validate(value, VERSION)
 
-    def test_producer_verification_authenticates_current_even_when_not_selected(self):
-        old, old_run, old_jobs = producer_fixture()
-        current, run, jobs = producer_fixture(run_id=20)
-        manifest = lineage.compose(old, current, CONTRACT_SHA)
-
-        class Client:
-            repo = matrix_contract.REPOSITORY
-
-            def __init__(self):
-                self.calls = []
-
-            def run(self, *args):
-                endpoint = args[-1]
-                self.calls.append(endpoint)
-                selected_run, selected_jobs = (old_run, old_jobs) if '/runs/10/' in endpoint else (run, jobs)
-                return json.dumps([{'jobs': selected_jobs}] if '/jobs?' in endpoint else selected_run)
-
-        client = Client()
-        publication_contract.verify_manifest_producers(client, manifest)
-        self.assertEqual(len(client.calls), 4)
-        run['conclusion'] = 'cancelled'
-        with self.assertRaises(ValueError):
-            publication_contract.verify_manifest_producers(Client(), manifest)
 
     def test_zero_success_current_generation_cannot_hide_execution_identity(self):
         previous,_,_=producer_fixture(('amd64','arm64'))

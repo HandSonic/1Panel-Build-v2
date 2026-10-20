@@ -1,3 +1,4 @@
+# CNB is an explicit tag/manual build backend; GitHub owns daily update checks.
 # CNB uses the same immutable inputs and validation as GitHub.
 # Build outputs remain pipeline artifacts until a reviewed publication step is enabled.
 .build_stages: &build_stages
@@ -56,8 +57,6 @@
 "v*":
   tag_push: *build_pipeline
 master:
-  "crontab: 0 2 * * *": *build_pipeline
   web_trigger_build: *build_pipeline
 main:
-  "crontab: 0 2 * * *": *build_pipeline
   web_trigger_build: *build_pipeline
