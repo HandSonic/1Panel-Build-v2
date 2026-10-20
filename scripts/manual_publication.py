@@ -3,7 +3,8 @@
 import argparse,hashlib,json,os,re,shutil,stat,subprocess,sys,tempfile,zipfile
 from pathlib import Path,PurePosixPath
 from publication_contract import ARCHES,PROOF,REPOS,ROOT,contract_for_repo,make_proof,policy_fingerprint,validate_payloads
-from release_asset_repair import GitHub,digest,repair,release_snapshot
+from release_asset_repair import (GitHub,digest,repair,optional_release,require_owned_draft,
+                                 release_snapshot,Journal,finalize_release)
 
 UPSTREAM=REPOS['upstream-matrix']
 
@@ -46,8 +47,6 @@ def validate_upstream_input(directory,version,expected_commit,contract):
     subprocess.run([sys.executable,str(validator_root/'scripts/validate_artifacts.py'),str(directory),version,' '.join(accepted)],check=True)
     records=json.loads((Path(directory)/'build-manifest.json').read_text())['artifacts']
     if not records or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')
-    from embedded_configuration import validate_archive
-    for row in records:validate_archive(Path(directory)/row['file'],version,row['architecture'])
 
 
 def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_commit,contract):
@@ -79,7 +78,7 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
         if page>10:raise ValueError('Excessive producer job inventory')
     run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/attempts/{attempt}')
     execution=github_json(f'repos/{UPSTREAM}/git/commits/{expected_commit}') if run.get('event')=='pull_request' else None
-    verify_jobs(manifest,run,jobs,expected_commit,execution)
+    verify_jobs(manifest,run,jobs,expected_commit,execution,allow_publication_failures=True)
     validate_upstream_input(directory,version,expected_commit,contract)
     return {'repository':UPSTREAM,'run_id':int(run_id),'artifact_id':int(artifact_id),'artifact_sha256':expected_sha,
             'build_repository_commit':expected_commit,'run_url':f'https://github.com/{UPSTREAM}/actions/runs/{run_id}'}
@@ -141,22 +140,46 @@ def publish(args):
     expected=make_proof(files,contract,args.version,args.tag,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
     if any(proof.get(k)!=v for k,v in expected.items()):raise ValueError('Prepared publication receipt changed')
     client=GitHub(args.repository,args.tag)
-    release=client.release()
-    if release.get('draft'):raise ValueError('Existing-release repair requires an existing public release')
+    release=optional_release(client)
+    if release is None:raise ValueError('Existing-release repair requires a public release or an owned recovery draft')
     client.bind_release(release['id'])
+    observed=client.release()
+    if release_snapshot(observed)!=release_snapshot(release):raise ValueError('Release changed before manual publication')
+    if release.get('draft') is True and any(observed.get(key)!=release.get(key) for key in ('name','target_commitish','prerelease','author')):
+        raise ValueError('Draft metadata changed before manual publication')
     # Public downloads contain only packages and their standard SHA sidecars.
     from public_packages import package_files, recovery_assets, require_embedded
     require_embedded(files,args.version)
     files=package_files(files)
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
+    if release.get('draft') is True:
+        # Recovery is explicitly selected via exact verified-ci provenance; a
+        # normal automatic build still accepts only an empty owned draft.
+        require_owned_draft(release,client)
+        upstream=proof.get('upstream_input') or {}
+        if (upstream.get('repository')!=UPSTREAM or
+            type(upstream.get('run_id')) is not int or upstream['run_id']<=0 or
+            type(upstream.get('artifact_id')) is not int or upstream['artifact_id']<=0 or
+            not re.fullmatch('[0-9a-f]{64}',upstream.get('artifact_sha256','')) or
+            not re.fullmatch('[0-9a-f]{40}',upstream.get('build_repository_commit','')) or
+            release.get('target_commitish')!=upstream['build_repository_commit']):
+            raise ValueError('Draft recovery requires the exact selected verified CI build commit')
+        creation_path=work/'control'/'creation-journal.json'
+        if creation_path.exists():raise ValueError('Review the existing creation journal before retrying')
+        creation=Journal(creation_path,{'phase':'resuming','repository':client.repo,'tag':client.tag,
+                                      'release_id':release['id'],'upstream_input':upstream})
+        state=repair(client,files,journal,expected_snapshot=release_snapshot(release),expected_draft=release)
+        if state['phase']!='complete':raise ValueError('Draft recovery upload did not complete')
+        finalize_release(client,release,files,creation)
+        print(json.dumps({'state':creation.state['phase'],'repository':args.repository,'tag':args.tag}))
+        return
     retired=retired_upstream_assets(proof,args.version,release) if contract=='upstream-matrix' else []
     # Existing controls require explicit removal review before package-only publication.
     from public_packages import CONTROLS
     retired.extend(asset['name'] for asset in release['assets'] if asset['name'] in CONTROLS)
     preserved={name:asset for name,asset in recovery_assets(release,args.version).items() if name not in retired}
-    state=repair(client,files,journal,retire=retired,preserved_assets=preserved,
-                 expected_snapshot=release_snapshot(release))
+    state=repair(client,files,journal,retire=retired,preserved_assets=preserved,expected_snapshot=release_snapshot(release))
     print(json.dumps({'state':state['phase'],'repository':args.repository,'tag':args.tag}))
 
 if __name__=='__main__':

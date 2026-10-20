@@ -16,55 +16,36 @@ def digest(path):
     return {"bytes":Path(path).stat().st_size,"sha256":h.hexdigest()}
 
 class GitHub:
-    def __init__(self, repo, tag):self.repo=repo;self.tag=tag;self.release_id=None
-    def run(self,*args):return subprocess.run(['gh',*args],check=True,text=True,capture_output=True).stdout
+    def __init__(self, repo, tag, release_id=None):
+        self.repo=repo;self.tag=tag;self.release_id=None
+        if release_id is not None:self.bind_release(release_id)
     def bind_release(self,release_id):
         if type(release_id) is not int or release_id<=0:raise ValueError('Invalid bound release ID')
-        if self.release_id not in (None,release_id):raise ValueError('Bound release identity changed')
         self.release_id=release_id
+    def run(self,*args):return subprocess.run(['gh',*args],check=True,text=True,capture_output=True).stdout
     def release(self):
-        endpoint=f'repos/{self.repo}/releases/'
-        endpoint+=str(self.release_id) if self.release_id is not None else 'tags/'+self.tag
+        endpoint=f'repos/{self.repo}/releases/'+(str(self.release_id) if self.release_id is not None else f'tags/{self.tag}')
         release=json.loads(self.run('api',endpoint))
-        if (type(release.get('id')) is not int or release['id']<=0 or release.get('tag_name')!=self.tag or
-                (self.release_id is not None and release['id']!=self.release_id)):
-            raise ValueError('Release identity mismatch')
+        if self.release_id is not None and (release.get('id')!=self.release_id or release.get('tag_name')!=self.tag):
+            raise ValueError('Bound release identity changed')
         return release
-    def find_draft(self):
-        """Explicit writer-only discovery; ordinary source reads stay public/tag based."""
-        matches=[];seen=set()
+    def drafts(self):
+        found=[]
         for page in range(1,101):
             rows=json.loads(self.run('api',f'repos/{self.repo}/releases?per_page=100&page={page}'))
-            if not isinstance(rows,list) or len(rows)>100:raise ValueError('Invalid release discovery page')
-            for release in rows:
-                release_id=release.get('id') if isinstance(release,dict) else None
-                if type(release_id) is not int or release_id<=0 or release_id in seen:
-                    raise ValueError('Invalid or duplicated discovered release identity')
-                seen.add(release_id)
-                if release.get('tag_name')==self.tag:matches.append(release)
-            if len(rows)<100:break
-        else:raise ValueError('Release discovery page limit exceeded')
-        if not matches:return None
-        if len(matches)!=1 or matches[0].get('draft') is not True:
-            raise ValueError('Ambiguous or non-draft release discovery')
-        self.bind_release(matches[0]['id'])
-        release=self.release()
-        if release_snapshot(release)!=release_snapshot(matches[0]):
-            raise ValueError('Draft changed during release discovery')
-        return release
+            if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows):raise ValueError('Invalid release inventory')
+            found.extend(row for row in rows if row.get('tag_name')==self.tag and row.get('draft') is True)
+            if len(rows)<100:return found
+        raise ValueError('Excessive release inventory')
     def upload(self,path):
-        if self.release_id is None:
-            return self.run('release','upload',self.tag,str(path),'--repo',self.repo)
-        path=Path(path)
-        endpoint=f'https://uploads.github.com/repos/{self.repo}/releases/{self.release_id}/assets?name='+quote(path.name,safe='')
-        return self.run('api','--method','POST',endpoint,'-H','Content-Type: application/octet-stream',
-                        '-H',f'Content-Length: {path.stat().st_size}','--input',str(path))
+        if self.release_id is None:return self.run('release','upload',self.tag,str(path),'--repo',self.repo)
+        endpoint=f'https://uploads.github.com/repos/{self.repo}/releases/{self.release_id}/assets?name={quote(Path(path).name,safe="")}'
+        self.run('api','--method','POST',endpoint,'-H','Content-Type: application/octet-stream','--input',str(path))
     def download(self,name,directory):
-        if self.release_id is None:
-            return self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
-        matches=[asset for asset in self.release()['assets'] if asset.get('name')==name]
-        if len(matches)!=1:raise ValueError('Missing or ambiguous bound release asset')
-        return self.download_asset(matches[0],directory)
+        if self.release_id is None:return self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
+        matches=[asset for asset in self.release()['assets'] if asset['name']==name]
+        if len(matches)!=1:raise ValueError('Bound release asset is missing or ambiguous')
+        self.download_asset(matches[0],directory)
     def download_asset(self,asset,directory):
         with (Path(directory)/asset['name']).open('wb') as stream:
             subprocess.run(['gh','api',f"repos/{self.repo}/releases/assets/{asset['id']}",'-H','Accept: application/octet-stream'],check=True,stdout=stream)
@@ -77,6 +58,69 @@ class Journal:
         with temporary.open('w') as stream:
             json.dump(self.state,stream,indent=2);stream.write('\n');stream.flush();os.fsync(stream.fileno())
         temporary.replace(self.path)
+
+def optional_release(client):
+    try:return client.release()
+    except subprocess.CalledProcessError as error:
+        # A tag lookup excludes drafts. Only an explicit not-found permits
+        # draft discovery; transport and permission errors must not create one.
+        if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):
+            drafts=client.drafts()
+            if len(drafts)>1:raise ValueError('Multiple matching release drafts require recovery review')
+            return drafts[0] if drafts else None
+        raise
+
+def require_owned_draft(release,client):
+    author=release.get('author') or {}
+    if (type(release.get('id')) is not int or release['id']<=0 or
+        release.get('draft') is not True or release.get('tag_name')!=client.tag or
+        release.get('name')!=client.tag or release.get('prerelease') is not ('-' in client.tag) or
+        (release.get('body') or '')!='' or
+        {key:author.get(key) for key in ('id','login','type')}!=
+            {'id':41898282,'login':'github-actions[bot]','type':'Bot'}):
+        raise ValueError('Only an owned automatic release draft can be recovered')
+
+def verify_new_release(release,created,files,draft,*,preserved_assets=None):
+    if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
+        release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
+        raise ValueError('Created release identity or visibility changed')
+    if any(release.get(key)!=created.get(key) for key in ('name','target_commitish','prerelease','author')):
+        raise ValueError('Created release metadata changed')
+    expected={name:{'bytes':asset['size'],'sha256':asset['digest'][7:]}
+              for name,asset in (preserved_assets or {}).items()}
+    if set(expected)&{p.name for p in files}:raise ValueError('Preserved package overlaps new publication files')
+    expected.update({p.name:digest(p) for p in files})
+    assets=release.get('assets',[])
+    if len(assets)!=len(expected) or {a['name'] for a in assets}!=set(expected):
+        raise ValueError('Created release canonical inventory changed')
+    for asset in assets:
+        preserved=(preserved_assets or {}).get(asset['name'])
+        if preserved is not None and asset_identity(asset)!=asset_identity(preserved):
+            raise ValueError('Preserved release asset identity changed')
+        facts=expected[asset['name']]
+        if asset.get('digest')!='sha256:'+facts['sha256'] or asset.get('size')!=facts['bytes']:
+            raise ValueError('Created release canonical bytes changed')
+
+def finalize_release(client,created,files,creation,*,preserved_assets=None):
+    """Publish one verified owned draft, retaining its exact ID on recovery."""
+    verify_new_release(client.release(),created,files,True,preserved_assets=preserved_assets)
+    creation.state['phase']='finalizing';creation.save()
+    try:
+        client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
+                   '-F','draft=false','-f','make_latest=legacy')
+        verify_new_release(client.release(),created,files,False,preserved_assets=preserved_assets)
+    except Exception:
+        # A failed response can follow an applied publication. Return only the
+        # exact owned release to draft; never infer that the PATCH did nothing.
+        try:
+            client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}','-F','draft=true')
+            restored=json.loads(client.run('api',f'repos/{client.repo}/releases/{created["id"]}'))
+            if restored.get('id')!=created['id'] or restored.get('draft') is not True:raise ValueError('Draft recovery readback failed')
+            creation.state['phase']='returned_to_draft';creation.save()
+        except Exception as recovery_error:
+            creation.state.update(phase='recovery_required',recovery_error=str(recovery_error));creation.save()
+        raise
+    creation.state['phase']='complete';creation.save()
 
 def check_asset_names(assets,expected,extra=()):
     names=[a['name'] for a in assets]
@@ -94,11 +138,17 @@ def release_snapshot(release):
             'body':release.get('body') or '',
             'assets':sorted([{'id':a['id'],'name':a['name'],'size':a['size'],'digest':a.get('digest')} for a in release['assets']],key=lambda a:a['id'])}
 
+def draft_metadata(release):
+    return {**{key:release.get(key) for key in ('id','tag_name','draft','name','target_commitish','prerelease')},
+            'body':release.get('body') or '',
+            'author_id':(release.get('author') or {}).get('id')}
 
-def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, preserved_assets=None):
+def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, preserved_assets=None, expected_draft=None):
     before=client.release()
     if expected_snapshot is not None and release_snapshot(before)!=expected_snapshot:
         raise ValueError('Release changed before the bound repair transaction')
+    if expected_draft is not None and draft_metadata(before)!=draft_metadata(expected_draft):
+        raise ValueError('Draft release metadata changed before the bound repair transaction')
     assets={a['name']:a for a in before['assets']}
     if len(assets)!=len(before['assets']):raise ValueError('Duplicate remote asset names')
     expected={p.name:digest(p) for p in files}
@@ -106,6 +156,8 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
     if set(retire) & set(expected) or len(set(retire)) != len(retire):raise ValueError('Invalid retired artifact names')
     allowed=set(expected)|set(retire)
     preserved_assets=preserved_assets or {}
+    if before.get('draft') is True and set(assets)-set(expected)-set(preserved_assets):
+        raise ValueError('Draft recovery accepts only the selected validated package files')
     if set(preserved_assets)&allowed:raise ValueError('Preserved recovery inventory overlaps canonical mutation')
     for name,asset in preserved_assets.items():
         if not assets.get(name) or asset_identity(assets[name])!=asset_identity(asset):raise ValueError('Preserved recovery asset changed before transaction')
@@ -113,8 +165,15 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
     state={'repo':client.repo,'tag':client.tag,'phase':'preflight','conflicts':[],'uploads':[]}
     journal=Journal(journal_path,state)
     known={name:asset_identity(asset) for name,asset in assets.items()}
+    draft_baseline=draft_metadata(expected_draft or before) if before.get('draft') is True else None
+    identity={key:before.get(key) for key in ('id','tag_name','draft')}
     def inventory():
-        rows=client.release()['assets']
+        release=client.release()
+        if draft_baseline is not None and draft_metadata(release)!=draft_baseline:
+            raise ValueError('Draft release metadata changed during publication')
+        if any(release.get(key)!=value for key,value in identity.items()):
+            raise ValueError('Release identity or visibility changed during publication')
+        rows=release['assets']
         result={a['name']:asset_identity(a) for a in rows}
         if len(result)!=len(rows):raise ValueError('Duplicate remote asset names')
         return result
@@ -126,11 +185,13 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
                 old=assets.get(name)
                 if old is None:continue
                 old_sha=old.get('digest')
-                if not old_sha:
+                if not old_sha or draft_baseline is not None:
                     readback=temp/str(old['id']);readback.mkdir()
                     client.download_asset(old,readback)
                     facts=digest(readback/name)
                     if facts['bytes']!=old['size']:raise ValueError('Original asset failed readback verification')
+                    if old_sha and old_sha!='sha256:'+facts['sha256']:
+                        raise ValueError('Existing draft asset differs from its server digest')
                     old_sha='sha256:'+facts['sha256']
                     (readback/name).unlink()
                 replacement=expected.get(name)

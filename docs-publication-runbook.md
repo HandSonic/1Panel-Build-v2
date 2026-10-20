@@ -7,11 +7,13 @@ run when the connected tool lacks workflow_dispatch.
 
 ## Default behavior
 
-Normal builds keep their existing triggers and version inputs. A public release
-is a successful no-op only when its exact canonical matrix, server content hashes,
-checksum bytes and `release-validation.json` identify a completed successful
-validation run under the current version-specific policy. Missing, stale or
-unverifiable receipts report repair-needed without modifying the release.
+Normal builds keep their existing triggers and version inputs. Scheduled runs
+resolve current source inputs and build the requested architecture matrix even
+when that version already has public packages. Existing packages cannot suppress
+generator fixes or current input discovery. Public package trust does not depend
+on historical CI logs or receipts.
+Publication-only/documentation/unit-test PRs run tests without the build matrix;
+unknown, build, input and workflow changes retain full integration.
 Known `.backup-*`/`.staged-*` recovery files are noncanonical. Unknown canonical
 assets block repair before any upload; concurrent additions also fail closed.
 
@@ -23,12 +25,14 @@ In `HandSonic/1Panel-Build-v2`, use existing `build-offline` / `build.yml`:
 - Read-only promotion validation: operation=validate-promotion.
 - Authorized same-tag promotion: operation=promote-existing.
 
-Promotion requires an explicit version and exact successful artifact provenance.
-It validates all seven upstream packages with the authoritative upstream validator,
+Promotion requires an explicit version and exact verified build-artifact provenance.
+The producer's source/preparation/compile/aggregate gates must pass; a failure in
+a known publication writer does not invalidate its already verified build output.
+It validates the producer's independently successful packages with the authoritative upstream validator,
 including ELF, all member hashes, pinned installer/GeoIP, exact normalized embedded
 Core/Agent YAML and Core version. It does not execute the binaries.
 
-The current reviewed v2.3.2 input is:
+The historical reviewed v2.3.2 input was:
 
 - Run ID: 37803686376
 - Artifact ID: 11562143708
@@ -38,8 +42,8 @@ The current reviewed v2.3.2 input is:
 The built commit is the actual synthetic PR merge commit, not the branch head or
 later master merge. Never relabel its provenance. Keep publish_candidate=false
 for existing-tag promotion; that older option remains a separate normal-build
-new-draft path. The arch input applies to normal builds; promotion requires the
-complete verified seven-architecture contract.
+new-draft path. The arch input applies to normal builds; promotion uses the exact
+verified producer matrix and its explicit failed-architecture outcomes.
 
 ## Downstream next
 
@@ -62,19 +66,29 @@ validation; all final archives remain for the complete release gate.
 
 ## Write boundaries and recovery
 
-Preparation is read-only. Only an explicitly selected workflow_dispatch repair or
-promotion mode can enter the separate write-enabled job. The exact preparation
+Preparation is read-only. Manual promotion requires the explicitly selected
+`workflow_dispatch` mode; normal automatic publication has its own serialized
+writer. The exact preparation
 receipt hash is bound through job outputs and checked again after download.
 The write job revalidates the entire appropriate contract before any release write.
 
-Every changed/new asset is staged under a unique name and checked by server digest
-and complete byte download. Existing bytes are also read back and hashed. Before
-each switch, asset IDs, names, sizes and hashes are checked again. GitHub does not
-provide atomic compare-and-swap across assets; a brief naming window is possible.
-Originals are retained under backup names, checksums switch last, and no asset is
-deleted. A concurrent edit or failure triggers observed-state rollback; an
-incomplete rollback requires journal review, not a blind retry. Journals are saved
-on success or failure. Concurrent human release-note edits are preserved.
+Release reads and transfers bind to the observed Release ID. Only missing assets
+are uploaded, then checked by server digest and complete byte download. Existing
+conflicting bytes or retirement requests stop before uploading; this code does
+not rename, replace or delete assets. Release identity and asset inventories are
+checked throughout the transaction. Journals are saved on success or failure;
+human edits to public release notes are preserved.
+
+New releases are verified as drafts before finalization. A lost finalization
+response attempts to return that exact owned Release ID to draft. A normal build
+can reuse an owned automatic draft after verifying its metadata and target
+ancestry. Existing package bytes must pass full package validation against the
+current source contract; their original bytes and asset IDs are preserved. A
+missing checksum is regenerated from the authenticated archive, and only missing
+files are uploaded before the complete inventory is finalized. Conflicting or
+untrusted attachments require explicit recovery. `promote-existing` also accepts
+the exact original CI artifact ID, ZIP hash and built commit; its target must
+match that built commit and existing attachments must match the validated artifact.
 
 ## Historical versions
 
@@ -112,19 +126,6 @@ work is pending and is not included in the current v2.3.2 completion claim.
 
 ## Bounded upstream architecture matrix
 
-Automatic publication reads newly created drafts by their returned Release ID.
-If an earlier run left a draft, the next normal run discovers the exact tag in
-the releases list, binds that ID and its snapshot, and resumes the same draft.
-The public source reader still requires a published release; discovering a
-draft never makes it an accepted upstream input. Each existing draft archive is
-downloaded and passes the current full semantic package validator and exact
-source/toolchain/lock contract check. Its original bytes and asset ID are retained
-even if rebuilding produces different archive timestamps or producer metadata.
-Only missing assets are uploaded; a missing sidecar is derived from the verified
-original archive hash. Invalid existing packages stop before upload or public
-finalization. Bound uploads and downloads use the Release ID and asset ID, so a
-concurrent tag change cannot redirect writes to another release.
-
 GitHub normal builds now use `prepare -> compile[arch] -> build` before the
 existing optional draft-candidate stage. `prepare` uses the same Dockerfile's
 `prepared-builder` target: the reviewed source commit, compatibility patches,
@@ -136,19 +137,20 @@ The compile matrix is limited to three concurrent runners and fails each shard
 independently. Each runner checks the shared archive digest, source commit,
 resolved input lock and exact Go version before using `GOTOOLCHAIN=local` to
 cross-compile the two binaries. Its cache key includes version, Go version,
-architecture, scripts, config and Go dependency locks; no broad restore prefix
+architecture, both Go module manifests/locks and the Go compatibility adapter;
+unrelated publication scripts do not invalidate it. No broad restore prefix
 is allowed. Intermediate source/shard artifacts expire after three days.
 
 The aggregate job requires all requested shards from the same immutable preparation artifact,
 validates each shard's packages and build commit, and then reconstructs the
 original `verified-1panel-VERSION-COMMIT` contract. It validates the combined
-bytes again. A full seven-architecture run therefore checks all fourteen
-binaries twice. Subset development builds remain available, but promotion
-still requires the unchanged complete seven-architecture contract. Missing,
+bytes again. Redundant outer workflow revalidation has been removed; downloaded
+shards and the final aggregate retain independent checks. Subset development
+builds remain available; promotion inherits the exact verified producer matrix. Missing,
 extra, corrupt, mismatched-version or mismatched-commit shards fail closed.
 
 CNB and local Docker full builds retain their serial behavior. Existing-release
-promotion, its reviewed receipt, readback, backups, and single publication
+promotion, its reviewed receipt, readback and single publication
 writer are unchanged. Neither push nor scheduled builds trigger repair.
 
 Performance must be measured on a new unpublished full build before adopting
@@ -293,10 +295,3 @@ Build checks use operational source/configuration/repair inputs. The historical 
 ## v2.1.7 through v2.1.5 shared frontend inputs
 
 These three source commits have the same frontend package manifest and no original lock. They share the same fixed derived repair-lock bytes, stored at each version's validated repair path. Go remains version-specific: v2.1.7 and v2.1.6 use 1.25.7; v2.1.5 uses 1.24.9. Each source/configuration contract and installer resource set is pinned independently. Use parallel build runs for the three versions with publication disabled; each must pass its own seven-architecture aggregation and subsequent publication gates. The shared frontend lock does not substitute for per-version build or downstream installation checks.
-# Avoiding unnecessary compilation
-
-Publication-only, documentation-only and ordinary unit-test-only pull requests run
-unit CI without preparing the frontend or compiling seven architectures. Changes
-to build inputs, build scripts, workflow logic or the real Go SQLite smoke source
-still compile. Unknown paths and unavailable diffs also compile; renames preserve
-both the removed and added paths for this decision.

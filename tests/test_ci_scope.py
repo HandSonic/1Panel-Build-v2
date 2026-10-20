@@ -1,76 +1,90 @@
-"""Compilation scope is conservative and never depends on remote release state."""
-from pathlib import Path
+"""A small PR cannot suppress integration when a build input also changed."""
 import os
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import Mock
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'scripts'))
-from ci_scope import decide, requires_compile
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+import ci_scope
 
 
-class CompilationScopeTests(unittest.TestCase):
-    def test_publication_docs_and_test_changes_only_need_unit_ci(self):
-        needed = requires_compile('pull_request', [
-            'scripts/automatic_publication.py', 'scripts/release_asset_repair.py',
-            'scripts/public_packages.py', 'tests/test_automatic_publication.py',
-            'docs-publication-runbook.md'])
-        self.assertFalse(needed)
-        jobs = yaml.safe_load((ROOT / '.github/workflows/build.yml').read_text())['jobs']
-        expression = jobs['prepare']['if'].replace('needs.tests.outputs.build_required', repr(str(needed).lower()))
-        expression = expression.replace('github.event_name', repr('pull_request')).replace('inputs.operation', repr(''))
-        self.assertFalse(eval(expression.replace('&&', ' and ').replace('||', ' or '), {'__builtins__': {}}))
+class CIScope(unittest.TestCase):
+    def test_publication_docs_and_python_unit_tests_use_tests_only(self):
+        self.assertFalse(ci_scope.build_required([
+            'README.md', 'README_zh.md', 'docs-publication-runbook.md', 'docs/release.md',
+            'tests/test_draft_publication.py', *ci_scope.PUBLICATION_ONLY]))
 
-    def test_build_unknown_and_workflow_changes_compile_even_when_mixed(self):
-        for path in ('Dockerfile', 'scripts/package_release.py', 'config/inputs.json',
-                     '.github/workflows/build.yml', 'scripts/ci_scope.py', 'unknown'):
+    def test_unknown_build_workflow_and_shared_validation_inputs_require_build(self):
+        for path in ('Dockerfile', '.github/workflows/build.yml', 'config/repair-locks.json',
+                     'scripts/build_release.sh', 'scripts/publication_contract.py',
+                     'scripts/publication_lineage.py', 'scripts/ci_scope.py',
+                     'tests/go_sqlite_compat/sqlite_compat_test.go',
+                     'docs/example.py', 'new-file'):
             with self.subTest(path=path):
-                self.assertTrue(requires_compile('pull_request', ['README.md', path]))
+                self.assertTrue(ci_scope.build_required(['README.md', path]))
+        self.assertTrue(ci_scope.build_required([]))
 
-    def test_schedules_tags_and_manual_builds_always_compile(self):
-        for event in ('schedule', 'push', 'workflow_dispatch'):
-            self.assertTrue(requires_compile(event, ['README.md']))
-        self.assertTrue(requires_compile('pull_request', []))
+    def test_only_prs_can_use_changed_file_scope(self):
+        for event in ('schedule', 'push', 'workflow_dispatch', ''):
+            with self.subTest(event=event):
+                self.assertTrue(ci_scope.event_requires_build(event, {}, lambda *args: b'README.md\0'))
 
-    def test_real_go_smoke_source_requires_compilation(self):
-        self.assertTrue(requires_compile('pull_request', ['tests/go_sqlite_compat/sqlite_compat_test.go']))
+    def test_schedule_resolves_current_inputs_and_keeps_compilation_enabled(self):
+        from test_ci_contract import github_block
+        workflow=yaml.safe_load((Path(__file__).resolve().parents[1]/'.github/workflows/build.yml').read_text())
+        jobs=workflow['jobs']
+        self.assertTrue(ci_scope.event_requires_build('schedule',{}))
+        self.assertNotIn('build_required',jobs['prepare']['outputs'])
+        for step in jobs['prepare']['steps']:
+            if step.get('id') in ('prepare','source_upload'):self.assertNotIn('if',step)
+        for name in ('compile','build'):
+            self.assertNotIn('build_required',jobs[name].get('if',''))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'scripts').mkdir()
+            (root/'scripts/validate_artifacts.py').write_text('def architectures(value): return value.split()\n')
+            (root/'scripts/discover_inputs.py').write_text(
+                'import sys\nfrom pathlib import Path\n'
+                'with Path("discovery-calls").open("a") as out: out.write(" ".join(sys.argv[1:])+"\\n")\n'
+                'print("v2.4.0" if "--latest" in sys.argv else "a"*64)\n')
+            (root/'scripts/resolved_contract.py').write_text('')
+            (root/'scripts/resolve_inputs.py').write_text('print("SOURCE_COMMIT=current-source\\nGO_VERSION=1.26.1")\n')
+            env=dict(os.environ,INPUT_VERSION='',INPUT_ARCHES='amd64 arm64',INPUT_CHANNEL='stable',
+                GITHUB_EVENT_NAME='schedule',GITHUB_REF='refs/heads/master',
+                GITHUB_OUTPUT=str(root/'outputs'),GITHUB_ENV=str(root/'env'))
+            result=subprocess.run(['bash','-c',github_block('Resolve immutable build inputs')],
+                cwd=root,env=env,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual((root/'discovery-calls').read_text().splitlines(),
+                ['--latest --mode stable','--version v2.4.0 --output resolved-source.json'])
+            self.assertIn('SOURCE_COMMIT=current-source',(root/'build-inputs.env').read_text())
+            self.assertIn('resolved_contract_sha256='+'a'*64,(root/'outputs').read_text())
 
-    def test_build_input_renamed_into_docs_still_requires_compilation(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            def git(*args):
-                return subprocess.check_output(['git', '-c', 'user.name=CI Test', '-c',
-                    'user.email=ci-test@example.invalid', *args], cwd=root, stderr=subprocess.DEVNULL)
-            git('init')
-            (root / 'Dockerfile').write_text('FROM scratch\n' * 10)
-            git('add', '.')
-            git('commit', '-m', 'initial')
-            base = git('rev-parse', 'HEAD').decode().strip()
-            (root / 'docs').mkdir()
-            os.rename(root / 'Dockerfile', root / 'docs/Dockerfile')
-            git('add', '-A')
-            git('commit', '-m', 'move build input')
-            head = git('rev-parse', 'HEAD').decode().strip()
-            self.assertTrue(decide({'GITHUB_EVENT_NAME': 'pull_request', 'PR_BASE_SHA': base,
-                                   'PR_HEAD_SHA': head}, lambda command: subprocess.check_output(command, cwd=root)))
+    def test_diff_includes_deleted_source_of_a_rename(self):
+        event = {'pull_request': {'base': {'sha': 'a' * 40}, 'head': {'sha': 'b' * 40}}}
+        self.assertFalse(ci_scope.event_requires_build('pull_request', event, lambda *args: b'README.md\0'))
+        self.assertTrue(ci_scope.event_requires_build('pull_request', event,
+            lambda *args: b'scripts/build_release.sh\0docs/build.md\0'))
 
-    def test_exact_full_pr_diff_and_unknown_diff_default_to_compile(self):
-        env = {'GITHUB_EVENT_NAME': 'pull_request', 'PR_BASE_SHA': 'a' * 40, 'PR_HEAD_SHA': 'b' * 40}
-        read = Mock(return_value=b'README.md\0scripts/automatic_publication.py\0')
-        self.assertFalse(decide(env, read))
-        self.assertEqual(read.call_args.args[0], ['git', 'diff', '--no-renames', '--name-only', '-z', 'a' * 40 + '...' + 'b' * 40])
-        self.assertTrue(decide(dict(env, PR_BASE_SHA='invalid'), read))
-        read.side_effect = subprocess.CalledProcessError(1, 'git')
-        self.assertTrue(decide(env, read))
+    def test_unavailable_or_malformed_diff_keeps_integration(self):
+        event = {'pull_request': {'base': {'sha': 'a' * 40}, 'head': {'sha': 'b' * 40}}}
+        def unavailable(*args):
+            raise subprocess.CalledProcessError(128, ['git', 'diff'])
+        for invalid in ({}, {'pull_request': {'base': {'sha': 'main'}, 'head': {'sha': 'b' * 40}}}):
+            self.assertTrue(ci_scope.event_requires_build('pull_request', invalid))
+        for diff in (unavailable, lambda *args: b'', lambda *args: b'\xff\0'):
+            self.assertTrue(ci_scope.event_requires_build('pull_request', event, diff))
 
-    def test_workflow_keeps_tests_and_uses_scope_only_for_compile_ancestors(self):
-        jobs = yaml.safe_load((ROOT / '.github/workflows/build.yml').read_text())['jobs']
-        self.assertNotIn('if', jobs['tests'])
-        self.assertEqual(jobs['tests']['outputs']['build_required'], '${{ steps.scope.outputs.build_required }}')
-        self.assertIn("needs.tests.outputs.build_required == 'true'", jobs['prepare']['if'])
-        checkout = next(step for step in jobs['tests']['steps'] if step.get('uses') == 'actions/checkout@v4')
-        self.assertEqual(checkout['with']['fetch-depth'], 0)
+    def test_workflow_does_not_treat_scope_script_failure_as_tests_only(self):
+        workflow = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
+        command = next(step['run'] for step in workflow['jobs']['tests']['steps'] if step.get('id') == 'scope')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scripts').mkdir()
+            (root / 'scripts/ci_scope.py').write_text('raise RuntimeError("scope failed")\n')
+            result = subprocess.run(['bash', '-c', command], cwd=root, capture_output=True, text=True,
+                                    env=dict(os.environ, GITHUB_OUTPUT=str(root / 'output')))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / 'output').exists())

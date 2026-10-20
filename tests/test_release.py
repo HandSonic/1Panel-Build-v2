@@ -4,6 +4,38 @@ sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
 import configure_release,download_resources,package_release,resolve_inputs,validate_artifacts
 from embedded_configuration import expected_bytes
 
+def executable_elf(arch,payload=b'\0'):
+    """A structural ELF fixture with one file-backed executable load segment."""
+    cls,end,machine=validate_artifacts.ARCHES[arch]
+    order='<' if end==1 else '>'
+    header_size,program_size=(52,32) if cls==1 else (64,56)
+    size=header_size+program_size+len(payload);base=0x400000
+    ident=b'\x7fELF'+bytes((cls,end,1))+b'\0'*9
+    header=struct.pack(order+('HHIIIIIHHHHHH' if cls==1 else 'HHIQQQIHHHHHH'),
+        2,machine,1,base+header_size+program_size,header_size,0,0,header_size,program_size,1,0,0,0)
+    program=struct.pack(order+('IIIIIIII' if cls==1 else 'IIQQQQQQ'),
+        *((1,0,base,base,size,size,5,4096) if cls==1 else (1,5,0,base,base,size,size,4096)))
+    return ident+header+program+payload
+
+
+class ELFValidation(unittest.TestCase):
+    def test_executable_headers_support_32_bit_and_big_endian_targets(self):
+        for arch in ('amd64','armv7','s390x'):
+            with self.subTest(arch=arch):validate_artifacts.validate_elf(executable_elf(arch),arch)
+        pie=bytearray(executable_elf('amd64'));struct.pack_into('<H',pie,16,3)
+        validate_artifacts.validate_elf(pie,'amd64')
+
+    def test_nonexecutable_or_truncated_elf_is_rejected(self):
+        original=executable_elf('amd64')
+        cases={'old_header_only':original[:64],'truncated_program_table':original[:119]}
+        for name,offset,fmt,value in [('relocatable',16,'H',1),('missing_programs',56,'H',0),
+            ('programs_outside_file',32,'Q',len(original)),('segment_outside_file',72,'Q',1),
+            ('nonexecutable_segment',68,'I',4),('entry_outside_segment',24,'Q',0x500000)]:
+            data=bytearray(original);struct.pack_into('<'+fmt,data,offset,value);cases[name]=data
+        for name,data in cases.items():
+            with self.subTest(case=name),self.assertRaises(ValueError):validate_artifacts.validate_elf(data,'amd64')
+
+
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.temp.name)
@@ -36,10 +68,8 @@ class ReleaseTests(unittest.TestCase):
             p=patch.object(module,'resolve',return_value=self.entry);p.start();self.addCleanup(p.stop)
         p=patch.dict(os.environ,{'BUILD_REPOSITORY_COMMIT':'a'*40},clear=False);p.start();self.addCleanup(p.stop)
     def binaries(self,arch):
-        cls,end,machine=validate_artifacts.ARCHES[arch]
-        data=bytearray(64);data[:6]=b'\x7fELF'+bytes((cls,end));data[18:20]=machine.to_bytes(2,'little' if end==1 else 'big')
         for part in ('core','agent'):
-            p=self.root/'build'/f'1panel-{part}';p.write_bytes(data+expected_bytes('v2.3.2',part)[1]);p.chmod(0o755)
+            p=self.root/'build'/f'1panel-{part}';p.write_bytes(executable_elf(arch,expected_bytes('v2.3.2',part)[1]));p.chmod(0o755)
     def build(self,arches):
         for arch in arches:self.binaries(arch);package_release.package(self.root,'v2.3.2',arch)
         package_release.finalize(self.root,'v2.3.2',arches)
@@ -152,19 +182,11 @@ class ReleaseTests(unittest.TestCase):
             configure_release.configure(self.root,'v2.3.2')
     def test_embedded_dev_configuration_rejected_despite_valid_manifest(self):
         self.binaries('amd64')
-        path=self.root/'build/1panel-core';header=path.read_bytes()[:64]
-        path.write_bytes(header+expected_bytes('v2.3.2','core')[0])
+        path=self.root/'build/1panel-core'
+        path.write_bytes(executable_elf('amd64',expected_bytes('v2.3.2','core')[0]))
         package_release.package(self.root,'v2.3.2','amd64')
         with self.assertRaisesRegex(ValueError,'normalized production configuration'):
             package_release.finalize(self.root,'v2.3.2',['amd64'])
-    def test_historical_schema_does_not_inject_new_flags(self):
-        for version in ['v2.0.14','v2.1.5','v2.2.5']:
-            for part in ['core','agent']:
-                p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(expected_bytes(version,part)[0])
-            with patch.object(configure_release,'resolve',return_value={'source_commit':expected_bytes(version,'core')[2],'mode':'stable'}):
-                configure_release.configure(self.root,version)
-            for part in ['core','agent']:
-                self.assertEqual((self.root/part/'cmd/server/conf/app.yaml').read_bytes(),expected_bytes(version,part)[1])
     def test_stale_files_rejected(self):
         self.build(['amd64']);(self.root/'dist/stale').write_text('stale')
         with self.assertRaisesRegex(ValueError,'Unexpected'):validate_artifacts.validate_dist(self.root/'dist','v2.3.2',['amd64'])

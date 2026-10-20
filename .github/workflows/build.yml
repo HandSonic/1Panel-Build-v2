@@ -22,9 +22,9 @@ on:
         type: choice
         options: [build, build-only, validate-automatic, validate-promotion, promote-existing]
         default: build
-        description: Normal build/publication, artifact-only build, read-only automatic validation, or explicit reviewed promotion
+        description: Normal build/publication, artifact-only build, read-only validation, or exact verified-CI promotion and draft recovery
       upstream_run_id:
-        description: Exact successful build run ID
+        description: Exact verified build run ID; publication may have failed
         default: ''
       upstream_artifact_id:
         description: Exact artifact ID from that run
@@ -58,17 +58,18 @@ jobs:
           echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Select compilation scope
-        id: scope
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 scripts/ci_scope.py
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.1'
       - run: python3 -m unittest discover -s tests -v
+      - name: Select integration scope
+        id: scope
+        run: |
+          set -euo pipefail
+          required=$(python3 scripts/ci_scope.py)
+          [[ "$required" == true || "$required" == false ]]
+          echo "build_required=$required" >> "$GITHUB_OUTPUT"
   prepare:
     if: needs.tests.outputs.build_required == 'true' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'build' || inputs.operation == 'build-only' || inputs.operation == 'validate-automatic')
     needs: tests
@@ -110,16 +111,16 @@ jobs:
           if [[ -z "$version" ]]; then
             version=$(python3 scripts/discover_inputs.py --latest --mode "$INPUT_CHANNEL")
           fi
+          matrix=$(python3 -c 'import json,sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(json.dumps({"arch":architectures(sys.argv[1])}))' "$arches")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "arches=$arches" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
           python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
           echo "resolved_contract_sha256=$contract_sha" >> "$GITHUB_OUTPUT"
           python3 scripts/resolve_inputs.py "$version" > build-inputs.env
-          matrix=$(python3 -c 'import json,sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(json.dumps({"arch":architectures(sys.argv[1])}))' "$arches")
           source build-inputs.env
           printf 'VERSION=%s\nTARGET_ARCHES=%s\n' "$version" "$arches" >> "$GITHUB_ENV"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "arches=$arches" >> "$GITHUB_OUTPUT"
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "go_version=$GO_VERSION" >> "$GITHUB_OUTPUT"
       - name: Prepare pinned source and frontend once
         id: prepare
@@ -198,7 +199,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: upstream-${{ runner.os }}-${{ needs.prepare.outputs.version }}-go${{ needs.prepare.outputs.go_version }}-${{ matrix.arch }}-${{ hashFiles('config/**', 'scripts/**', 'prepared-source/core/go.sum', 'prepared-source/agent/go.sum') }}
+          key: upstream-${{ runner.os }}-${{ needs.prepare.outputs.version }}-go${{ needs.prepare.outputs.go_version }}-${{ matrix.arch }}-${{ hashFiles('prepared-source/core/go.mod', 'prepared-source/core/go.sum', 'prepared-source/agent/go.mod', 'prepared-source/agent/go.sum', 'scripts/go_arch_compat.py') }}
       - name: Verify SQLite compatibility on native and loong64 engines
         if: matrix.arch == 'loong64'
         timeout-minutes: 20
@@ -214,7 +215,6 @@ jobs:
           test "$(go env GOVERSION)" = "go$GO_VERSION"
           tools="$PWD/scripts"
           (cd prepared-source; bash "$tools/build_release.sh")
-          python3 scripts/validate_artifacts.py prepared-source/dist "$VERSION" "$TARGET_ARCHES"
           cp build-inputs.env prepared-source/dist/build-inputs.env
       - uses: actions/upload-artifact@v4
         with:
@@ -260,7 +260,6 @@ jobs:
           set -euo pipefail
           python3 scripts/aggregate_shards.py shards dist "$VERSION" "$TARGET_ARCHES" "$SHARD_GENERATION"
           python3 scripts/resolved_contract.py activate dist "$VERSION"
-          python3 scripts/validate_artifacts.py dist "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("dist/build-manifest.json"))["artifacts"]))')"
       - uses: actions/upload-artifact@v4
         id: bundle
         with:
@@ -301,21 +300,17 @@ jobs:
         run: |
           set -euo pipefail
           tag="$VERSION-build-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo 'Candidate already exists; refusing overwrite.'; exit 1
-          fi
-          gh release create "$tag" --target "$GITHUB_SHA" --draft --title "$tag" \
-            --notes 'Build candidate only. Included artifacts validated; pending promotion and downstream regression.'
-          gh release upload "$tag" dist/*.tar.gz dist/*.tar.gz.sha256
-          mkdir remote-readback
-          gh release download "$tag" --dir remote-readback
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib
-          local={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('dist').iterdir() if p.is_file() and p.name.endswith(('.tar.gz','.tar.gz.sha256'))}
-          remote={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('remote-readback').iterdir() if p.is_file()}
-          if local != remote: raise SystemExit('Remote readback differs from validated output')
-          PY
+          python3 scripts/candidate_publication.py --repository "$GITHUB_REPOSITORY" \
+            --version "$VERSION" --tag "$tag" --target "$GITHUB_SHA" \
+            --input dist --control candidate-control
+      - name: Preserve candidate publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate-control/
+          if-no-files-found: warn
+          retention-days: 90
 
   publication_prepare:
     needs: [tests, build]
