@@ -15,6 +15,7 @@ class PublicationControlArtifact(unittest.TestCase):
                 'inputs.operation': repr('build-only'),
                 'inputs.publish_candidate': repr(candidate),
                 'needs.tests.result': repr('success'),
+                'needs.tests.outputs.build_required': repr('true'),
                 'needs.build.result': repr('success'),
                 'needs.publication_prepare.result': repr('success'),
                 'cancelled()': 'False',
@@ -67,9 +68,6 @@ class PublicationControlArtifact(unittest.TestCase):
         self.assertEqual(job['outputs']['artifact_id'], '${{ steps.upload.outputs.artifact-id }}')
         self.assertEqual(job['outputs']['receipt_sha256'], '${{ steps.receipt.outputs.sha256 }}')
         self.assertEqual(job['permissions']['contents'], 'read')
-        repair = data['jobs']['publication_repair']
-        self.assertEqual(repair['permissions']['contents'], 'write')
-        self.assertEqual(repair['env']['EXPECTED_VALIDATION_RECEIPT_SHA256'], '${{ needs.publication_prepare.outputs.receipt_sha256 }}')
 
     def test_automatic_writer_requires_successful_preparation_and_receipt_binding(self):
         data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
@@ -87,8 +85,8 @@ class PublicationControlArtifact(unittest.TestCase):
         data = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text())
         job = data['jobs']['publication_repair']
         self.assertEqual(job['needs'], 'publication_prepare')
+        self.assertEqual(job['permissions']['contents'], 'write')
         expression = job['if'].removeprefix('${{').removesuffix('}}').strip()
-        self.assertIn('!cancelled()', expression)
         for cancelled in (False, True):
             for prepared in ('success', 'failure', 'cancelled', 'skipped'):
                 for event in ('workflow_dispatch', 'schedule', 'push', 'pull_request'):

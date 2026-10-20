@@ -12,21 +12,9 @@ from manual_publication import check_identity, github_json
 from publication_contract import (PROOF, ROOT, digest_bytes, existing_release_state,
                                   make_proof, matrix_validate, validate_payloads)
 from publication_lineage import compose
-from release_asset_repair import GitHub, digest, repair, release_snapshot as snapshot, Journal, asset_identity
-
-
-
-def optional_release(client):
-    try:return client.release()
-    except subprocess.CalledProcessError as error:
-        # Only the API's explicit not-found response means a release can be created.
-        if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):
-            # The tag endpoint only returns published releases. A draft must
-            # be discovered explicitly, otherwise a retry creates another one.
-            drafts=client.drafts()
-            if len(drafts)>1:raise ValueError('Multiple matching release drafts require recovery review')
-            return drafts[0] if drafts else None
-        raise
+from release_asset_repair import (GitHub, digest, repair, release_snapshot as snapshot,
+                                  Journal, asset_identity, optional_release,
+                                  finalize_release, verify_new_release)
 
 
 def draft_identity(release):
@@ -107,6 +95,7 @@ def prepare(args):
         empty_automatic_draft(before,client,os.environ['GITHUB_SHA'])
         operation='resume'
     elif before is not None:
+        client.bind_release(before['id'])
         from public_packages import verify_existing
         verified,records=verify_existing(client,args.version,ROOT)
         if snapshot(verified)!=snapshot(before):raise ValueError('Existing release changed during verification')
@@ -126,22 +115,6 @@ def prepare(args):
           'preserved':preserved}
     if operation=='resume':plan['draft_identity']=draft_identity(before)
     (control/'automatic-plan.json').write_text(json.dumps(plan,indent=2,sort_keys=True)+'\n')
-
-
-def verify_new_release(release,created,files,draft):
-    if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
-        release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
-        raise ValueError('Created release identity or visibility changed')
-    if any(release.get(key)!=created.get(key) for key in ('name','target_commitish','prerelease','author')):
-        raise ValueError('Created release metadata changed')
-    expected={p.name:digest(p) for p in files}
-    assets=release.get('assets',[])
-    if len(assets)!=len(expected) or {a['name'] for a in assets}!=set(expected):
-        raise ValueError('Created release canonical inventory changed')
-    for asset in assets:
-        facts=expected[asset['name']]
-        if asset.get('digest')!='sha256:'+facts['sha256'] or asset.get('size')!=facts['bytes']:
-            raise ValueError('Created release canonical bytes changed')
 
 
 def publish(args,client=None):
@@ -165,6 +138,8 @@ def publish(args,client=None):
         if observed is None or draft_identity(observed)!=plan.get('draft_identity'):
             raise ValueError('Automatic draft identity changed after validation')
         empty_automatic_draft(observed,client,os.environ['GITHUB_SHA'])
+    elif observed is not None:
+        client.bind_release(observed['id'])
     if plan['operation']=='unchanged':return 'unchanged'
     proof_path=control/PROOF
     if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256') or digest(proof_path)['sha256']!=plan['receipt_sha256']:
@@ -223,28 +198,11 @@ def publish(args,client=None):
         current_release=client.release()
         recovery=recovery_assets(current_release,args.version)
         recovery.update(actual)
-    state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery)
+    state=repair(client,ordered,journal,expected_snapshot=expected_snapshot,preserved_assets=recovery,expected_draft=created)
     if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
     if plan['operation'] in ('create','resume'):
         current_producer(current,os.environ['GITHUB_SHA'])
-        verify_new_release(client.release(),created,ordered,True)
-        creation.state['phase']='finalizing';creation.save()
-        try:
-            client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
-                       '-F','draft=false','-f','make_latest=legacy')
-            verify_new_release(client.release(),created,ordered,False)
-        except Exception:
-            # A failed HTTP response may follow a successful write. Restore this
-            # exact owned release to draft rather than assuming PATCH did nothing.
-            try:
-                client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}','-F','draft=true')
-                restored=json.loads(client.run('api',f'repos/{client.repo}/releases/{created["id"]}'))
-                if restored.get('id')!=created['id'] or restored.get('draft') is not True:raise ValueError('Draft recovery readback failed')
-                creation.state['phase']='returned_to_draft';creation.save()
-            except Exception as recovery_error:
-                creation.state.update(phase='recovery_required',recovery_error=str(recovery_error));creation.save()
-            raise
-        creation.state['phase']='complete';creation.save()
+        finalize_release(client,created,ordered,creation)
     return 'published'
 
 

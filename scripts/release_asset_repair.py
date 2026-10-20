@@ -59,6 +59,63 @@ class Journal:
             json.dump(self.state,stream,indent=2);stream.write('\n');stream.flush();os.fsync(stream.fileno())
         temporary.replace(self.path)
 
+def optional_release(client):
+    try:return client.release()
+    except subprocess.CalledProcessError as error:
+        # A tag lookup excludes drafts. Only an explicit not-found permits
+        # draft discovery; transport and permission errors must not create one.
+        if error.returncode==1 and '(HTTP 404)' in (error.stderr or ''):
+            drafts=client.drafts()
+            if len(drafts)>1:raise ValueError('Multiple matching release drafts require recovery review')
+            return drafts[0] if drafts else None
+        raise
+
+def require_owned_draft(release,client):
+    author=release.get('author') or {}
+    if (type(release.get('id')) is not int or release['id']<=0 or
+        release.get('draft') is not True or release.get('tag_name')!=client.tag or
+        release.get('name')!=client.tag or release.get('prerelease') is not ('-' in client.tag) or
+        (release.get('body') or '')!='' or
+        {key:author.get(key) for key in ('id','login','type')}!=
+            {'id':41898282,'login':'github-actions[bot]','type':'Bot'}):
+        raise ValueError('Only an owned automatic release draft can be recovered')
+
+def verify_new_release(release,created,files,draft):
+    if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
+        release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
+        raise ValueError('Created release identity or visibility changed')
+    if any(release.get(key)!=created.get(key) for key in ('name','target_commitish','prerelease','author')):
+        raise ValueError('Created release metadata changed')
+    expected={p.name:digest(p) for p in files}
+    assets=release.get('assets',[])
+    if len(assets)!=len(expected) or {a['name'] for a in assets}!=set(expected):
+        raise ValueError('Created release canonical inventory changed')
+    for asset in assets:
+        facts=expected[asset['name']]
+        if asset.get('digest')!='sha256:'+facts['sha256'] or asset.get('size')!=facts['bytes']:
+            raise ValueError('Created release canonical bytes changed')
+
+def finalize_release(client,created,files,creation):
+    """Publish one verified owned draft, retaining its exact ID on recovery."""
+    verify_new_release(client.release(),created,files,True)
+    creation.state['phase']='finalizing';creation.save()
+    try:
+        client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
+                   '-F','draft=false','-f','make_latest=legacy')
+        verify_new_release(client.release(),created,files,False)
+    except Exception:
+        # A failed response can follow an applied publication. Return only the
+        # exact owned release to draft; never infer that the PATCH did nothing.
+        try:
+            client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}','-F','draft=true')
+            restored=json.loads(client.run('api',f'repos/{client.repo}/releases/{created["id"]}'))
+            if restored.get('id')!=created['id'] or restored.get('draft') is not True:raise ValueError('Draft recovery readback failed')
+            creation.state['phase']='returned_to_draft';creation.save()
+        except Exception as recovery_error:
+            creation.state.update(phase='recovery_required',recovery_error=str(recovery_error));creation.save()
+        raise
+    creation.state['phase']='complete';creation.save()
+
 def check_asset_names(assets,expected,extra=()):
     names=[a['name'] for a in assets]
     if len(names)!=len(set(names)):raise ValueError('Duplicate remote asset names')
@@ -75,17 +132,25 @@ def release_snapshot(release):
             'body':release.get('body') or '',
             'assets':sorted([{'id':a['id'],'name':a['name'],'size':a['size'],'digest':a.get('digest')} for a in release['assets']],key=lambda a:a['id'])}
 
+def draft_metadata(release):
+    return {**{key:release.get(key) for key in ('id','tag_name','draft','name','target_commitish','prerelease')},
+            'body':release.get('body') or '',
+            'author_id':(release.get('author') or {}).get('id')}
 
-def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, preserved_assets=None):
+def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, preserved_assets=None, expected_draft=None):
     before=client.release()
     if expected_snapshot is not None and release_snapshot(before)!=expected_snapshot:
         raise ValueError('Release changed before the bound repair transaction')
+    if expected_draft is not None and draft_metadata(before)!=draft_metadata(expected_draft):
+        raise ValueError('Draft release metadata changed before the bound repair transaction')
     assets={a['name']:a for a in before['assets']}
     if len(assets)!=len(before['assets']):raise ValueError('Duplicate remote asset names')
     expected={p.name:digest(p) for p in files}
     if len(expected)!=len(files):raise ValueError('Duplicate local publication filenames')
     if set(retire) & set(expected) or len(set(retire)) != len(retire):raise ValueError('Invalid retired artifact names')
     allowed=set(expected)|set(retire)
+    if before.get('draft') is True and set(assets)-set(expected):
+        raise ValueError('Draft recovery accepts only the selected validated package files')
     preserved_assets=preserved_assets or {}
     if set(preserved_assets)&allowed:raise ValueError('Preserved recovery inventory overlaps canonical mutation')
     for name,asset in preserved_assets.items():
@@ -94,15 +159,14 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
     state={'repo':client.repo,'tag':client.tag,'phase':'preflight','conflicts':[],'uploads':[]}
     journal=Journal(journal_path,state)
     known={name:asset_identity(asset) for name,asset in assets.items()}
-    def draft_metadata(release):
-        return {**{key:release.get(key) for key in ('id','tag_name','draft','name','target_commitish','prerelease')},
-                'body':release.get('body') or '',
-                'author_id':(release.get('author') or {}).get('id')}
-    expected_draft=draft_metadata(before) if before.get('draft') is True else None
+    draft_baseline=draft_metadata(expected_draft or before) if before.get('draft') is True else None
+    identity={key:before.get(key) for key in ('id','tag_name','draft')}
     def inventory():
         release=client.release()
-        if expected_draft is not None and draft_metadata(release)!=expected_draft:
+        if draft_baseline is not None and draft_metadata(release)!=draft_baseline:
             raise ValueError('Draft release metadata changed during publication')
+        if any(release.get(key)!=value for key,value in identity.items()):
+            raise ValueError('Release identity or visibility changed during publication')
         rows=release['assets']
         result={a['name']:asset_identity(a) for a in rows}
         if len(result)!=len(rows):raise ValueError('Duplicate remote asset names')
@@ -115,11 +179,13 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
                 old=assets.get(name)
                 if old is None:continue
                 old_sha=old.get('digest')
-                if not old_sha:
+                if not old_sha or draft_baseline is not None:
                     readback=temp/str(old['id']);readback.mkdir()
                     client.download_asset(old,readback)
                     facts=digest(readback/name)
                     if facts['bytes']!=old['size']:raise ValueError('Original asset failed readback verification')
+                    if old_sha and old_sha!='sha256:'+facts['sha256']:
+                        raise ValueError('Existing draft asset differs from its server digest')
                     old_sha='sha256:'+facts['sha256']
                     (readback/name).unlink()
                 replacement=expected.get(name)

@@ -111,9 +111,15 @@ do not replace real builds or installed-service runtime tests on each target.
 
 ## CI and publication
 
-GitHub Actions runs regression tests, builds the requested matrix and preserves
-verified pipeline artifacts. Normal scheduled runs, version-tag pushes and
-non-candidate manual `build` runs then prepare and publish a canonical release.
+GitHub Actions runs regression tests and selects integration work from the PR
+diff. Documentation, Python unit tests and the explicit publication-only script
+list do not trigger seven architecture builds; unknown, build, input or workflow
+changes do. Manual `build-only` remains available for a full integration run.
+Version-tag pushes and non-candidate manual `build` runs build the requested
+matrix, preserve verified artifacts and publish a canonical release.
+Scheduled runs first discover the channel version and validate its actual public
+packages. A complete requested matrix skips compilation; a missing release or
+missing architecture still builds. Corrupt packages or API errors stop the check.
 `validate-automatic` exercises the same preparation and publication plan without
 enabling a writer. It is an optional validation mode, not a required step for new
 versions. Existing tags/releases do not suppress validation.
@@ -127,13 +133,14 @@ every requested architecture, its exact producer attempt/job identity, and its
 terminal result. Replay requires a complete exact-attempt job inventory; if a
 failed-only retry omits inherited successful jobs, rerun the full workflow. Shared source/preparation/validation failures block all dependent
 artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs,
-warnings and summaries, never Release notes. A failed branch's previous canonical
-assets are moved to recoverable backup names during an explicitly selected repair;
-checksum/receipt updates include only validated successful payloads.
+warnings and summaries, never Release notes. Existing canonical assets are not
+renamed, deleted or replaced. Conflicting bytes or requested retirement stop for
+specific review before any upload.
 An explicit `publish_candidate` dispatch creates a **new draft** tag/release,
 downloads its assets again and verifies exact byte identity. It never overwrites
-public release assets. Explicit historical replacement retains the backed-up
-`promote-existing` path. Normal new releases are staged as owned drafts, fully
+public release assets. `promote-existing` consumes an explicitly selected verified
+CI artifact and fills missing assets without replacing existing bytes.
+Normal new releases are staged as owned drafts, fully
 read back, then made public. A failed finalization leaves recovery evidence and
 attempts to return that exact release to draft. No publication failure warning is
 added to the Release body.
@@ -143,7 +150,11 @@ Release ID. A retry can reuse a single empty draft created by GitHub Actions for
 the same version on this build's commit ancestry; the draft target is updated to
 the verified build commit before upload. Multiple drafts, existing draft assets,
 changed notes or a different author require recovery review instead of creating
-another draft or replacing anything.
+another draft or replacing anything. A nonempty owned draft can be recovered
+through `promote-existing` using the exact original CI artifact, ZIP digest and
+built commit; every existing draft asset must match and pass downloaded-byte
+verification before finalization. A run with successful build gates and only a
+known publication-writer failure can supply that artifact without another build.
 
 Automatic reruns can append newly successful missing architectures while keeping
 existing verified archives unchanged. Public consumption trusts the canonical
@@ -155,8 +166,8 @@ package and its checksum. CI producer checks still run before publication.
 Changed source/toolchain/lock contracts require explicit repair. A fully verified
 unchanged release is a no-op after current validators check its complete requested
 inventory and stable remote asset snapshot. Legacy packages can still use their
-existing source-control assets during migration. Explicit format migration renames old public controls to recoverable backups.
-All backups remain until separately approved cleanup; publication never deletes them.
+existing source-control assets during migration. Existing controls and backups
+remain until separately reviewed cleanup; publication never deletes them.
 
 Scheduled builds discover the official channel version and immediately pin its
 immutable inputs. GitHub Actions has one maintained workflow, `build-offline`:

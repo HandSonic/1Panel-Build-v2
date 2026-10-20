@@ -13,9 +13,6 @@ class CIContract(unittest.TestCase):
  def test_shell_syntax(self):
   for n in ['Resolve immutable build inputs','Prepare pinned source and frontend once','Verify shared source before use','Build and validate every requested architecture','Independently validate and aggregate all architecture shards','Stage a new draft candidate and verify downloaded bytes']:
    r=subprocess.run(['bash','-n'],input=github_block(n),text=True,capture_output=True);self.assertEqual(r.returncode,0,(n,r.stderr))
- def test_no_release_existence_build_skip_or_force(self):
-  s=(ROOT/'.github/workflows/build.yml').read_text();self.assertNotIn('build=0',s);self.assertNotIn('git push',s);self.assertNotIn('--clobber',s)
-  self.assertIn('--draft',s);self.assertNotIn('--draft=false',s)
  def test_cnb_trigger_inputs_and_runtime(self):
   s=(ROOT/'.cnb.yml').read_text();self.assertIn('CNB_IS_TAG',s);self.assertIn('CNB_BRANCH',s);self.assertIn('apk add --no-cache bash python3',s)
   self.assertNotIn('SKIP_BUILD',s);self.assertNotIn('git push',s);self.assertNotIn('overlying: true',s)
