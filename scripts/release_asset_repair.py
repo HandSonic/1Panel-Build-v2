@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import hashlib
+from urllib.parse import quote
 
 def digest(path):
     h=hashlib.sha256()
@@ -15,11 +16,36 @@ def digest(path):
     return {"bytes":Path(path).stat().st_size,"sha256":h.hexdigest()}
 
 class GitHub:
-    def __init__(self, repo, tag):self.repo=repo;self.tag=tag
+    def __init__(self, repo, tag, release_id=None):
+        self.repo=repo;self.tag=tag;self.release_id=None
+        if release_id is not None:self.bind_release(release_id)
+    def bind_release(self,release_id):
+        if type(release_id) is not int or release_id<=0:raise ValueError('Invalid bound release ID')
+        self.release_id=release_id
     def run(self,*args):return subprocess.run(['gh',*args],check=True,text=True,capture_output=True).stdout
-    def release(self):return json.loads(self.run('api',f'repos/{self.repo}/releases/tags/{self.tag}'))
-    def upload(self,path):self.run('release','upload',self.tag,str(path),'--repo',self.repo)
-    def download(self,name,directory):self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
+    def release(self):
+        endpoint=f'repos/{self.repo}/releases/'+(str(self.release_id) if self.release_id is not None else f'tags/{self.tag}')
+        release=json.loads(self.run('api',endpoint))
+        if self.release_id is not None and (release.get('id')!=self.release_id or release.get('tag_name')!=self.tag):
+            raise ValueError('Bound release identity changed')
+        return release
+    def drafts(self):
+        found=[]
+        for page in range(1,101):
+            rows=json.loads(self.run('api',f'repos/{self.repo}/releases?per_page=100&page={page}'))
+            if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows):raise ValueError('Invalid release inventory')
+            found.extend(row for row in rows if row.get('tag_name')==self.tag and row.get('draft') is True)
+            if len(rows)<100:return found
+        raise ValueError('Excessive release inventory')
+    def upload(self,path):
+        if self.release_id is None:return self.run('release','upload',self.tag,str(path),'--repo',self.repo)
+        endpoint=f'https://uploads.github.com/repos/{self.repo}/releases/{self.release_id}/assets?name={quote(Path(path).name,safe="")}'
+        self.run('api','--method','POST',endpoint,'-H','Content-Type: application/octet-stream','--input',str(path))
+    def download(self,name,directory):
+        if self.release_id is None:return self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
+        matches=[asset for asset in self.release()['assets'] if asset['name']==name]
+        if len(matches)!=1:raise ValueError('Bound release asset is missing or ambiguous')
+        self.download_asset(matches[0],directory)
     def download_asset(self,asset,directory):
         with (Path(directory)/asset['name']).open('wb') as stream:
             subprocess.run(['gh','api',f"repos/{self.repo}/releases/assets/{asset['id']}",'-H','Accept: application/octet-stream'],check=True,stdout=stream)
@@ -68,8 +94,16 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
     state={'repo':client.repo,'tag':client.tag,'phase':'preflight','conflicts':[],'uploads':[]}
     journal=Journal(journal_path,state)
     known={name:asset_identity(asset) for name,asset in assets.items()}
+    def draft_metadata(release):
+        return {**{key:release.get(key) for key in ('id','tag_name','draft','name','target_commitish','prerelease')},
+                'body':release.get('body') or '',
+                'author_id':(release.get('author') or {}).get('id')}
+    expected_draft=draft_metadata(before) if before.get('draft') is True else None
     def inventory():
-        rows=client.release()['assets']
+        release=client.release()
+        if expected_draft is not None and draft_metadata(release)!=expected_draft:
+            raise ValueError('Draft release metadata changed during publication')
+        rows=release['assets']
         result={a['name']:asset_identity(a) for a in rows}
         if len(result)!=len(rows):raise ValueError('Duplicate remote asset names')
         return result
