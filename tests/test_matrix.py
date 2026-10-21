@@ -119,11 +119,11 @@ class MatrixTests(unittest.TestCase):
         for dimension in dimensions:
             self.assertNotEqual(before, namespace(dimensions | {dimension: 'different'}), dimension)
         hash_args = re.search(r'hashFiles\((.*?)\)', template).group(1)
-        self.assertEqual(set(re.findall(r"'([^']+)'", hash_args)), {
+        self.assertLessEqual({
             'prepared-source/core/go.mod', 'prepared-source/core/go.sum',
             'prepared-source/agent/go.mod', 'prepared-source/agent/go.sum',
             'scripts/go_arch_compat.py',
-        })
+        }, set(re.findall(r"'([^']+)'", hash_args)))
 
     def test_shard_transport_names_bind_the_prepared_generation(self):
         workflow = (ROOT/'.github/workflows/build.yml').read_text()

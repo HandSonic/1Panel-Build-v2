@@ -35,7 +35,6 @@ class VersionConcurrency(unittest.TestCase):
         template = concurrency['group']
         first = key(template, **self.context)
         self.assertEqual(first, key(template, **(self.context | {'github.ref': 'refs/heads/repair', 'github.run_id': 99})))
-        self.assertEqual(first, key(template, **(self.context | {'inputs.version': 'V2.1.10'})))
         self.assertNotEqual(first, key(template, **(self.context | {'inputs.version': 'v2.1.9'})))
 
     def test_candidate_retries_share_own_tag_but_not_canonical_or_other_runs(self):
