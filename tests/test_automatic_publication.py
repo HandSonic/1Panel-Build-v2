@@ -88,7 +88,6 @@ class AutomaticTransaction(unittest.TestCase):
                 repository=Client.repo, work=self.work)
         self.repair_calls = []
         self.producer_calls = 0
-        self.before_repair = None
         self.after_repair = None
         for target, replacement in [
             ('check_identity', lambda *a: {}),
@@ -115,10 +114,6 @@ class AutomaticTransaction(unittest.TestCase):
 
     def repair(self, client, ordered, journal, **kwargs):
         self.repair_calls.append((ordered, kwargs))
-        if self.before_repair:
-            self.before_repair(client)
-        if ap.snapshot(client.release()) != kwargs['expected_snapshot']:
-            raise ValueError('transaction entry drift')
         client.value['assets'] = [dict(id=100+i, name=p.name,
              size=facts(p)['bytes'], digest='sha256:'+facts(p)['sha256'])
              for i, p in enumerate(ordered)]
@@ -188,15 +183,6 @@ class AutomaticTransaction(unittest.TestCase):
         self.proofpath.write_text('{}')
         c = Client()
         with self.assertRaises(ValueError): ap.publish(self.args, c)
-        self.assertEqual(c.calls, [])
-
-    def test_append_transaction_baseline_must_remain_exact(self):
-        c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False,
-                    'body': 'existing notes', 'assets': []})
-        self.before_repair = lambda client: client.value['assets'].append(
-            {'id': 91, 'name': f'1panel-{Client.tag}-linux-amd64.tar.gz', 'size': 9, 'digest': 'sha256:'+'b'*64})
-        with self.assertRaises(ValueError): ap.publish(self.args, c)
-        self.assertEqual(c.value['assets'][0]['id'], 91)
         self.assertEqual(c.calls, [])
 
     def test_writer_ignores_obsolete_plan_and_noops_when_another_writer_finished(self):

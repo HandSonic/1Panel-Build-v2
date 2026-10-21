@@ -35,25 +35,16 @@ class ScheduledPublication(unittest.TestCase):
              EXPECTED_VALIDATION_RECEIPT_SHA256=automatic_tests.facts(proof)['sha256']):
             return automatic.publish(self.args,remote)
 
-    def test_normal_writer_uses_only_existing_metadata(self):
-        self.payload(self.source,('arm64',),11,'b'*40)
-        remote,_=self.remote()
-        # Older release assets can predate GitHub's digest field. Daily gap
-        # checks still need no historical package downloads or source controls.
-        for asset in remote.releases[8]['assets']:asset.pop('digest')
-        before=copy.deepcopy(remote.releases[8]['assets'])
-        self.prepare(event='workflow_dispatch')
-        with patch.object(remote,'download',side_effect=AssertionError('Existing package download is forbidden')),\
-             patch.object(remote,'download_asset',side_effect=AssertionError('Existing asset download is forbidden')):
-            self.assertEqual(self.publish(remote,event='workflow_dispatch'),'published')
-        after={asset['id']:asset for asset in remote.releases[8]['assets']}
-        for asset in before:self.assertEqual(after[asset['id']],asset)
-
     def test_schedule_append_transfers_only_new_successful_architecture(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        remote,_=self.remote();before=copy.deepcopy(remote.releases[8]['assets'])
+        remote,_=self.remote()
+        # Existing pairs need no historical digest or package download.
+        for asset in remote.releases[8]['assets']:asset.pop('digest')
+        before=copy.deepcopy(remote.releases[8]['assets'])
         self.prepare()
-        self.assertEqual(self.publish(remote),'published')
+        with patch.object(remote,'download',side_effect=AssertionError('Existing package download is forbidden')),\
+             patch.object(remote,'download_asset',side_effect=AssertionError('Existing asset download is forbidden')):
+            self.assertEqual(self.publish(remote),'published')
         new_names={f'1panel-{remote.tag}-linux-arm64.tar.gz'+suffix for suffix in ('','.sha256')}
         self.assertEqual({name for _,name in remote.uploads},new_names)
         self.assertTrue(all(release_id==8 for release_id,_ in remote.uploads))

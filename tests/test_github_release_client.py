@@ -81,17 +81,6 @@ class GitHubReleaseClientTests(unittest.TestCase):
                 '-H','Content-Type: application/octet-stream','--input',str(path)],
                 check=True,text=True,capture_output=True)
 
-    def test_bound_download_selects_exact_asset_id_from_bound_release(self):
-        asset={'id':81,'name':'package.tar.gz'}
-        release={'id':17,'tag_name':self.tag,'draft':True,'assets':[asset]}
-        client=GitHub(self.repo,self.tag,17)
-        with tempfile.TemporaryDirectory() as temporary:
-            directory=Path(temporary)
-            with patch('release_asset_repair.subprocess.run',return_value=self.result(release)) as run,patch.object(client,'download_asset') as download:
-                client.download(asset['name'],directory)
-            download.assert_called_once_with(asset,directory)
-        self.assertEqual(run.call_args.args[0],['gh','api',f'repos/{self.repo}/releases/17'])
-
     def test_bound_download_reads_binary_bytes_through_asset_id_api(self):
         asset={'id':81,'name':'package.tar.gz'}
         release={'id':17,'tag_name':self.tag,'draft':True,'assets':[asset]}

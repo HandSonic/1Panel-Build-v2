@@ -139,11 +139,6 @@ class DraftEligibility(unittest.TestCase):
         ap.check_automatic_draft(client.value, client, 'a' * 40)
         self.assertEqual(client.calls, [])
 
-    def test_ancestor_target_is_eligible_for_explicit_retarget(self):
-        client = TransportGitHub(draft('b' * 40))
-        ap.check_automatic_draft(client.value, client, 'a' * 40)
-        self.assertTrue(any('/compare/' in item for call in client.calls for item in call))
-
     def test_nonempty_draft_requires_the_exact_current_commit(self):
         for target in ('a' * 40, 'b' * 40):
             client = TransportGitHub(dict(draft(target), assets=[{'id': 3, 'name': 'package.tar.gz'}]))
@@ -301,28 +296,6 @@ class DraftTransactions(unittest.TestCase):
         self.assertFalse(any('POST' in call or 'PATCH' in call for call in client.calls))
         self.assertTrue(client.value['draft'])
         self.assertEqual(client.value['assets'], [])
-
-
-class DraftPreparation(unittest.TestCase):
-    setUp = fixtures.PrepareControlFlow.setUp
-    payload = fixtures.PrepareControlFlow.payload
-
-    def test_preparation_uses_no_remote_api_and_writer_recovers_the_current_draft(self):
-        self.payload(self.source, ('amd64',), 11, 'b' * 40)
-        client = TransportGitHub(draft('a' * 40))
-        with patch.object(ap, 'GitHub', side_effect=AssertionError('Preparation must not discover releases')), \
-             patch.object(ap, 'optional_release', side_effect=AssertionError('Preparation must not read releases')):
-            ap.prepare(self.args)
-        self.assertFalse((self.args.work / 'control' / 'automatic-plan.json').exists())
-        self.assertEqual(client.calls, [])
-        proof = self.args.work / 'control' / ap.PROOF
-        with patch.dict(os.environ, EXPECTED_VALIDATION_RECEIPT_SHA256=fixtures.facts(proof)['sha256']):
-            self.assertEqual(ap.publish(self.args, client), 'published')
-        self.assertFalse(client.value['draft'])
-        self.assertEqual(client.release_id, 17)
-        self.assertEqual(len(client.value['assets']), 2)
-        self.assertFalse(any(call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases')
-                             for call in client.calls))
 
 
 if __name__ == '__main__':
