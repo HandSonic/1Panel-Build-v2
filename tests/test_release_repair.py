@@ -12,14 +12,16 @@ class FakeGitHub:
     repo='owner/repo';tag='v2.3.2'
     def __init__(self):
         self.assets={1:('package.tar.gz',b'old archive'),2:('checksums.txt',b'old checksum')}
-        self.body='old release notes';self.calls=[]
+        self.body='old release notes';self.calls=[];self.downloads=[]
     def release(self):return {'body':self.body,'assets':[{'id':i,'name':n,'size':len(b),'digest':'sha256:'+hashlib.sha256(b).hexdigest()} for i,(n,b) in self.assets.items()]}
     def bind_release(self,release_id):self.release_id=release_id
     def upload(self,path):self.assets[max(self.assets)+1]=(path.name,path.read_bytes());self.calls.append(('upload',path.name))
     def download(self,name,directory):
+        self.downloads.append(('name',name))
         data=next(b for n,b in self.assets.values() if n==name)
         (directory/name).write_bytes(data)
     def download_asset(self,asset,directory):
+        self.downloads.append(('id',asset['id']))
         (directory/asset['name']).write_bytes(self.assets[asset['id']][1])
 
 class RepairTests(unittest.TestCase):
@@ -54,6 +56,7 @@ class RepairTests(unittest.TestCase):
                 client.release=missing_digest
             self.assertEqual(repair(client,files,journal)['phase'],'complete')
             self.assertEqual(client.calls,[])
+            self.assertCountEqual(client.downloads,[('id',1),('id',2)] if legacy else [])
             self.assertEqual(client.body,'old release notes')
 
     def test_legacy_readback_is_pinned_to_asset_id_during_name_reuse(self):
@@ -98,6 +101,7 @@ class RepairTests(unittest.TestCase):
         new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.append(new)
         self.assertEqual(repair(client,files,journal)['phase'],'complete')
         self.assertEqual(client.calls,[('upload','new.tar.gz')])
+        self.assertEqual(client.downloads,[])
         for key in before:self.assertEqual(client.assets[key],before[key])
         self.assertEqual(client.assets[3],('new.tar.gz',b'new'))
 
@@ -116,12 +120,23 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(client.calls,[('upload','new.tar.gz'),('upload','new.tar.gz.sha256')])
         for key in before:self.assertEqual(client.assets[key],before[key])
 
-    def test_bad_readback_stops_without_mutating_old_assets(self):
-        client,files,journal=self.fixture();before=copy.deepcopy(client.assets)
-        new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.append(new)
-        client.download=lambda name,directory:(directory/name).write_bytes(b'bad')
-        with self.assertRaisesRegex(ValueError,'download verification'):repair(client,files,journal)
-        for key in before:self.assertEqual(client.assets[key],before[key])
+    def test_uploaded_server_digest_or_size_mismatch_stops_without_mutating_old_assets(self):
+        for field,value in (('digest','sha256:'+'f'*64),('size',99)):
+            with self.subTest(field=field):
+                client,files,journal=self.fixture();before=copy.deepcopy(client.assets)
+                new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.append(new)
+                release=client.release
+                def mismatched_metadata():
+                    result=release()
+                    for asset in result['assets']:
+                        if asset['name']==new.name:asset[field]=value
+                    return result
+                client.release=mismatched_metadata
+                with self.assertRaisesRegex(ValueError,'server digest/size mismatch'):
+                    repair(client,files,journal)
+                for key in before:self.assertEqual(client.assets[key],before[key])
+                self.assertEqual(client.downloads,[])
+                self.assertEqual(json.loads(journal.read_text())['phase'],'incomplete')
 
     def test_concurrent_change_and_unknown_names_fail_closed(self):
         for race in (False,True):

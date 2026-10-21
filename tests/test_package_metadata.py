@@ -31,7 +31,6 @@ class PackageMetadata(unittest.TestCase):
     def test_normal_tar_metadata_roundtrip_and_public_file_filter(self):
         path=self.archive();manifest,files=pm.read(path,'v2.99.0','amd64')
         self.assertEqual(files,{'resolved-source.json':self.raw});self.assertEqual(manifest,self.manifest)
-        pp.require_embedded([path],'v2.99.0')
         self.assertEqual(pp.package_files([path,Path(str(path)+'.sha256'),self.root/'checksums.txt']),[path,Path(str(path)+'.sha256')])
     def test_bad_metadata_never_falls_back(self):
         for kwargs in ({'mode':0o755},{'raw':b'{}'},{'marker':False}):
@@ -41,12 +40,12 @@ class PackageMetadata(unittest.TestCase):
         stage=self.root/'stage';stage.mkdir()
         pm.install(stage,config,dict(version='v2.99.0',mode='stable',resolved_contract_sha256=hashlib.sha256(self.raw).hexdigest()))
         path=stage/'build-metadata/resolved-source.json';self.assertEqual(path.read_bytes(),self.raw);self.assertFalse(path.stat().st_mode & 0o111)
-    def test_public_inventory_preserves_old_controls_and_backups_not_unknown(self):
+    def test_public_inventory_preserves_old_controls_backups_and_other_attachments(self):
         names=['1panel-v2.99.0-linux-amd64.tar.gz','1panel-v2.99.0-linux-amd64.tar.gz.sha256','build-manifest.json','build-manifest.json.backup-123456789abc']
         release={'draft':False,'tag_name':'v2.99.0','assets':[{'name':n} for n in names]}
-        self.assertEqual(set(pp.inventory(release,'v2.99.0')),{'amd64'})
+        self.assertEqual(set(pp.metadata_inventory(release,'v2.99.0')[0]),{'amd64'})
         release['assets'].append({'name':'unrelated'})
-        with self.assertRaises(ValueError):pp.inventory(release,'v2.99.0')
+        self.assertEqual(set(pp.metadata_inventory(release,'v2.99.0')[0]),{'amd64'})
     def test_control_removal_requires_confirmation_without_creating_backup(self):
         from test_release_repair import FakeGitHub
         from release_asset_repair import repair

@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def key(template, **values):
-    return re.sub(r'\$\{\{\s*([\w.]+)\s*\}\}', lambda m: str(values[m[1]]), template).lower()
+    return re.sub(r'\$\{\{\s*([\w.]+(?:\s*\|\|\s*[\w.]+)?)\s*\}\}',
+                  lambda m: str(next((values.get(name.strip()) for name in m[1].split('||')
+                                      if values.get(name.strip())), '')), template).lower()
 
 
 class VersionConcurrency(unittest.TestCase):
@@ -65,3 +67,6 @@ class VersionConcurrency(unittest.TestCase):
         auto_key = key(auto['concurrency']['group'], **context)
         repair_key = key(self.jobs['publication_repair']['concurrency']['group'], **context)
         self.assertEqual(auto_key, repair_key)
+        checksum_context = context | {'needs.publication_prepare.outputs.version': '',
+                                      'needs.check_update.outputs.version': 'v2.1.10'}
+        self.assertEqual(key(auto['concurrency']['group'], **checksum_context), repair_key)

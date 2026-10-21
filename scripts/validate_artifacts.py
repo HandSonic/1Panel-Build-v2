@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate release bytes without executing packaged binaries or installer scripts."""
-import gzip,hashlib,json,pathlib,re,struct,sys,tarfile
+import argparse,gzip,hashlib,json,pathlib,re,struct,tarfile
 from resolve_inputs import resolve
 from embedded_configuration import validate_binary
 from installer_resources import service_copies, resource_layout, validate_root_interface
@@ -39,7 +39,7 @@ def validate_elf(data, arch):
     if not executable_entry:
         raise ValueError('ELF entry point is not in an executable load segment')
 
-def validate_package(path, version, arch):
+def validate_package(path, version, arch, *, require_embedded=False):
     entry=resolve(version); root=f'1panel-{version}-linux-{arch}'
     from package_metadata import DIRECTORY, _read_members
     from automatic_frontend_lock import MAX_LOCK
@@ -64,7 +64,9 @@ def validate_package(path, version, arch):
         # tar stops at its end marker. Drain this same gzip stream so its CRC
         # and trailer remain checked without decompressing the archive again.
         while stream.read(1024*1024):pass
-    _read_members(members,lambda member:data[str(pathlib.PurePosixPath(member.name).relative_to(root))],version,arch)
+    embedded=_read_members(members,lambda member:data[str(pathlib.PurePosixPath(member.name).relative_to(root))],version,arch)
+    if require_embedded and embedded is None:
+        raise ValueError('Package-only publication requires embedded build inputs')
     if not required<=data.keys(): raise ValueError(f'Missing files: {required-data.keys()}')
     manifest=json.loads(data.pop('manifest.json'))
     expected={'schema_version':1,'version':version,'architecture':arch,'edition':'community','source_commit':entry['source_commit'],'installer_commit':entry['installer_commit'],'mode':entry['mode'],'go_version':entry['go_version'],'node_version':entry['node_version'],'npm_version':entry['npm_version']}
@@ -92,13 +94,13 @@ def validate_package(path, version, arch):
         if data[target] != data[source]: raise ValueError('Service copy mismatch')
     return manifest
 
-def validate_dist(dist,version,arches):
+def validate_dist(dist,version,arches, *, require_embedded=False):
     expected=set(); records=[]
     for arch in arches:
         name=f'1panel-{version}-linux-{arch}.tar.gz'; expected|={name,name+'.sha256'}
         path=dist/name; digest=hashlib.sha256(path.read_bytes()).hexdigest()
         if (dist/(name+'.sha256')).read_text()!=f'{digest}  {name}\n': raise ValueError('Checksum must match bytes and relative basename')
-        manifest=validate_package(path,version,arch)
+        manifest=validate_package(path,version,arch,require_embedded=require_embedded)
         records.append({'architecture':arch,'file':name,'sha256':digest,'size':path.stat().st_size,'source_commit':manifest['source_commit'],'installer_commit':manifest['installer_commit'],'build_repository_commit':manifest['build_repository_commit']})
     entry=resolve(version)
     if entry.get('resolved_contract_sha256'):
@@ -131,5 +133,11 @@ def validate_dist(dist,version,arches):
         raise ValueError('Release manifest mismatch')
     return records
 if __name__=='__main__':
-    validate_dist(pathlib.Path(sys.argv[1]),sys.argv[2],architectures(' '.join(sys.argv[3:])))
+    parser=argparse.ArgumentParser()
+    parser.add_argument('directory',type=pathlib.Path)
+    parser.add_argument('version')
+    parser.add_argument('architectures',nargs='+')
+    parser.add_argument('--require-embedded',action='store_true')
+    args=parser.parse_args()
+    validate_dist(args.directory,args.version,architectures(' '.join(args.architectures)),require_embedded=args.require_embedded)
     print('All requested artifacts verified')

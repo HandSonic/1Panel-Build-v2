@@ -145,6 +145,49 @@ class Compat(unittest.TestCase):
         self.assertEqual(list(self.root.glob('.sqlite-compat-*')), [])
         self.assertEqual((self.root / 'go.mod').read_text(), 'module fixture\ngo 1.23\n')
 
+    def test_unchanged_sqlite_graph_runs_one_smoke_per_engine(self):
+        import io
+        from contextlib import redirect_stdout
+        import verify_go_sqlite_compat as smoke
+        graph = self.graph() + '\n' + '\n'.join(json.dumps({'Path': name}) for name in (
+            'github.com/glebarez/sqlite', 'github.com/glebarez/go-sqlite', 'gorm.io/gorm'))
+        for qemu in (None, 'qemu-loongarch64'):
+            with self.subTest(qemu=qemu), patch.object(smoke, 'run', return_value=graph), patch.object(smoke, 'command') as command, patch.object(smoke, 'module_for_arch') as overlay, redirect_stdout(io.StringIO()):
+                overlay.return_value.__enter__.return_value = None
+                smoke.verify(self.root, qemu)
+                calls = command.call_args_list
+                self.assertEqual(len(calls), 3 if qemu else 2)
+                self.assertIn('-c', calls[0].args[0])
+                self.assertEqual(calls[0].args[2]['GOARCH'], 'loong64')
+                self.assertEqual(calls[1].args[0][:2], ['go', 'test'])
+                self.assertEqual(calls[1].args[2]['SQLITE_COMPAT_PHASE'], 'baseline')
+                if qemu:
+                    self.assertEqual(calls[2].args[0][0], qemu)
+                    self.assertEqual(calls[2].args[2]['SQLITE_COMPAT_PHASE'], 'baseline')
+                    self.assertNotEqual(calls[1].args[2]['SQLITE_COMPAT_DB'], calls[2].args[2]['SQLITE_COMPAT_DB'])
+            self.assertEqual(list(self.root.glob('.sqlite-compat-*')), [])
+
+    def test_sqlite_overlay_keeps_upgrade_and_rollback_sequences(self):
+        import io
+        from contextlib import redirect_stdout
+        import verify_go_sqlite_compat as smoke
+        graph = self.graph() + '\n' + '\n'.join(json.dumps({'Path': name}) for name in (
+            'github.com/glebarez/sqlite', 'github.com/glebarez/go-sqlite', 'gorm.io/gorm'))
+        selected = self.root / 'overlay.mod'
+        with patch.object(smoke, 'run', return_value=graph), patch.object(smoke, 'command') as command, patch.object(smoke, 'module_for_arch') as overlay, redirect_stdout(io.StringIO()):
+            overlay.return_value.__enter__.return_value = selected
+            smoke.verify(self.root, 'qemu-loongarch64')
+        calls = command.call_args_list
+        self.assertEqual(len(calls), 7)
+        self.assertIn('-modfile=' + str(selected), calls[0].args[0])
+        self.assertEqual([call.args[2]['SQLITE_COMPAT_PHASE'] for call in calls[1:]],
+                         ['baseline', 'upgrade', 'rollback'] * 2)
+        self.assertEqual(calls[5].args[0][0], 'qemu-loongarch64')
+        self.assertIn('-modfile=' + str(selected), calls[2].args[0])
+        for index in (1, 3, 4, 6):
+            self.assertTrue(any(arg.endswith('/original.mod') for arg in calls[index].args[0]))
+        self.assertEqual(list(self.root.glob('.sqlite-compat-*')), [])
+
 
 class WorkflowIntegration(unittest.TestCase):
     def test_loong64_requires_runtime_smoke_before_packaging(self):

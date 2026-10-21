@@ -80,7 +80,7 @@ def require_owned_draft(release,client):
             {'id':41898282,'login':'github-actions[bot]','type':'Bot'}):
         raise ValueError('Only an owned automatic release draft can be recovered')
 
-def verify_new_release(release,created,files,draft):
+def verify_new_release(release,created,files,draft,*,fallback_assets=None):
     if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
         release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
         raise ValueError('Created release identity or visibility changed')
@@ -92,17 +92,22 @@ def verify_new_release(release,created,files,draft):
         raise ValueError('Created release canonical inventory changed')
     for asset in assets:
         facts=expected[asset['name']]
-        if asset.get('digest')!='sha256:'+facts['sha256'] or asset.get('size')!=facts['bytes']:
+        if asset.get('size')!=facts['bytes']:
+            raise ValueError('Created release canonical bytes changed')
+        if asset.get('digest'):
+            if asset['digest']!='sha256:'+facts['sha256']:
+                raise ValueError('Created release canonical bytes changed')
+        elif (fallback_assets or {}).get(asset['name'])!={'id':asset['id'],'size':asset['size'],'sha256':facts['sha256']}:
             raise ValueError('Created release canonical bytes changed')
 
-def finalize_release(client,created,files,creation):
+def finalize_release(client,created,files,creation,*,fallback_assets=None):
     """Publish one verified owned draft, retaining its exact ID on recovery."""
-    verify_new_release(client.release(),created,files,True)
+    verify_new_release(client.release(),created,files,True,fallback_assets=fallback_assets)
     creation.state['phase']='finalizing';creation.save()
     try:
         client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
                    '-F','draft=false','-f','make_latest=legacy')
-        verify_new_release(client.release(),created,files,False)
+        verify_new_release(client.release(),created,files,False,fallback_assets=fallback_assets)
     except Exception:
         # A failed response can follow an applied publication. Return only the
         # exact owned release to draft; never infer that the PATCH did nothing.
@@ -181,17 +186,17 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
                 old=assets.get(name)
                 if old is None:continue
                 old_sha=old.get('digest')
-                if not old_sha or draft_baseline is not None:
+                if not old_sha:
                     readback=temp/str(old['id']);readback.mkdir()
                     client.download_asset(old,readback)
                     facts=digest(readback/name)
                     if facts['bytes']!=old['size']:raise ValueError('Original asset failed readback verification')
-                    if old_sha and old_sha!='sha256:'+facts['sha256']:
-                        raise ValueError('Existing draft asset differs from its server digest')
                     old_sha='sha256:'+facts['sha256']
                     (readback/name).unlink()
                 replacement=expected.get(name)
                 if replacement and old_sha=='sha256:'+replacement['sha256'] and old['size']==replacement['bytes']:
+                    if not old.get('digest'):
+                        state.setdefault('verified_legacy_assets',{})[name]={'id':old['id'],'size':old['size'],'sha256':facts['sha256']}
                     continue
                 state['conflicts'].append({**asset_identity(old),'digest':old_sha,
                     'reason':'retirement' if name in retire else 'different_content',
@@ -212,10 +217,6 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
                     raise ValueError('Uploaded server digest/size mismatch')
                 if {name:row for name,row in fresh.items() if name!=source.name}!=known:
                     raise ValueError('Release asset inventory changed during upload')
-                readback=temp/('uploaded-'+str(uploaded['id']));readback.mkdir()
-                client.download(source.name,readback)
-                if digest(readback/source.name)!=facts:raise ValueError('Uploaded bytes failed download verification')
-                (readback/source.name).unlink()
                 known=fresh;state['uploads'].append(uploaded);state.pop('pending',None);journal.save()
             if inventory()!=known:raise ValueError('Release asset inventory changed before final verification')
             state['phase']='complete';journal.save()

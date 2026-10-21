@@ -121,8 +121,12 @@ Daily runs check the latest official stable version and the names of this
 repository's public release attachments before running tests. Existing archive
 and SHA-256 pairs are trusted without downloading them. A complete seven-architecture
 release ends the run immediately; otherwise only missing architectures enter the
-build matrix. New packages are validated and read back after upload; existing
-packages are preserved. API errors stop the check instead of triggering a rebuild.
+build matrix. An existing archive missing only its SHA-256 sidecar is completed
+from GitHub's digest metadata without a build or package download. A sidecar
+without its archive stops before building and needs the original artifact.
+New packages are validated before upload and checked against GitHub's returned
+SHA-256 and size; existing packages are preserved. API errors stop the check
+instead of triggering a rebuild.
 `validate-automatic` exercises the same preparation and publication plan without
 enabling a writer. It is an optional validation mode, not a required step for new
 versions. Existing tags/releases do not suppress validation.
@@ -139,30 +143,32 @@ artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs
 warnings and summaries, never Release notes. Existing canonical assets are not
 renamed, deleted or replaced. Conflicting bytes or requested retirement stop for
 specific review before any upload.
-An explicit `publish_candidate` dispatch creates a **new draft** tag/release,
-downloads its assets again and verifies exact byte identity. It never overwrites
+An explicit `publish_candidate` dispatch creates a **new draft** tag/release
+and verifies uploaded SHA-256 and size. It never overwrites
 public release assets. `promote-existing` consumes an explicitly selected verified
 CI artifact and fills missing assets without replacing existing bytes.
-Normal new releases are staged as owned drafts, fully
-read back, then made public. A failed finalization leaves recovery evidence and
+Normal new releases are staged as owned drafts, verified against their server
+digests, then made public. A failed finalization leaves recovery evidence and
 attempts to return that exact release to draft. No publication failure warning is
 added to the Release body.
 
-Draft publication binds all reads, uploads and download checks to the created
+Draft publication binds all reads and uploads to the created
 Release ID. A retry can reuse a single empty draft created by GitHub Actions for
 the same version on this build's commit ancestry; the draft target is updated to
 the verified build commit before upload. Multiple drafts, existing draft assets,
 changed notes or a different author require recovery review instead of creating
 another draft or replacing anything. A nonempty owned draft can be recovered
 through `promote-existing` using the exact original CI artifact, ZIP digest and
-built commit; every existing draft asset must match and pass downloaded-byte
-verification before finalization. A run with successful build gates and only a
+built commit; every existing draft asset must match its digest and size.
+Only older assets without server digests need downloaded-byte verification.
+A run with successful build gates and only a
 known publication-writer failure can supply that artifact without another build.
 
 Scheduled runs trust existing archive/SHA-256 pairs by attachment name. They
 check the official stable version before tests, stop when all pairs exist, and
 build only missing architectures. Existing packages are not downloaded again.
-Only new output is validated and read back during the append transaction.
+Only new output is validated; the append transaction verifies its uploaded
+server digest without downloading it again.
 Manual existing-release validation still checks actual package bytes, source
 inputs and architecture. It does not require old CI logs to remain online.
 Existing controls and recovery files are preserved; publication never deletes them.

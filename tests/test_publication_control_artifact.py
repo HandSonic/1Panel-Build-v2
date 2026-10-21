@@ -18,6 +18,8 @@ class PublicationControlArtifact(unittest.TestCase):
                 'needs.tests.outputs.build_required': repr('true'),
                 'needs.build.result': repr('success'),
                 'needs.publication_prepare.result': repr('success'),
+                'needs.check_update.result': repr('skipped'),
+                'needs.check_update.outputs.checksum_required': repr('false'),
                 'cancelled()': 'False',
                 "startsWith('refs/heads/master', 'refs/tags/v')": 'False',
             }.items():

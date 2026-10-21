@@ -53,6 +53,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       arches: ${{ steps.check.outputs.arches }}
       build_required: ${{ steps.check.outputs.build_required }}
+      checksum_required: ${{ steps.check.outputs.checksum_required }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -322,7 +323,7 @@ jobs:
         run: |
           python3 scripts/resolved_contract.py activate dist "$VERSION"
           python3 scripts/validate_artifacts.py dist "$VERSION" "$(python3 -c 'import json; print(" ".join(r["architecture"] for r in json.load(open("dist/build-manifest.json"))["artifacts"]))')"
-      - name: Stage a new draft candidate and verify downloaded bytes
+      - name: Stage a new draft candidate and verify uploaded digests
         run: |
           set -euo pipefail
           tag="$VERSION-build-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}"
@@ -466,11 +467,11 @@ jobs:
           retention-days: 90
 
   automatic_publication:
-    needs: publication_prepare
-    if: ${{ !cancelled() && needs.publication_prepare.result == 'success' && (github.event_name == 'schedule' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && !inputs.publish_candidate)) }}
+    needs: [check_update, publication_prepare]
+    if: ${{ !cancelled() && ((needs.publication_prepare.result == 'success' && (github.event_name == 'schedule' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.operation == 'build' && !inputs.publish_candidate))) || (github.event_name == 'schedule' && needs.check_update.result == 'success' && needs.check_update.outputs.checksum_required == 'true')) }}
     runs-on: ubuntu-latest
     concurrency:
-      group: upstream-release-${{ github.repository }}-${{ needs.publication_prepare.outputs.version }}
+      group: upstream-release-${{ github.repository }}-${{ needs.publication_prepare.outputs.version || needs.check_update.outputs.version }}
       cancel-in-progress: false
       queue: max
     permissions:
@@ -478,7 +479,7 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ needs.publication_prepare.outputs.version }}
+      VERSION: ${{ needs.publication_prepare.outputs.version || needs.check_update.outputs.version }}
       PUBLICATION_OPERATION: ${{ inputs.operation || 'build' }}
       PUBLISH_CANDIDATE: ${{ inputs.publish_candidate && 'true' || 'false' }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -489,24 +490,34 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Set up isolated configuration parser
+        if: needs.publication_prepare.result == 'success'
         run: |
           python3 -m venv "$RUNNER_TEMP/build-python"
           "$RUNNER_TEMP/build-python/bin/python3" -m pip install --disable-pip-version-check PyYAML==6.0.3
           echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v4
+        if: needs.publication_prepare.result == 'success'
         with:
           artifact-ids: ${{ needs.publication_prepare.outputs.artifact_id }}
           path: publication-work
           merge-multiple: true
       - name: Create or append verified canonical artifacts
+        if: needs.publication_prepare.result == 'success'
         run: |
           python3 scripts/automatic_publication.py publish --repository "$GITHUB_REPOSITORY" \
             --version "$VERSION" --work publication-work
+      - name: Fill missing scheduled checksums from server digests
+        if: github.event_name == 'schedule' && needs.check_update.outputs.checksum_required == 'true'
+        run: |
+          python3 scripts/scheduled_release.py --repository "$GITHUB_REPOSITORY" \
+            --version "$VERSION" --repair-checksums --work checksum-work
       - name: Preserve automatic publication recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: automatic-publication-journal-${{ github.run_id }}-${{ github.run_attempt }}
-          path: publication-work/control/
+          path: |
+            publication-work/control/
+            checksum-work/
           if-no-files-found: warn
           retention-days: 90

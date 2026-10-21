@@ -1,4 +1,4 @@
-"""Exercise candidate creation and the real ID-bound upload/readback transaction."""
+"""Exercise candidate creation and the real ID-bound upload transaction."""
 import copy
 import json
 import os
@@ -61,13 +61,13 @@ class CandidatePublication(unittest.TestCase):
         return SimpleNamespace(repository='HandSonic/1Panel-Build-v2',version=version,
             tag=f'{version}-build-{target[:12]}-{run_id}',target=target,input=source,control=root/'candidate-control')
 
-    def test_tag_replacement_never_redirects_candidate_upload_or_readback(self):
+    def test_tag_replacement_never_redirects_candidate_upload(self):
         with tempfile.TemporaryDirectory() as temporary,patch.dict(os.environ,{'GITHUB_RUN_ID':'123'}):
             args=self.fixture(Path(temporary));remote=CandidateTransport(args)
             result=candidate.publish(args,remote)
             self.assertEqual(remote.tag_id,18)
             self.assertEqual(remote.upload_ids,[17,17])
-            self.assertEqual(remote.download_ids,[17,17])
+            self.assertEqual(remote.download_ids,[])
             self.assertTrue(remote.value['draft'])
             self.assertEqual(remote.value['body'],candidate.NOTES)
             self.assertEqual(result,{'state':'verified_draft','tag':args.tag,'release_id':17})

@@ -61,7 +61,7 @@ def validate_payloads(directory,contract,version,root=ROOT):
         accepted=matrix_validate(json.loads((directory/'build-manifest.json').read_text()),version)
         if not accepted:raise ValueError('No successful architecture payloads')
         # Every accepted archive is independently checked.
-        subprocess.run([sys.executable,str(root/'scripts/validate_artifacts.py'),str(directory),version,' '.join(accepted)],check=True)
+        subprocess.run([sys.executable,str(root/'scripts/validate_artifacts.py'),str(directory),version,' '.join(accepted),'--require-embedded'],check=True)
         files=[p for p in directory.iterdir() if p.is_file()]
     else:raise ValueError('Unknown publication contract')
     if {p.name for p in files}!=expected_names(contract,version,root,accepted if contract=='upstream-matrix' else None) or len(files)!=len({p.name for p in files}):

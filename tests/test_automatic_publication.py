@@ -102,8 +102,6 @@ class AutomaticTransaction(unittest.TestCase):
             p = patch.object(ap, target, replacement)
             p.start()
             self.addCleanup(p.stop)
-        p = patch('public_packages.require_embedded', return_value=None)
-        p.start(); self.addCleanup(p.stop)
         p = patch('resolved_contract.activate_release', lambda *a: None)
         p.start()
         self.addCleanup(p.stop)
@@ -282,7 +280,7 @@ class RealAppendTransactions(unittest.TestCase):
         release=c.release
         c.release=lambda:dict(release(),id=8,draft=False,tag_name=Client.tag)
         self.plan.update(operation='append',before=ap.snapshot(c.release()),
-                         preserved={a['name']:a for a in c.release()['assets'] if a['id'] in (1,3)})
+                         preserved={a['name']:a for a in c.release()['assets']})
         # Rebuilding an already-public architecture must not replace its old bytes.
         self.files[0].write_bytes(b'rebuilt amd64 archive')
         self.proof['files'][self.files[0].name]=facts(self.files[0])
@@ -370,8 +368,6 @@ class PrepareControlFlow(unittest.TestCase):
             p.start();self.addCleanup(p.stop)
         p=patch.object(ap,'validate_payloads',side_effect=validate);p.start();self.addCleanup(p.stop)
         p=patch.object(pc,'policy_fingerprint',return_value='f'*64);p.start();self.addCleanup(p.stop)
-        p=patch('public_packages.require_embedded',return_value=None)
-        p.start();self.addCleanup(p.stop)
         p=patch('resolved_contract.activate_release',return_value=None);p.start();self.addCleanup(p.stop)
         p=patch.dict(os.environ,GITHUB_RUN_ID='11',GITHUB_RUN_ATTEMPT='2',GITHUB_SHA='b'*40,
                      GITHUB_EVENT_NAME='workflow_dispatch')
@@ -404,13 +400,10 @@ class PrepareControlFlow(unittest.TestCase):
                        'resolved_contract_sha256':self.contract_sha,'publication_format':'package-only-v1'} for arch in successful}
         return client, records
 
-    def perform(self, client, records=None, error=None, verified=None):
+    def perform(self, client):
         with patch.object(ap,'GitHub',return_value=client), \
-             patch.object(ap,'optional_release',side_effect=lambda c:c.release()), \
-             patch('public_packages.verify_existing',return_value=(verified or client.release(),records),side_effect=error) as verify:
+             patch.object(ap,'optional_release',side_effect=lambda c:c.release()):
             ap.prepare(self.args)
-            if client.release() is None:verify.assert_not_called()
-            else:verify.assert_called_once_with(client,Client.tag,ap.ROOT)
         return json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
 
     def test_create_plan_binds_current_contract_and_producer(self):
@@ -423,49 +416,29 @@ class PrepareControlFlow(unittest.TestCase):
     def test_append_preserves_public_pairs_without_merging_old_ci_controls(self):
         self.payload(self.source,('arm64',),11,'b'*40)
         client,records=self.old_release()
-        plan=self.perform(client,records)
+        plan=self.perform(client)
         self.assertEqual(plan['operation'],'append')
         self.assertEqual(plan['preserved'],{a['name']:a for a in client.release()['assets']})
         self.assertEqual((self.args.work/'release'/'build-manifest.json').read_bytes(),
                          (self.source/'build-manifest.json').read_bytes())
         self.assertFalse((self.args.work/'release'/records['amd64']['file']).exists())
 
-    def test_verified_complete_public_packages_need_no_old_receipt_or_logs(self):
+    def test_complete_public_packages_need_no_old_receipt_or_logs(self):
         self.payload(self.source,('amd64','arm64'),11,'b'*40)
         client,records=self.old_release(('amd64','arm64'))
-        # Old source contracts may differ for no-op: the actual public bytes were verified.
-        for record in records.values():record['resolved_contract_sha256']='c'*64
         before=client.release()
-        plan=self.perform(client,records)
+        plan=self.perform(client)
         self.assertEqual(plan['operation'],'unchanged')
         self.assertEqual(client.release(),before)
         self.assertEqual(client.calls,[])
         self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
 
-    def test_legacy_partial_requires_explicit_format_migration(self):
-        self.payload(self.source,('arm64',),11,'b'*40)
-        client,records=self.old_release();records['amd64']['publication_format']=None
-        with self.assertRaisesRegex(ValueError,'explicit package-format migration'):self.perform(client,records)
-
-    def test_invalid_public_packages_reject_before_plan(self):
+    def test_duplicate_public_asset_names_reject_before_plan(self):
         self.payload(self.source,('amd64','arm64'),11,'b'*40)
-        client,records=self.old_release(('amd64','arm64'))
-        with self.assertRaisesRegex(ValueError,'package checksum'):
-            self.perform(client,records,error=ValueError('package checksum mismatch'))
-        self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
-
-    def test_partial_contract_change_requires_explicit_repair(self):
-        self.payload(self.source,('arm64',),11,'b'*40)
-        client,records=self.old_release();records['amd64']['resolved_contract_sha256']='c'*64
-        with self.assertRaisesRegex(ValueError,'explicit repair'):self.perform(client,records)
-        self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
-
-    def test_changed_verification_snapshot_rejects(self):
-        self.payload(self.source,('amd64','arm64'),11,'b'*40)
-        client,records=self.old_release(('amd64','arm64'))
-        verified=client.release();verified['assets'][0]['id']+=100
-        with self.assertRaisesRegex(ValueError,'changed during verification'):
-            self.perform(client,records,verified=verified)
+        client,_=self.old_release(('amd64','arm64'))
+        client.value['assets'].append(dict(client.value['assets'][0],id=99))
+        with self.assertRaisesRegex(ValueError,'Duplicate release asset names'):
+            self.perform(client)
         self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
 
 

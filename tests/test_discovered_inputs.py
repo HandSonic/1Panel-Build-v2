@@ -14,7 +14,11 @@ class FakeVendor:
   if path not in self.files and not optional:raise ValueError('Missing test source')
   return self.files.get(path)
  def commit(self,repo,ref):return 'a'*40
- def api(self,repo,path):return [{'tag_name':'v2.99.0','draft':False,'prerelease':False},{'tag_name':'v2.100.0-beta.1','draft':False,'prerelease':True},{'tag_name':'v2.999.0','draft':True,'prerelease':False}]
+ def api(self,repo,path):
+  if repo!=discovery.SOURCE:raise AssertionError(repo)
+  if path=='releases/latest':return {'tag_name':'v2.99.0','draft':False,'prerelease':False}
+  if path=='releases?per_page=100':return [{'tag_name':'v2.100.0-beta.1','draft':False,'prerelease':True},{'tag_name':'v2.999.0','draft':True,'prerelease':False}]
+  raise AssertionError(path)
  def read(self,url,**kwargs):
   if url.startswith('https://go.dev/'):return json.dumps([{'version':v,'stable':True} for v in ['go1.24.9','go1.25.0','go1.25.8','go1.26.1']]).encode()
   raise ValueError(url)
@@ -58,6 +62,7 @@ def configuration_shapes():
 
 class SourceDiscoveryTests(unittest.TestCase):
  def test_unlisted_version_and_channels(self):
+  # Stable discovery must work even when the first release page has no stable tag.
   v=FakeVendor();self.assertEqual(discovery.latest(v,'stable'),'v2.99.0');self.assertEqual(discovery.latest(v,'beta'),'v2.100.0-beta.1')
   value,_,_=discovery.resolve_source(v,'v2.99.0');self.assertEqual(value['source']['commit'],'a'*40);self.assertEqual(value['go'],'1.25.8')
   with self.assertRaises(ValueError):discovery.resolve_source(v,'v2.99.0-beta.1','stable')

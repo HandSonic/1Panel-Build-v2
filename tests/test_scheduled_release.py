@@ -38,7 +38,8 @@ class ScheduledRelease(unittest.TestCase):
             self.client.release.return_value = release(*present)
             with self.subTest(present=present):
                 self.assertEqual(self.plan(), {'version': 'v2.4.0', 'arches': missing,
-                                               'build_required': 'true' if missing else 'false'})
+                                               'build_required': 'true' if missing else 'false',
+                                               'checksum_required': 'false'})
         self.client.download.assert_not_called()
         self.client.download_asset.assert_not_called()
 
@@ -50,14 +51,38 @@ class ScheduledRelease(unittest.TestCase):
             with self.subTest(status=status), self.assertRaises(subprocess.CalledProcessError):
                 self.plan()
 
-    def test_latest_official_stable_uses_numeric_version_and_excludes_other_channels(self):
-        self.client.run.return_value = json.dumps([
-            {'tag_name': 'v2.9.9'}, {'tag_name': 'v2.10.0'},
-            {'tag_name': 'v2.11.0', 'draft': True},
-            {'tag_name': 'v2.12.0', 'prerelease': True},
-            {'tag_name': 'v2.13.0-beta.1', 'prerelease': True}])
-        self.client.release.side_effect = subprocess.CalledProcessError(1, ['gh'], stderr='(HTTP 404)')
-        self.assertEqual(scheduled.plan(scheduled.REPOSITORY)['version'], 'v2.10.0')
+    def test_latest_uses_one_official_request_and_requires_stable_v2(self):
+        latest = {'tag_name': 'v2.4.0', 'draft': False, 'prerelease': False}
+        self.client.run.return_value = json.dumps(latest)
+        self.assertEqual(scheduled.latest_version(self.client), 'v2.4.0')
+        self.client.run.assert_called_once_with('api', f'repos/{scheduled.SOURCE}/releases/latest')
+        for invalid in (dict(latest, tag_name='v3.0.0'), dict(latest, tag_name='v2.4.0-beta.1'),
+                        dict(latest, draft=True), dict(latest, prerelease=True), [], {}):
+            self.client.run.return_value = json.dumps(invalid)
+            with self.subTest(release=invalid), self.assertRaises(ValueError):
+                scheduled.latest_version(self.client)
+
+    def test_archive_only_needs_checksum_not_rebuild_and_orphan_checksum_stops(self):
+        current = release('amd64', 'arm64', 'riscv64')
+        name = '1panel-v2.4.0-linux-amd64.tar.gz'
+        current['assets'] = [asset for asset in current['assets'] if asset['name'] != name + '.sha256']
+        current['assets'][0]['digest'] = 'sha256:' + 'a' * 64
+        self.client.release.return_value = current
+        self.assertEqual(self.plan(), {'version': 'v2.4.0', 'arches': '',
+                                      'build_required': 'false', 'checksum_required': 'true'})
+        current['assets'] = [asset for asset in current['assets'] if 'linux-arm64.' not in asset['name']]
+        self.assertEqual(self.plan()['arches'], 'arm64')
+        for invalid in (None, '', 'sha256:short'):
+            current['assets'][0]['digest'] = invalid
+            with self.subTest(digest=invalid), self.assertRaisesRegex(ValueError, 'server SHA-256'):
+                self.plan()
+        current = release('amd64')
+        current['assets'].pop(0)
+        self.client.release.return_value = current
+        with self.assertRaisesRegex(ValueError, 'without its archive'):
+            self.plan()
+        self.client.download.assert_not_called()
+        self.client.download_asset.assert_not_called()
 
     def test_preflight_has_no_third_party_runtime_dependency(self):
         result = subprocess.run([sys.executable, '-S', str(ROOT / 'scripts/scheduled_release.py'), '--help'],
@@ -77,6 +102,31 @@ class ScheduledRelease(unittest.TestCase):
             with self.subTest(event=event, required=required):
                 self.assertEqual(eval(code, {'__builtins__': {}}), expected)
         self.assertEqual(jobs['tests']['needs'], 'check_update')
+        writer = jobs['automatic_publication']
+        self.assertEqual(writer['needs'], ['check_update', 'publication_prepare'])
+        gate = writer['if'].removeprefix('${{').removesuffix('}}').strip()
+        for event, prepared, checked, checksum, expected in (
+                ('schedule', 'skipped', 'success', 'true', True),
+                ('schedule', 'skipped', 'success', 'false', False),
+                ('schedule', 'skipped', 'failure', 'true', False),
+                ('schedule', 'success', 'success', 'false', True),
+                ('workflow_dispatch', 'skipped', 'skipped', 'true', False)):
+            code = gate.replace('!cancelled()', 'True')
+            for old, new in {'github.event_name': repr(event), 'github.ref': repr('refs/heads/master'),
+                             'needs.publication_prepare.result': repr(prepared),
+                             'needs.check_update.result': repr(checked),
+                             'needs.check_update.outputs.checksum_required': repr(checksum),
+                             'inputs.operation': repr('build-only'), 'inputs.publish_candidate': 'False',
+                             "startsWith('refs/heads/master', 'refs/tags/v')": 'False'}.items():
+                code = code.replace(old, new)
+            self.assertEqual(eval(code.replace('!', ' not ').replace('&&', ' and ').replace('||', ' or '), {'__builtins__': {}}), expected)
+        steps = writer['steps']
+        publish = next(i for i, step in enumerate(steps) if step.get('name') == 'Create or append verified canonical artifacts')
+        checksum = next(i for i, step in enumerate(steps) if step.get('name') == 'Fill missing scheduled checksums from server digests')
+        self.assertLess(publish, checksum)
+        for step in steps:
+            if step.get('uses') == 'actions/download-artifact@v4':
+                self.assertEqual(step['if'], "needs.publication_prepare.result == 'success'")
 
     def test_prepare_uses_only_preflight_missing_subset_without_checking_again(self):
         self.run_prepare('schedule', 'amd64 arm64', 'riscv64', 'riscv64')

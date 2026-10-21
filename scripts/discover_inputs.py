@@ -120,6 +120,14 @@ class Vendor:
 def latest(vendor, mode):
     if mode not in ('stable', 'beta', 'dev'):
         raise ValueError('Unsupported release channel')
+    if mode == 'stable':
+        release = vendor.api(SOURCE, 'releases/latest')
+        version = release.get('tag_name') if isinstance(release, dict) else None
+        if (not isinstance(version, str) or not VERSION.fullmatch(version) or
+            identity(version) != 'stable' or release.get('draft') is not False or
+            release.get('prerelease') is not False):
+            raise ValueError('Official latest release is not a supported stable v2 release')
+        return version
     releases = vendor.api(SOURCE, 'releases?per_page=100')
     candidates = []
     for release in releases:

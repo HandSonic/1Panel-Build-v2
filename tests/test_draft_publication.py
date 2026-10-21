@@ -168,7 +168,7 @@ class DraftTransactions(unittest.TestCase):
     producer = fixtures.AutomaticTransaction.producer
     repair = fixtures.AutomaticTransaction.repair
 
-    def test_real_adapter_creates_uploads_reads_back_and_publishes_by_id(self):
+    def test_real_adapter_creates_uploads_and_publishes_by_id(self):
         client = TransportGitHub()
         with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
             self.assertEqual(ap.publish(self.args, client), 'published')
@@ -245,9 +245,8 @@ class DraftPreparation(unittest.TestCase):
     def test_empty_draft_plan_does_not_use_public_package_verification(self):
         self.payload(self.source, ('amd64',), 11, 'b' * 40)
         client = TransportGitHub(draft('b' * 40))
-        with patch.object(ap, 'GitHub', return_value=client), patch('public_packages.verify_existing') as verify:
+        with patch.object(ap, 'GitHub', return_value=client):
             ap.prepare(self.args)
-        verify.assert_not_called()
         plan = json.loads((self.args.work / 'control' / 'automatic-plan.json').read_text())
         self.assertEqual(plan['operation'], 'resume')
         self.assertEqual(plan['before'], ap.snapshot(client.value))

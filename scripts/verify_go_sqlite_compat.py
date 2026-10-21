@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exercise the selected source's real GORM/SQLite graph before packaging.
 
-Native old -> overlaid -> old engine roundtrip, plus linux/loong64 compilation
-and optional mandatory execution under the supplied QEMU user-mode emulator.
+Native old -> overlaid -> old engine roundtrip when an overlay is needed;
+otherwise one native and one optional QEMU smoke of the unchanged graph.
+Both paths compile linux/loong64 before optional execution under QEMU.
 All test databases, modfiles, checksums and binaries are disposable.
 """
 import argparse
@@ -46,9 +47,10 @@ def verify(cwd, qemu=None):
                 command(['go', 'test', f'-modfile={selected}', '-mod=mod', '-c', '-o', binary, TEST], cwd, dict(base_env, GOARCH='loong64'))
                 for target in ('native', 'loong64') if qemu else ('native',):
                     database = directory / (target + '.db')
-                    for phase in ('baseline', 'upgrade', 'rollback'):
+                    phases = ('baseline',) if overlay is None else ('baseline', 'upgrade', 'rollback')
+                    for phase in phases:
                         env = dict(base_env, SQLITE_COMPAT_DB=str(database), SQLITE_COMPAT_PHASE=phase)
-                        if target == 'loong64' and phase == 'upgrade':
+                        if target == 'loong64' and (overlay is None or phase == 'upgrade'):
                             command([qemu, binary, '-test.v', '-test.timeout=120s'], cwd, env)
                         else:
                             modfile = selected if phase == 'upgrade' else original

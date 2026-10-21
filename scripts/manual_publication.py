@@ -29,24 +29,9 @@ def extract_verified_zip(path,destination):
             name=PurePosixPath(info.filename);kind=(info.external_attr>>16)&0o170000
             if name.is_absolute() or '..' in name.parts or '\\' in info.filename or len(name.parts)!=1 or info.filename!=name.name or kind not in (0,stat.S_IFREG):
                 raise ValueError('Only flat regular CI artifact files are accepted')
-        if archive.testzip() is not None:raise ValueError('CI ZIP CRC mismatch')
         destination.mkdir(parents=True)
         for info in infos:
             with archive.open(info) as src,(destination/info.filename).open('wb') as dst:shutil.copyfileobj(src,dst)
-
-
-def validate_upstream_input(directory,version,expected_commit,contract):
-    records=json.loads((Path(directory)/'build-manifest.json').read_text())['artifacts']
-    if not records or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')
-    if contract=='upstream-matrix':
-        from resolved_contract import activate_release
-        activate_release(directory,version)
-    validator_root=ROOT
-    from matrix_contract import validate
-    accepted=validate(json.loads((Path(directory)/'build-manifest.json').read_text()),version)
-    subprocess.run([sys.executable,str(validator_root/'scripts/validate_artifacts.py'),str(directory),version,' '.join(accepted)],check=True)
-    records=json.loads((Path(directory)/'build-manifest.json').read_text())['artifacts']
-    if not records or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')
 
 
 def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_commit,contract):
@@ -79,7 +64,8 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
     run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/attempts/{attempt}')
     execution=github_json(f'repos/{UPSTREAM}/git/commits/{expected_commit}') if run.get('event')=='pull_request' else None
     verify_jobs(manifest,run,jobs,expected_commit,execution,allow_publication_failures=True)
-    validate_upstream_input(directory,version,expected_commit,contract)
+    records=manifest['artifacts']
+    if not records or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')
     return {'repository':UPSTREAM,'run_id':int(run_id),'artifact_id':int(artifact_id),'artifact_sha256':expected_sha,
             'build_repository_commit':expected_commit,'run_url':f'https://github.com/{UPSTREAM}/actions/runs/{run_id}'}
 
@@ -93,11 +79,12 @@ def prepare(args):
     if args.upstream_source=='verified-ci':
         source=work/'upstream-input'
         provenance=fetch_ci_bundle(source,args.version,args.run_id,args.artifact_id,args.artifact_sha256,args.build_commit,contract)
-        # Old verified binaries need only a standard data-only metadata migration.
-        # Verify the original CI bytes first, then independently revalidate the result.
+        from resolved_contract import activate_release
+        activate_release(source,args.version)
+        # The exact CI ZIP and producer are authenticated above. Legacy migration
+        # preserves payload bytes; validate the final package content once below.
         from package_metadata import embed_legacy
-        if embed_legacy(source,args.version):
-            validate_upstream_input(source,args.version,args.build_commit,contract)
+        embed_legacy(source,args.version)
     elif contract=='upstream-matrix':raise ValueError('Upstream promotion requires a verified CI input, never old release bytes')
     destination=work/'release'
     shutil.move(source,destination)
@@ -148,8 +135,7 @@ def publish(args):
     if release.get('draft') is True and any(observed.get(key)!=release.get(key) for key in ('name','target_commitish','prerelease','author')):
         raise ValueError('Draft metadata changed before manual publication')
     # Public downloads contain only packages and their standard SHA sidecars.
-    from public_packages import package_files, recovery_assets, require_embedded
-    require_embedded(files,args.version)
+    from public_packages import package_files, recovery_assets
     files=package_files(files)
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
@@ -171,7 +157,7 @@ def publish(args):
                                       'release_id':release['id'],'upstream_input':upstream})
         state=repair(client,files,journal,expected_snapshot=release_snapshot(release),expected_draft=release)
         if state['phase']!='complete':raise ValueError('Draft recovery upload did not complete')
-        finalize_release(client,release,files,creation)
+        finalize_release(client,release,files,creation,fallback_assets=state.get('verified_legacy_assets'))
         print(json.dumps({'state':creation.state['phase'],'repository':args.repository,'tag':args.tag}))
         return
     retired=retired_upstream_assets(proof,args.version,release) if contract=='upstream-matrix' else []

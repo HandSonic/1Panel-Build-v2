@@ -4,20 +4,24 @@ Use the existing `build-offline` workflow in `.github/workflows/build.yml`.
 
 ## Daily updates
 
-At 08:00 UTC (16:00 Beijing time), GitHub checks the latest official stable Release and this
+At 08:00 UTC (16:00 Beijing time), GitHub reads the official Latest stable Release and this
 repository's matching public Release attachment names. An architecture is
 present when its archive and `.sha256` attachment both exist. Existing pairs
 are trusted without downloading or validating their contents.
 
 - All seven architectures present: stop before tests and source preparation.
 - Missing architectures: build only that subset and append its new output.
+- Archive present but `.sha256` absent: generate only the sidecar from GitHub's
+  SHA-256 metadata, under the same version writer lock. No build or package download.
 - No matching public Release: build all seven architectures.
 - Authentication, network or API errors: fail the check.
+- A checksum without its archive, or an archive-only asset without a server
+  digest: stop before building and use the exact original artifact for repair.
 
 The selected version is fixed for the rest of the run. Successful new packages
-are validated before publication and read back after upload. Existing files are
-preserved. A half-present pair can be completed only if its existing member's
-server digest and size match the new candidate; a conflict stops publication.
+are validated before publication; uploaded SHA-256 and size must match GitHub's
+metadata. Existing files are preserved. A checksum-only repair skips tests and
+source preparation and uses the existing publication writer, not a second CI.
 
 CNB retains tag and manual builds. It has no second daily build schedule.
 
@@ -48,8 +52,9 @@ To reuse an existing build, supply all four provenance inputs:
 The source/preparation/aggregate gates must have passed. Only independently
 successful architecture outputs are accepted. A known publication-writer failure
 does not invalidate already verified build output; it does not require a rebuild.
-Manual existing-release validation retains full package verification. Unlike the
-daily metadata check, it can reject corrupt bytes or incompatible source inputs.
+Explicit promotion validates the selected CI package content once after any
+legacy metadata migration. Normal builds trust existing public pairs by name
+and append only missing output, without downloading those old packages.
 
 ## Builds and PR checks
 
@@ -88,8 +93,8 @@ Public notes are preserved.
 
 - An empty draft created by this workflow can be resumed by a descendant build.
 - A nonempty owned draft needs `promote-existing` with its exact original build
-  artifact. The draft target and all existing attachment bytes must match that
-  verified artifact before finalization.
+  artifact. The draft target and existing attachment identities and digests must
+  match that artifact. Only older assets without a server digest need a readback.
 - Conflicting assets or changed Release identity stop the transaction. Review
   the preserved journal and choose an explicit recovery action.
 

@@ -38,6 +38,30 @@ class MatrixTests(unittest.TestCase):
         self.aggregate(shards, arches)
         self.assertEqual(len(validate_artifacts.validate_dist(self.root/'result/dist', 'v2.3.2', arches)), 7)
 
+    def test_aggregate_parses_each_package_once(self):
+        shards = self.shards(['amd64'])
+        with patch.object(validate_artifacts, 'validate_package', wraps=validate_artifacts.validate_package) as parse:
+            self.aggregate(shards, ['amd64'])
+        self.assertEqual(parse.call_count, 1)
+        self.assertEqual(len(validate_artifacts.validate_dist(self.root/'result/dist', 'v2.3.2', ['amd64'])), 1)
+
+    def test_changed_copy_fails_before_summary(self):
+        shards = self.shards(['amd64'])
+        copyfile = shutil.copyfile
+        destination = self.root/'result/dist'
+        for suffix in ('.tar.gz', '.sha256'):
+            def changed_copy(source, target):
+                result = copyfile(source, target)
+                if str(target).endswith(suffix):
+                    raw = Path(target).read_bytes()
+                    Path(target).write_bytes(bytes([raw[0] ^ 1]) + raw[1:])
+                return result
+            with self.subTest(suffix=suffix), patch.object(aggregate_shards.shutil, 'copyfile', side_effect=changed_copy):
+                with self.assertRaisesRegex(ValueError, 'Copied shard differs'):
+                    self.aggregate(shards, ['amd64'])
+            self.assertFalse((destination/'build-manifest.json').exists())
+            shutil.rmtree(destination)
+
     def test_missing_extra_and_retry_shard_fail_closed(self):
         for name in ['shard-arm64-123-1', 'shard-amd64-123-2']:
             with self.subTest(name=name):

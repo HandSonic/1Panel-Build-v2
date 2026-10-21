@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Validate isolated matrix outputs before reconstructing the release contract."""
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-from package_release import finalize
+from package_release import write_summary
 from validate_artifacts import architectures, validate_dist
 INPUT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,22 +44,30 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
             apply_contract(path,contract_sha,INPUT_ROOT,version)
     inputs = subprocess.check_output([sys.executable, str(Path(__file__).with_name('resolve_inputs.py')), version])
     # Validate everything first; never merge shard manifests with conflicting names.
+    records = []
     for arch in arches:
         shard = shards / f'shard-{arch}-{run_suffix}'
-        records = validate_dist(shard, version, [arch])
-        if any(r['build_repository_commit'] != os.environ['BUILD_REPOSITORY_COMMIT'] for r in records):
+        shard_records = validate_dist(shard, version, [arch])
+        if any(r['build_repository_commit'] != os.environ['BUILD_REPOSITORY_COMMIT'] for r in shard_records):
             raise ValueError('Shard build commit mismatch')
         if (shard / 'build-inputs.env').read_bytes() != inputs:
             raise ValueError('Shard resolved inputs mismatch')
+        records.extend(shard_records)
     destination.mkdir(parents=True, exist_ok=True)
     for arch in arches:
         shard = shards / f'shard-{arch}-{run_suffix}'
         name = f'1panel-{version}-linux-{arch}.tar.gz'
         for file in (name, name + '.sha256'):
             shutil.copyfile(shard / file, destination / file)
+    for row in records:
+        path = destination / row['file']
+        if (path.stat().st_size != row['size'] or hashlib.sha256(path.read_bytes()).hexdigest() != row['sha256']
+                or (destination / (row['file'] + '.sha256')).read_text() != f"{row['sha256']}  {row['file']}\n"):
+            raise ValueError('Copied shard differs from validated artifact')
     (destination / 'build-inputs.env').write_bytes(inputs)
-    # finalize expects a root containing dist; use its unchanged contract writer.
-    finalize(destination.parent, version, arches)
+    # Package parsing already happened at this job boundary. Authenticate the
+    # copied compressed bytes above and reuse the independently checked facts.
+    write_summary(destination.parent, version, records)
     if outcomes is not None:
         from matrix_contract import validate
         manifest_path = destination / "build-manifest.json"
@@ -69,7 +78,7 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
                         producer_head_sha=os.environ['PRODUCER_HEAD_SHA'], outcomes=outcomes)
         validate(manifest, version)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        # finalize already checked the aggregate package bytes. Only these
+        # The shard checks already covered the aggregate package bytes. Only these
         # matrix fields changed, and validate() checked their final contract.
 
 

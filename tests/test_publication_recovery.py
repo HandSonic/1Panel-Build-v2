@@ -1,4 +1,4 @@
-"""Recover verified CI packages without trusting tag resolution or remote bytes."""
+"""Recover verified CI packages using pinned IDs and GitHub's SHA metadata."""
 import copy
 import hashlib
 import io
@@ -110,7 +110,11 @@ class ManualRecovery(unittest.TestCase):
         if mutation=='author':release['author']={'id':5,'login':'someone','type':'User'}
         if mutation=='provenance':proof['upstream_input']['artifact_id']=0
         remote=RemoteRelease(self.version,release,files,change_tag=change_tag)
-        if mutation=='bytes':remote.contents[100]=b'corrupt remote bytes despite a plausible advertised digest'
+        if mutation=='bytes':
+            # No trustworthy digest is available, so the fallback download
+            # must detect corrupt bytes even when their size is unchanged.
+            remote.releases[17]['assets'][0].pop('digest')
+            remote.contents[100]=b'x'*len(remote.contents[100])
         proof_path=work/'control'/manual.PROOF
         proof_path.write_text(json.dumps(proof))
         args=SimpleNamespace(repository=manual.UPSTREAM,version=self.version,tag=self.version,work=work)
@@ -121,7 +125,6 @@ class ManualRecovery(unittest.TestCase):
              patch.object(manual,'validate_payloads',return_value=files),\
              patch.object(manual,'make_proof',return_value=expected),\
              patch('resolved_contract.activate_release',return_value=None),\
-             patch('public_packages.require_embedded',return_value=None),\
              patch.dict(os.environ,{'GITHUB_RUN_ID':'50','GITHUB_SHA':'d'*40,
                  'EXPECTED_VALIDATION_RECEIPT_SHA256':sha(proof_path.read_bytes())}),\
              patch('sys.stdout',new_callable=io.StringIO):
@@ -135,16 +138,19 @@ class ManualRecovery(unittest.TestCase):
             self.assertEqual({name for release_id,name in remote.uploads if release_id==17},{path.name for path in files})
             self.assertEqual(remote.releases[18]['assets'],[])
             self.assertTrue(all(release_id==17 for release_id,_ in remote.uploads))
+            self.assertEqual(remote.downloads,[])
 
-    def test_nonempty_owned_draft_recovers_verified_bytes_and_only_uploads_the_gap(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            args,remote,files,expected,proof=self.fixture(Path(temporary),draft=True,existing=True)
-            self.publish(args,remote,files,expected,proof)
-            self.assertIn(100,remote.downloads)
-            self.assertEqual(remote.uploads,[(17,files[1].name)])
-            self.assertFalse(remote.releases[17]['draft'])
-            self.assertEqual(remote.releases[17]['target_commitish'],self.built_commit)
-            self.assertEqual({asset['name'] for asset in remote.releases[17]['assets']},{path.name for path in files})
+    def test_owned_draft_uses_server_digest_or_one_legacy_fallback_and_only_uploads_the_gap(self):
+        for server_digest in (True,False):
+            with self.subTest(server_digest=server_digest),tempfile.TemporaryDirectory() as temporary:
+                args,remote,files,expected,proof=self.fixture(Path(temporary),draft=True,existing=True)
+                if not server_digest:remote.releases[17]['assets'][0].pop('digest')
+                self.publish(args,remote,files,expected,proof)
+                self.assertEqual(remote.downloads,[] if server_digest else [100])
+                self.assertEqual(remote.uploads,[(17,files[1].name)])
+                self.assertFalse(remote.releases[17]['draft'])
+                self.assertEqual(remote.releases[17]['target_commitish'],self.built_commit)
+                self.assertEqual({asset['name'] for asset in remote.releases[17]['assets']},{path.name for path in files})
 
     def test_public_release_returned_to_draft_before_transaction_never_receives_uploads(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -183,7 +189,8 @@ class VerifiedProducerRecovery(unittest.TestCase):
         for job in jobs:
             job['conclusion']='success'
         manifest['outcomes']=matrix.collect(jobs,manifest['requested_architectures'],10,2)
-        manifest['artifacts']=[{'architecture':arch} for arch in manifest['requested_architectures']]
+        manifest['artifacts']=[{'architecture':arch,'build_repository_commit':'a'*40}
+                               for arch in manifest['requested_architectures']]
         failed=dict(jobs[0],id=99,name=name,conclusion='failure')
         jobs.append(failed)
         return manifest,run,jobs
@@ -215,12 +222,10 @@ class VerifiedProducerRecovery(unittest.TestCase):
                 kwargs['stdout'].write(data)
                 return SimpleNamespace(returncode=0)
             with patch.object(manual,'github_json',side_effect=[run,metadata,{'jobs':jobs,'total_count':len(jobs)},run]),\
-                 patch.object(manual.subprocess,'run',side_effect=download),\
-                 patch.object(manual,'validate_upstream_input') as validate:
+                 patch.object(manual.subprocess,'run',side_effect=download):
                 provenance=manual.fetch_ci_bundle(root/'input','v2.4.0','10','22',digest,commit,'upstream-matrix')
             self.assertEqual(provenance['build_repository_commit'],commit)
             self.assertEqual(provenance['artifact_sha256'],digest)
-            validate.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()

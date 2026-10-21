@@ -32,15 +32,10 @@ def package(root,version,arch):
         os.replace(str(archive)+'.tmp',archive)
         (dist/(archive.name+'.sha256')).write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
 
-def finalize(root,version,arches):
-    dist=root/'dist'; records=[]
-    for arch in arches:
-        file=f'1panel-{version}-linux-{arch}.tar.gz'; p=dist/file
-        entry=resolve(version)
-        records.append({'architecture':arch,'file':file,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'size':p.stat().st_size,'source_commit':entry['source_commit'],'installer_commit':entry['installer_commit'],'build_repository_commit':os.environ['BUILD_REPOSITORY_COMMIT']})
-    entry=resolve(version)
+def write_summary(root,version,records):
+    """Write transport metadata using the caller's authenticated artifact facts."""
+    dist=root/'dist'; entry=resolve(version)
     if entry.get('resolved_contract_sha256'):
-        for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
         from automatic_frontend_lock import copy_payload, read_regular, read_payload, write_payload
         from resolved_contract import MAX_CONTROL, object_bytes, source_contract
         raw = read_regular(CONFIG / 'resolved-source.json', MAX_CONTROL)
@@ -51,8 +46,17 @@ def finalize(root,version,arches):
         read_payload(CONFIG, contract)
         copy_payload(contract, CONFIG, dist)
         write_payload(dist / 'resolved-source.json', raw)
-    (dist/'checksums.txt').write_text(''.join((dist/(r['file']+'.sha256')).read_text() for r in records))
+    (dist/'checksums.txt').write_text(''.join(f"{r['sha256']}  {r['file']}\n" for r in records))
     (dist/'build-manifest.json').write_text(json.dumps({'schema_version':1,'version':version,'artifacts':records},indent=2)+'\n')
+
+def finalize(root,version,arches):
+    dist=root/'dist'; records=[]; entry=resolve(version)
+    for arch in arches:
+        file=f'1panel-{version}-linux-{arch}.tar.gz'; p=dist/file
+        records.append({'architecture':arch,'file':file,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'size':p.stat().st_size,'source_commit':entry['source_commit'],'installer_commit':entry['installer_commit'],'build_repository_commit':os.environ['BUILD_REPOSITORY_COMMIT']})
+    if entry.get('resolved_contract_sha256'):
+        for row in records: row['resolved_contract_sha256']=entry['resolved_contract_sha256']
+    write_summary(root,version,records)
     validate_dist(dist,version,arches)
 if __name__=='__main__':
     root=pathlib.Path(sys.argv[2]); version=sys.argv[3]

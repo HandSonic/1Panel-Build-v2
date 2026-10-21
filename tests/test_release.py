@@ -143,6 +143,12 @@ class ReleaseTests(unittest.TestCase):
             body=b'{}';info.size=len(body);archive.addfile(info,io.BytesIO(body))
         with self.assertRaisesRegex(ValueError,'Unmarked package metadata'):
             validate_artifacts.validate_package(path,'v2.3.2','amd64')
+    def test_publication_requires_embedded_inputs_in_the_complete_validation(self):
+        self.build(['amd64']);path=next((self.root/'dist').glob('*.tar.gz'))
+        # Legacy imports may be read before migration, but cannot be published.
+        validate_artifacts.validate_package(path,'v2.3.2','amd64')
+        with self.assertRaisesRegex(ValueError,'requires embedded build inputs'):
+            validate_artifacts.validate_dist(self.root/'dist','v2.3.2',['amd64'],require_embedded=True)
     def test_1pctl_changes_rejected(self):
         p=self.root/'1pctl';p.write_text(p.read_text()+'# tampered\n');self.binaries('amd64')
         package_release.package(self.root,'v2.3.2','amd64')

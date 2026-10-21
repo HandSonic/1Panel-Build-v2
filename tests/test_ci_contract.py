@@ -11,7 +11,7 @@ def github_block(name):
  return '\n'.join(result)+'\n'
 class CIContract(unittest.TestCase):
  def test_shell_syntax(self):
-  for n in ['Resolve immutable build inputs','Prepare pinned source and frontend once','Verify shared source before use','Build and validate every requested architecture','Independently validate and aggregate all architecture shards','Stage a new draft candidate and verify downloaded bytes']:
+  for n in ['Resolve immutable build inputs','Prepare pinned source and frontend once','Verify shared source before use','Build and validate every requested architecture','Independently validate and aggregate all architecture shards','Stage a new draft candidate and verify uploaded digests']:
    r=subprocess.run(['bash','-n'],input=github_block(n),text=True,capture_output=True);self.assertEqual(r.returncode,0,(n,r.stderr))
  def test_cnb_trigger_inputs_and_runtime(self):
   s=(ROOT/'.cnb.yml').read_text();self.assertIn('CNB_IS_TAG',s);self.assertIn('CNB_BRANCH',s);self.assertIn('apk add --no-cache bash python3',s)
