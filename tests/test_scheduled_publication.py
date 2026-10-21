@@ -1,6 +1,5 @@
 """Daily publication reads existing metadata and transfers only missing files."""
 import copy
-import json
 import os
 from pathlib import Path
 import sys
@@ -26,12 +25,9 @@ class ScheduledPublication(unittest.TestCase):
                          for asset in release['assets']}
         return remote,records
 
-    def prepare(self,remote,event='schedule'):
-        with patch.dict(os.environ,GITHUB_EVENT_NAME=event),\
-             patch.object(automatic,'GitHub',return_value=remote):
+    def prepare(self,event='schedule'):
+        with patch.dict(os.environ,GITHUB_EVENT_NAME=event):
             automatic.prepare(self.args)
-        plan=json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
-        return plan
 
     def publish(self,remote,event='schedule'):
         proof=self.args.work/'control'/automatic.PROOF
@@ -39,23 +35,24 @@ class ScheduledPublication(unittest.TestCase):
              EXPECTED_VALIDATION_RECEIPT_SHA256=automatic_tests.facts(proof)['sha256']):
             return automatic.publish(self.args,remote)
 
-    def test_normal_build_preparation_uses_only_existing_metadata(self):
+    def test_normal_writer_uses_only_existing_metadata(self):
         self.payload(self.source,('arm64',),11,'b'*40)
         remote,_=self.remote()
         # Older release assets can predate GitHub's digest field. Daily gap
         # checks still need no historical package downloads or source controls.
         for asset in remote.releases[8]['assets']:asset.pop('digest')
+        before=copy.deepcopy(remote.releases[8]['assets'])
+        self.prepare(event='workflow_dispatch')
         with patch.object(remote,'download',side_effect=AssertionError('Existing package download is forbidden')),\
              patch.object(remote,'download_asset',side_effect=AssertionError('Existing asset download is forbidden')):
-            plan=self.prepare(remote,event='workflow_dispatch')
-        self.assertEqual(plan['operation'],'append')
-        self.assertEqual(set(plan['preserved']),{asset['name'] for asset in remote.releases[8]['assets']})
+            self.assertEqual(self.publish(remote,event='workflow_dispatch'),'published')
+        after={asset['id']:asset for asset in remote.releases[8]['assets']}
+        for asset in before:self.assertEqual(after[asset['id']],asset)
 
     def test_schedule_append_transfers_only_new_successful_architecture(self):
         self.payload(self.source,('arm64',),11,'b'*40)
         remote,_=self.remote();before=copy.deepcopy(remote.releases[8]['assets'])
-        plan=self.prepare(remote)
-        self.assertEqual(plan['operation'],'append')
+        self.prepare()
         self.assertEqual(self.publish(remote),'published')
         new_names={f'1panel-{remote.tag}-linux-arm64.tar.gz'+suffix for suffix in ('','.sha256')}
         self.assertEqual({name for _,name in remote.uploads},new_names)
@@ -66,13 +63,17 @@ class ScheduledPublication(unittest.TestCase):
 
     def test_preserved_asset_id_or_digest_drift_rejects_without_download_or_write(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        remote,_=self.remote();self.prepare(remote)
+        remote,_=self.remote();self.prepare()
         baseline=copy.deepcopy(remote.releases[8])
+        transaction=automatic.repair
         for field,value in (('id',999),('digest','sha256:'+'c'*64)):
             with self.subTest(field=field):
                 remote.releases[8]=copy.deepcopy(baseline)
-                remote.releases[8]['assets'][0][field]=value
-                with self.assertRaises(ValueError):self.publish(remote)
+                def drift(client,*args,**kwargs):
+                    remote.releases[8]['assets'][0][field]=value
+                    return transaction(client,*args,**kwargs)
+                with patch.object(automatic,'repair',side_effect=drift),self.assertRaises(ValueError):
+                    self.publish(remote)
                 self.assertEqual(remote.uploads,[])
                 self.assertEqual(remote.downloads,[])
 
@@ -95,9 +96,7 @@ class ScheduledPublication(unittest.TestCase):
             with self.subTest(existing_suffix=suffix):
                 self.args.work=self.root/f'work-{index}'
                 remote,existing=self.partial(suffix,matching=bool(suffix))
-                plan=self.prepare(remote,event='workflow_dispatch')
-                self.assertEqual(plan['operation'],'append')
-                self.assertEqual(set(plan['preserved']),{existing['name']})
+                self.prepare(event='workflow_dispatch')
                 original={path.name:path.read_bytes() for path in (self.args.work/'release').iterdir()}
                 proof=self.args.work/'control'/automatic.PROOF;receipt=proof.read_bytes()
                 self.assertEqual(self.publish(remote,event='workflow_dispatch'),'published')
@@ -120,8 +119,7 @@ class ScheduledPublication(unittest.TestCase):
                 self.args.work=self.root/f'work-{index}'
                 remote,existing=self.partial(suffix,matching=False)
                 if not suffix:remote.releases[8]['assets'][0]['digest']=invalid
-                plan=self.prepare(remote)
-                self.assertEqual(plan['operation'],'append')
+                self.prepare()
                 with self.assertRaises(ValueError):self.publish(remote)
                 self.assertEqual(remote.uploads,[])
                 self.assertEqual(remote.downloads,[])

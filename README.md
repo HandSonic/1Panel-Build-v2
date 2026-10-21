@@ -130,7 +130,7 @@ without its archive stops before building and needs the original artifact.
 New packages are validated before upload and checked against GitHub's returned
 SHA-256 and size; existing packages are preserved. API errors stop the check
 instead of triggering a rebuild.
-`validate-automatic` exercises the same preparation and publication plan without
+`validate-automatic` validates the same local payload and preparation receipt without
 enabling a writer. It is an optional validation mode, not a required step for new
 versions. Existing tags/releases do not suppress validation.
 `build-only` creates verified CI source artifacts without publication preparation
@@ -142,15 +142,17 @@ branches are independently validated and aggregated. The schema-2 manifest recor
 every requested architecture, its exact producer attempt/job identity, and its
 terminal result. Failed-only retries authenticate the latest job for each branch
 through the selected producer attempt, retaining inherited successful jobs by ID.
-Final verified artifact names include the attempt so retries preserve earlier
-artifacts. Retrying publication reuses its successful preparation and does not
+Final verified artifact names include the producer attempt for exact selection.
+GitHub controls artifact retention; a full workflow rerun can delete earlier
+artifacts. Retrying only publication reuses its available preparation and does not
 recompile. Shared source/preparation/validation failures block all dependent
-artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs,
+artifacts; cancelled producer attempts cannot publish. Failure details remain in Actions jobs,
 warnings and summaries, never Release notes. Existing canonical assets are not
 renamed, deleted or replaced. Conflicting bytes stop for specific review before
 any upload; other existing attachments stay outside the repair payload.
-An explicit `publish_candidate` dispatch creates a **new draft** tag/release
-and verifies uploaded SHA-256 and size. It never overwrites
+An explicit `publish_candidate` dispatch creates a separate draft tag/release
+and verifies uploaded SHA-256 and size. A retry resumes that same owned draft
+after checking existing attachments against the verified output. It never overwrites
 public release assets. `promote-existing` consumes an explicitly selected verified
 CI artifact and fills missing assets without replacing existing bytes.
 Normal new releases are staged as owned drafts, verified against their server
@@ -159,13 +161,14 @@ attempts to return that exact release to draft. No publication failure warning i
 added to the Release body.
 
 Draft publication binds all reads and uploads to the created
-Release ID. A retry can reuse a single empty draft created by GitHub Actions for
-the same version on this build's commit ancestry; the draft target is updated to
-the verified build commit before upload. Multiple drafts, existing draft assets,
-changed notes or a different author require recovery review instead of creating
-another draft or replacing anything. A nonempty owned draft can be recovered
-through `promote-existing` using the exact original CI artifact, ZIP digest and
-built commit; every existing draft asset must match its digest and size.
+Release ID. Preparation validates local files and records a receipt; the serialized
+writer discovers the current Release state when it starts. A retry can reuse a
+single empty draft created by GitHub Actions for the same version on this build's
+commit ancestry; its target is updated before upload. A nonempty owned draft can
+resume on the exact build commit when every existing attachment matches the
+verified output. Multiple drafts, changed notes, another author or conflicting
+bytes stop publication. `promote-existing` can also recover that draft using the
+exact original CI artifact, ZIP digest and built commit.
 Only older assets without server digests need downloaded-byte verification.
 A run with successful build gates and only a
 known publication-writer failure can supply that artifact without another build.

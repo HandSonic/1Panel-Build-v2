@@ -39,8 +39,10 @@ class ManualPublicationTests(unittest.TestCase):
      else:
       result=manual.fetch_ci_bundle(root/('input'+suffix),'v2.3.2','10','22',sha,commit,'upstream-matrix')
       self.assertEqual(result['build_repository_commit'],commit)
-   with patch.object(manual,'github_json',return_value=dict(run,conclusion='cancelled')):
-    with self.assertRaises(ValueError):manual.fetch_ci_bundle(root/'bad','v2.3.2','10','22',sha,commit,'upstream-matrix')
+   for invalid in (dict(run,id=11),dict(run,path='.github/workflows/other.yml')):
+    with patch.object(manual,'github_json',return_value=invalid):
+     with self.assertRaisesRegex(ValueError,'Unexpected upstream workflow'):
+      manual.fetch_ci_bundle(root/'bad','v2.3.2','10','22',sha,commit,'upstream-matrix')
  def test_wrong_version_tag_or_repository_rejected(self):
   for version,tag,repo in [('v2.3.2','v2.3.1',manual.REPOS['upstream-matrix']),('../../escape','../../escape',manual.REPOS['upstream-matrix']),('v2.3.2','v2.3.2','other/repo')]:
    with self.assertRaises(ValueError):manual.check_identity(version,tag,repo)

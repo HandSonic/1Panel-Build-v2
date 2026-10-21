@@ -97,5 +97,31 @@ class CandidatePublication(unittest.TestCase):
             journal=json.loads((args.control/'creation-journal.json').read_text())
             self.assertEqual((journal['release_id'],journal['phase']),(17,'incomplete'))
 
+    def test_partial_candidate_retry_reuses_the_draft_and_only_uploads_the_gap(self):
+        with tempfile.TemporaryDirectory() as temporary,patch.dict(os.environ,{'GITHUB_RUN_ID':'123'}):
+            root=Path(temporary);args=self.fixture(root);remote=CandidateTransport(args)
+            upload=remote.upload
+            def interrupted(path):
+                if remote.value['assets']:
+                    raise RuntimeError('second upload interrupted')
+                return upload(path)
+            remote.upload=interrupted
+            with self.assertRaisesRegex(RuntimeError,'interrupted'):
+                candidate.publish(args,remote)
+            self.assertEqual(len(remote.value['assets']),1)
+            first=copy.deepcopy(remote.value['assets'][0])
+            for index in (2,3):
+                retry=copy.copy(args);retry.control=root/f'candidate-control-{index}'
+                resumed=CandidateTransport(retry,existing=remote.value)
+                resumed.bytes=copy.deepcopy(remote.bytes)
+                self.assertEqual(candidate.publish(retry,resumed)['release_id'],17)
+                self.assertEqual(resumed.upload_ids,[17] if index==2 else [])
+                self.assertEqual(resumed.download_ids,[])
+                self.assertEqual(resumed.value['assets'][0],first)
+                self.assertEqual(len(resumed.value['assets']),2)
+                self.assertFalse(any(call[:4]==('api','--method','POST',f'repos/{resumed.repo}/releases')
+                                     for call in resumed.calls))
+                remote=resumed
+
 
 if __name__=='__main__':unittest.main()

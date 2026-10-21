@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import types
@@ -41,7 +42,9 @@ class Client:
         self.calls.append(args)
         if 'POST' in args:
             created = {'id': 17, 'tag_name': self.tag, 'draft': True,
-                       'body': '', 'assets': []}
+                       'name':self.tag,'target_commitish':os.environ['GITHUB_SHA'],
+                       'prerelease':False,'body': '', 'assets': [],
+                       'author':{'id':41898282,'login':'github-actions[bot]','type':'Bot'}}
             self.value = copy.deepcopy(created)
             if self.substitute:
                 self.value['id'] = 18
@@ -81,10 +84,6 @@ class AutomaticTransaction(unittest.TestCase):
         self.proof = {'files': {p.name: facts(p) for p in self.files}}
         self.proofpath = self.work / 'control' / ap.PROOF
         self.proofpath.write_text(json.dumps(self.proof))
-        self.plan = {'schema': 1, 'version': Client.tag, 'operation': 'create',
-                     'before': ap.snapshot(None), 'preserved': {},
-                     'receipt_sha256': facts(self.proofpath)['sha256']}
-        self.save_plan()
         self.args = types.SimpleNamespace(version=Client.tag,
                 repository=Client.repo, work=self.work)
         self.repair_calls = []
@@ -110,9 +109,6 @@ class AutomaticTransaction(unittest.TestCase):
             'EXPECTED_VALIDATION_RECEIPT_SHA256': facts(self.proofpath)['sha256']})
         p.start()
         self.addCleanup(p.stop)
-
-    def save_plan(self):
-        (self.work / 'control' / 'automatic-plan.json').write_text(json.dumps(self.plan))
 
     def producer(self, *args):
         self.producer_calls += 1
@@ -145,7 +141,6 @@ class AutomaticTransaction(unittest.TestCase):
     def test_writer_retry_preserves_the_preparation_proof_attempt(self):
         self.proof['workflow_run_attempt']=1
         self.proofpath.write_text(json.dumps(self.proof))
-        self.plan['receipt_sha256']=facts(self.proofpath)['sha256'];self.save_plan()
         def original_proof(*args,**kwargs):
             self.assertEqual(kwargs['workflow_run_attempt'],1)
             return self.proof
@@ -198,23 +193,18 @@ class AutomaticTransaction(unittest.TestCase):
     def test_append_transaction_baseline_must_remain_exact(self):
         c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False,
                     'body': 'existing notes', 'assets': []})
-        self.plan.update(operation='append', before=ap.snapshot(c.release()))
-        self.save_plan()
         self.before_repair = lambda client: client.value['assets'].append(
             {'id': 91, 'name': f'1panel-{Client.tag}-linux-amd64.tar.gz', 'size': 9, 'digest': 'sha256:'+'b'*64})
         with self.assertRaises(ValueError): ap.publish(self.args, c)
         self.assertEqual(c.value['assets'][0]['id'], 91)
         self.assertEqual(c.calls, [])
 
-    def test_append_rejects_tampered_preserved_inventory(self):
+    def test_writer_ignores_obsolete_plan_and_noops_when_another_writer_finished(self):
         c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False,
             'body': '', 'assets': [dict(id=91+i,name=p.name,size=facts(p)['bytes'],
                 digest='sha256:'+facts(p)['sha256']) for i,p in enumerate(self.files[:2])]})
-        self.plan.update(operation='append', before=ap.snapshot(c.release()),
-                         preserved={c.value['assets'][0]['name']:c.value['assets'][0]})
-        self.save_plan()
-        with self.assertRaisesRegex(ValueError,'Preserved package inventory changed'):
-            ap.publish(self.args,c)
+        (self.work/'control'/'automatic-plan.json').write_text('{"operation":"create","before":null}')
+        self.assertEqual(ap.publish(self.args,c),'unchanged')
         self.assertFalse(self.repair_calls)
         self.assertEqual(c.calls,[])
 
@@ -299,7 +289,6 @@ class CurrentProducer(unittest.TestCase):
 
 class RealAppendTransactions(unittest.TestCase):
     setUp=AutomaticTransaction.setUp
-    save_plan=AutomaticTransaction.save_plan
     producer=AutomaticTransaction.producer
     repair=AutomaticTransaction.repair
     def client(self):
@@ -310,8 +299,6 @@ class RealAppendTransactions(unittest.TestCase):
                   4:(f'1panel-{Client.tag}-linux-arm.tar.gz.backup-012345abcdef',b'old missing branch')}
         release=c.release
         c.release=lambda:dict(release(),id=8,draft=False,tag_name=Client.tag)
-        self.plan.update(operation='append',before=ap.snapshot(c.release()),
-                         preserved={a['name']:a for a in c.release()['assets']})
         # Rebuilding an already-public architecture must not replace its old bytes.
         self.files[0].write_bytes(b'rebuilt amd64 archive')
         self.proof['files'][self.files[0].name]=facts(self.files[0])
@@ -319,9 +306,7 @@ class RealAppendTransactions(unittest.TestCase):
             path=self.work/'release'/f'1panel-{Client.tag}-linux-arm64.tar.gz{suffix}'
             path.write_bytes(body);self.files.append(path);self.proof['files'][path.name]=facts(path)
         self.proofpath.write_text(json.dumps(self.proof))
-        self.plan['receipt_sha256']=facts(self.proofpath)['sha256']
         os.environ['EXPECTED_VALIDATION_RECEIPT_SHA256']=facts(self.proofpath)['sha256']
-        self.save_plan()
         return c
 
     def test_real_transaction_preserves_existing_ids_and_recovery_assets(self):
@@ -356,13 +341,39 @@ class RealAppendTransactions(unittest.TestCase):
         for i in before:self.assertEqual(c.assets[i],before[i])
         self.assertEqual(json.loads((self.work/'control'/'automatic-journal.json').read_text())['phase'],'incomplete')
 
+    def test_writer_only_retry_after_partial_public_append_uploads_only_the_gap(self):
+        from release_asset_repair import repair
+        c=self.client();original=copy.deepcopy(c.assets)
+        control={path.name:path.read_bytes() for path in (self.work/'control').iterdir()}
+        upload=c.upload;attempts=[]
+        def fail_second(path):
+            attempts.append(path.name)
+            if len(attempts)==2:raise OSError('Second upload failed')
+            upload(path)
+        c.upload=fail_second
+        with patch.object(ap,'repair',repair),self.assertRaises(OSError):ap.publish(self.args,c)
+        partial=copy.deepcopy(c.assets)
+        retry=self.work/'fresh-runner';(retry/'control').mkdir(parents=True)
+        shutil.copytree(self.work/'release',retry/'release')
+        for name,raw in control.items():(retry/'control'/name).write_bytes(raw)
+        self.files=[retry/'release'/path.name for path in self.files]
+        self.args.work=retry;c.upload=upload
+        with patch.object(ap,'repair',repair),patch.dict(os.environ,GITHUB_RUN_ATTEMPT='2'):
+            self.assertEqual(ap.publish(self.args,c),'published')
+            calls=list(c.calls)
+            self.assertEqual(ap.publish(self.args,c),'unchanged')
+            self.assertEqual(c.calls,calls)
+        for asset_id,value in partial.items():self.assertEqual(c.assets[asset_id],value)
+        self.assertEqual(len(c.assets),len(original)+2)
+        self.assertEqual([call[1] for call in c.calls if call[0]=='upload'],attempts)
+        self.assertEqual(c.downloads,[])
+
     def test_real_transaction_rejects_entry_race_without_touching_new_asset(self):
         from release_asset_repair import repair
         c=self.client();before=copy.deepcopy(c.assets)
         new=self.work/'release'/'added.tar.gz';new.write_bytes(b'new successful branch')
         self.files.insert(0,new);self.proof['files'][new.name]=facts(new)
         self.proofpath.write_text(json.dumps(self.proof))
-        self.plan['receipt_sha256']=facts(self.proofpath)['sha256'];self.save_plan()
         os.environ['EXPECTED_VALIDATION_RECEIPT_SHA256']=facts(self.proofpath)['sha256']
         def raced(client,*args,**kwargs):
             client.assets[99]=('added.tar.gz',b'human bytes')
@@ -431,46 +442,21 @@ class PrepareControlFlow(unittest.TestCase):
                        'resolved_contract_sha256':self.contract_sha,'publication_format':'package-only-v1'} for arch in successful}
         return client, records
 
-    def perform(self, client):
-        with patch.object(ap,'GitHub',return_value=client), \
-             patch.object(ap,'optional_release',side_effect=lambda c:c.release()):
-            ap.prepare(self.args)
-        return json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
-
-    def test_create_plan_binds_current_contract_and_producer(self):
+    def test_prepare_is_local_and_writes_only_the_authenticated_payload_receipt(self):
         self.payload(self.source,('amd64',),11,'b'*40)
-        plan=self.perform(Client())
-        self.assertEqual(plan['operation'],'create')
-        self.assertIsNone(plan['before'])
-        self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
-
-    def test_append_preserves_public_pairs_without_merging_old_ci_controls(self):
-        self.payload(self.source,('arm64',),11,'b'*40)
-        client,records=self.old_release()
-        plan=self.perform(client)
-        self.assertEqual(plan['operation'],'append')
-        self.assertEqual(plan['preserved'],{a['name']:a for a in client.release()['assets']})
-        self.assertEqual((self.args.work/'release'/'build-manifest.json').read_bytes(),
-                         (self.source/'build-manifest.json').read_bytes())
-        self.assertFalse((self.args.work/'release'/records['amd64']['file']).exists())
-
-    def test_complete_public_packages_need_no_old_receipt_or_logs(self):
-        self.payload(self.source,('amd64','arm64'),11,'b'*40)
-        client,records=self.old_release(('amd64','arm64'))
-        before=client.release()
-        plan=self.perform(client)
-        self.assertEqual(plan['operation'],'unchanged')
-        self.assertEqual(client.release(),before)
-        self.assertEqual(client.calls,[])
-        self.assertEqual(plan['receipt_sha256'],facts(self.args.work/'control'/ap.PROOF)['sha256'])
-
-    def test_duplicate_public_asset_names_reject_before_plan(self):
-        self.payload(self.source,('amd64','arm64'),11,'b'*40)
-        client,_=self.old_release(('amd64','arm64'))
-        client.value['assets'].append(dict(client.value['assets'][0],id=99))
-        with self.assertRaisesRegex(ValueError,'Duplicate release asset names'):
-            self.perform(client)
-        self.assertFalse((self.args.work/'control'/'automatic-plan.json').exists())
+        with patch.object(ap,'GitHub',side_effect=AssertionError('Preparation must not discover Releases')), \
+             patch.object(ap,'github_json',side_effect=AssertionError('Preparation must not read remote jobs')), \
+             patch.object(ap,'current_producer',side_effect=AssertionError('Writer authenticates the producer')):
+            ap.prepare(self.args)
+        control=self.args.work/'control'
+        self.assertEqual({path.name for path in control.iterdir()},{ap.PROOF})
+        receipt=json.loads((control/ap.PROOF).read_text())
+        for path in self.source.iterdir():
+            copied=self.args.work/'release'/path.name
+            self.assertEqual(copied.read_bytes(),path.read_bytes())
+            self.assertEqual(receipt['files'][path.name],facts(copied))
+        self.assertEqual(receipt['producer_run_id'],11)
+        self.assertEqual(receipt['workflow_run_attempt'],2)
 
 
 if __name__ == '__main__':

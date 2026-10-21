@@ -38,8 +38,7 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
     if not str(run_id).isdigit() or not str(artifact_id).isdigit() or not re.fullmatch('[0-9a-f]{64}',expected_sha) or not re.fullmatch('[0-9a-f]{40}',expected_commit):
         raise ValueError('Exact run/artifact IDs, ZIP hash and built commit are required')
     run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}')
-    if run.get('status')!='completed' or run.get('conclusion') not in ('success','failure'):raise ValueError('Selected upstream workflow is cancelled or nonterminal')
-    if run.get('path','').split('@')[0]!='.github/workflows/build.yml':raise ValueError('Unexpected upstream workflow')
+    if run.get('id')!=int(run_id) or run.get('path','').split('@')[0]!='.github/workflows/build.yml':raise ValueError('Unexpected upstream workflow')
     metadata=github_json(f'repos/{UPSTREAM}/actions/artifacts/{artifact_id}')
     if metadata.get('expired') or metadata.get('workflow_run',{}).get('id')!=int(run_id):raise ValueError('Artifact/run mismatch or expired artifact')
     artifact_name=f'verified-1panel-{version}-{expected_commit}'
@@ -127,8 +126,8 @@ def publish(args):
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
     if release.get('draft') is True:
-        # Recovery is explicitly selected via exact verified-ci provenance; a
-        # normal automatic build still accepts only an empty owned draft.
+        # Manual recovery binds the draft to the explicitly selected verified
+        # CI build, independent of this recovery workflow's own commit.
         require_owned_draft(release,client)
         upstream=proof.get('upstream_input') or {}
         if (upstream.get('repository')!=UPSTREAM or

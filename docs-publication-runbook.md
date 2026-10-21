@@ -35,12 +35,14 @@ architectures; promotion takes its matrix from the selected producer artifact.
 | --- | --- |
 | `build` | Build and publish verified successful architectures. |
 | `build-only` | Build verified CI artifacts without publishing. |
-| `validate-automatic` | Build and prepare the automatic publication plan without writing a Release. |
+| `validate-automatic` | Build and validate the local automatic publication payload and receipt without writing a Release. |
 | `validate-promotion` | Validate an explicitly selected existing CI artifact without publishing. |
 | `promote-existing` | Publish missing files from that exact verified CI artifact. |
 
 `publish_candidate=true` with `build` creates a separate draft candidate instead
 of the canonical version Release. Its tag includes the build commit and run ID.
+Retrying the same verified output resumes that owned candidate draft and fills
+only missing attachments.
 
 To reuse an existing build, supply all four provenance inputs:
 
@@ -82,16 +84,19 @@ Intermediate source/shard artifacts expire after three days. Failed-only retries
 reuse the original preparation artifact and replace only their own intermediate
 shard. Inherited successful jobs remain authenticated by their original job IDs.
 A new full preparation has a new artifact ID. Final verified build artifacts
-include their producer attempt in the name and remain immutable across retries.
-Retrying only a publication job consumes its original successful preparation
-receipt and verified artifact, without compiling again. Reruns use the original
+include their producer attempt in the name for exact selection. GitHub controls
+retention: [a full workflow rerun can delete prior artifacts](https://github.com/orgs/community/discussions/45415),
+while a failed-only retry retains inherited artifacts. Save any artifact needed
+for later recovery before a full rerun. Retrying only a publication job consumes
+its available original preparation receipt and verified artifact, without compiling again. Reruns use the original
 workflow commit; code fixes require a new run or explicit artifact promotion.
 
 ## Publication and recovery
 
-Preparation is read-only. One writer per canonical version checks the bound
-preparation receipt and artifact before writing. Release operations bind to the
-observed Release ID and retain its asset snapshot. Only missing files are
+Preparation validates local files and records a receipt; it does not query or
+freeze remote Release state. One writer per canonical version checks that receipt
+and artifact, then discovers the current Release state. Release operations bind
+to the observed Release ID and retain its asset snapshot. Only missing files are
 uploaded; this code does not rename, replace or delete existing assets.
 
 A new canonical Release is staged as an owned draft. Its new attachments are
@@ -100,9 +105,10 @@ writer attempts to return that same Release ID to draft and saves a journal.
 Public notes are preserved.
 
 - An empty draft created by this workflow can be resumed by a descendant build.
-- A nonempty owned draft needs `promote-existing` with its exact original build
-  artifact. The draft target and existing attachment identities and digests must
-  match that artifact. Only older assets without a server digest need a readback.
+- A nonempty owned draft can resume from the same verified build commit, or via
+  `promote-existing` with its exact original build artifact. Every existing
+  attachment must match before any missing file is uploaded. Only older assets
+  without a server digest need a readback.
 - Conflicting assets or changed Release identity stop the transaction. Review
   the preserved journal and choose an explicit recovery action.
 

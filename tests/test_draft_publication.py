@@ -4,8 +4,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
@@ -131,20 +133,30 @@ class DraftDiscovery(unittest.TestCase):
         client.drafts.assert_not_called()
 
 
-class EmptyDraftEligibility(unittest.TestCase):
+class DraftEligibility(unittest.TestCase):
     def test_empty_bot_draft_at_current_commit_needs_no_compare(self):
         client = TransportGitHub(draft())
-        ap.empty_automatic_draft(client.value, client, 'a' * 40)
+        ap.check_automatic_draft(client.value, client, 'a' * 40)
         self.assertEqual(client.calls, [])
 
     def test_ancestor_target_is_eligible_for_explicit_retarget(self):
         client = TransportGitHub(draft('b' * 40))
-        ap.empty_automatic_draft(client.value, client, 'a' * 40)
+        ap.check_automatic_draft(client.value, client, 'a' * 40)
         self.assertTrue(any('/compare/' in item for call in client.calls for item in call))
 
-    def test_nonempty_foreign_or_changed_drafts_require_review(self):
-        changes = [dict(assets=[{'id': 3, 'name': 'package.tar.gz'}]),
-                   dict(body='Human release notes'), dict(name='Human draft'),
+    def test_nonempty_draft_requires_the_exact_current_commit(self):
+        for target in ('a' * 40, 'b' * 40):
+            client = TransportGitHub(dict(draft(target), assets=[{'id': 3, 'name': 'package.tar.gz'}]))
+            with self.subTest(target=target):
+                if target == 'a' * 40:
+                    ap.check_automatic_draft(client.value, client, 'a' * 40)
+                else:
+                    with self.assertRaises(ValueError):
+                        ap.check_automatic_draft(client.value, client, 'a' * 40)
+                self.assertEqual(client.calls, [])
+
+    def test_foreign_or_changed_drafts_require_review(self):
+        changes = [dict(body='Human release notes'), dict(name='Human draft'),
                    dict(author={'id': 123, 'login': 'someone', 'type': 'User'}),
                    dict(target_commitish='master'), dict(prerelease=True),
                    dict(draft=False), dict(id=True), dict(tag_name='v2.98.0')]
@@ -152,19 +164,18 @@ class EmptyDraftEligibility(unittest.TestCase):
             release = dict(draft(), **change)
             client = TransportGitHub(release)
             with self.subTest(change=change), self.assertRaises(ValueError):
-                ap.empty_automatic_draft(release, client, 'a' * 40)
+                ap.check_automatic_draft(release, client, 'a' * 40)
             self.assertEqual(client.calls, [])
 
     def test_diverged_target_is_not_automatically_adopted(self):
         client = TransportGitHub(draft('b' * 40))
         client.ancestor = False
         with self.assertRaises(ValueError):
-            ap.empty_automatic_draft(client.value, client, 'a' * 40)
+            ap.check_automatic_draft(client.value, client, 'a' * 40)
 
 
 class DraftTransactions(unittest.TestCase):
     setUp = fixtures.AutomaticTransaction.setUp
-    save_plan = fixtures.AutomaticTransaction.save_plan
     producer = fixtures.AutomaticTransaction.producer
     repair = fixtures.AutomaticTransaction.repair
 
@@ -179,14 +190,8 @@ class DraftTransactions(unittest.TestCase):
                     if call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases'))
         self.assertFalse(any('/releases/tags/' in item for call in client.calls[post + 1:] for item in call))
 
-    def resume_plan(self, release):
-        self.plan.update(operation='resume', before=ap.snapshot(release),
-                         draft_identity=ap.draft_identity(release))
-        self.save_plan()
-
     def test_failed_empty_draft_resumes_without_creating_another_release(self):
         release = draft('b' * 40)
-        self.resume_plan(release)
         client = TransportGitHub(release)
         with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
             self.assertEqual(ap.publish(self.args, client), 'published')
@@ -205,33 +210,93 @@ class DraftTransactions(unittest.TestCase):
         self.assertEqual(journal['phase'], 'complete')
         self.assertEqual(journal['release_id'], 17)
 
-    def test_writer_recovers_draft_hidden_from_readonly_preparation(self):
-        # The read-only preparation token may not see draft releases. The
-        # write token must discover and bind the unique eligible draft instead
-        # of treating its existence as permission to create a duplicate.
-        client = TransportGitHub(draft('b' * 40))
-        self.assertIsNone(self.plan['before'])
-        self.assertEqual(self.plan['operation'], 'create')
-        with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
-            self.assertEqual(ap.publish(self.args, client), 'published')
-        self.assertEqual(client.release_id, 17)
-        self.assertFalse(client.value['draft'])
-        self.assertEqual(len(client.value['assets']), 2)
-        self.assertFalse(any(call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases')
-                             for call in client.calls))
+    def test_writer_only_retry_reuses_partial_create_or_resume_from_the_same_artifact(self):
+        prepared = self.work
+        receipt = self.proofpath.read_bytes()
+        for initial in (None, draft('b' * 40)):
+            with self.subTest(resuming=initial is not None), tempfile.TemporaryDirectory() as runners:
+                self.args.work = Path(runners) / 'first'
+                shutil.copytree(prepared, self.args.work)
+                client = TransportGitHub(initial)
+                upload = client.upload
+                attempts = []
+                def fail_second_upload(path):
+                    attempts.append(path.name)
+                    if len(attempts) == 2:
+                        raise OSError('second upload interrupted')
+                    return upload(path)
+                with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair), \
+                     patch.object(client, 'upload', side_effect=fail_second_upload), \
+                     self.assertRaisesRegex(OSError, 'second upload interrupted'):
+                    ap.publish(self.args, client)
+                self.assertTrue(client.value['draft'])
+                self.assertEqual(len(client.value['assets']), 1)
+                existing = copy.deepcopy(client.value['assets'][0])
 
-    def test_writer_never_adopts_ineligible_draft_hidden_from_preparation(self):
+                # A new runner downloads the original preparation artifact,
+                # without either writer journal, and discovers remote progress.
+                self.args.work = Path(runners) / 'retry'
+                shutil.copytree(prepared, self.args.work)
+                retry = TransportGitHub(client.value)
+                retry.bytes = copy.deepcopy(client.bytes)
+                with patch.dict(os.environ, GITHUB_RUN_ATTEMPT='2'), \
+                     patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
+                    self.assertEqual(ap.publish(self.args, retry), 'published')
+                self.assertFalse(retry.value['draft'])
+                self.assertEqual(retry.value['tag_name'], retry.tag)
+                self.assertEqual(len(retry.value['assets']), 2)
+                self.assertEqual(next(asset for asset in retry.value['assets'] if asset['id'] == existing['id']), existing)
+                uploads = [parse_qs(urlparse(call[3]).query)['name'][0] for call in retry.calls
+                           if call[:3] == ('api', '--method', 'POST') and call[3].startswith('https://uploads.github.com/')]
+                self.assertEqual(uploads, [self.files[1].name])
+                self.assertEqual((self.args.work / 'control' / ap.PROOF).read_bytes(), receipt)
+                first_retargets = [call for call in client.calls if any(item.startswith('target_commitish=') for item in call)
+                                   and call[:3] == ('api', '--method', 'PATCH')]
+                self.assertEqual(len(first_retargets), int(initial is not None))
+                if first_retargets:
+                    self.assertIn(f'tag_name={client.tag}', first_retargets[0])
+                self.assertFalse(any(call[:3] == ('api', '--method', 'PATCH')
+                                     and any(item.startswith('target_commitish=') for item in call) for call in retry.calls))
+                self.assertFalse(any(call[:4] == ('api', '--method', 'POST', f'repos/{retry.repo}/releases')
+                                     for call in retry.calls))
+
+    def test_writer_never_adopts_an_ineligible_draft(self):
         for change in ({'body': 'manual notes'}, {'author': {'id': 7, 'login': 'human', 'type': 'User'}},
                        {'assets': [{'id': 9, 'name': 'existing.tar.gz', 'size': 3, 'digest': 'sha256:' + 'a' * 64}]}):
             client = TransportGitHub(dict(draft(), **change))
-            with self.subTest(change=change), patch.object(ap, 'optional_release', OPTIONAL_RELEASE), self.assertRaises(ValueError):
+            with self.subTest(change=change), patch.object(ap, 'optional_release', OPTIONAL_RELEASE), \
+                 patch.object(ap, 'repair', repair), self.assertRaises(ValueError):
                 ap.publish(self.args, client)
             self.assertFalse(any('POST' in call or 'PATCH' in call for call in client.calls))
 
-    def test_draft_metadata_drift_after_prepare_stops_before_write(self):
-        self.resume_plan(draft())
-        client = TransportGitHub(dict(draft(), target_commitish='b' * 40))
-        with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), self.assertRaises(ValueError):
+    def test_nonempty_draft_wrong_target_bytes_or_unknown_asset_stops_before_writes(self):
+        prepared = self.work
+        for reason in ('target', 'bytes', 'unknown'):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as runner:
+                self.args.work = Path(runner) / 'work'
+                shutil.copytree(prepared, self.args.work)
+                client = TransportGitHub(draft('b' * 40 if reason == 'target' else 'a' * 40))
+                raw = b'corrupt' if reason == 'bytes' else self.files[0].read_bytes()
+                name = 'unexpected.tar.gz' if reason == 'unknown' else self.files[0].name
+                asset = {'id': 9, 'name': name, 'size': len(raw),
+                         'digest': 'sha256:' + hashlib.sha256(raw).hexdigest()}
+                client.value['assets'] = [asset]
+                client.bytes[9] = raw
+                with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair), \
+                     self.assertRaises(ValueError):
+                    ap.publish(self.args, client)
+                self.assertEqual(client.value['assets'], [asset])
+                self.assertTrue(client.value['draft'])
+                self.assertFalse(any('POST' in call or 'PATCH' in call for call in client.calls))
+                self.assertFalse(any('/compare/' in item for call in client.calls for item in call))
+
+    def test_draft_metadata_drift_during_writer_stops_before_upload(self):
+        client = TransportGitHub(draft())
+        def changed_before_repair(client, *args, **kwargs):
+            client.value['target_commitish'] = 'b' * 40
+            return repair(client, *args, **kwargs)
+        with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), \
+             patch.object(ap, 'repair', side_effect=changed_before_repair), self.assertRaises(ValueError):
             ap.publish(self.args, client)
         self.assertFalse(any('POST' in call or 'PATCH' in call for call in client.calls))
         self.assertTrue(client.value['draft'])
@@ -242,16 +307,22 @@ class DraftPreparation(unittest.TestCase):
     setUp = fixtures.PrepareControlFlow.setUp
     payload = fixtures.PrepareControlFlow.payload
 
-    def test_empty_draft_plan_does_not_use_public_package_verification(self):
+    def test_preparation_uses_no_remote_api_and_writer_recovers_the_current_draft(self):
         self.payload(self.source, ('amd64',), 11, 'b' * 40)
-        client = TransportGitHub(draft('b' * 40))
-        with patch.object(ap, 'GitHub', return_value=client):
+        client = TransportGitHub(draft('a' * 40))
+        with patch.object(ap, 'GitHub', side_effect=AssertionError('Preparation must not discover releases')), \
+             patch.object(ap, 'optional_release', side_effect=AssertionError('Preparation must not read releases')):
             ap.prepare(self.args)
-        plan = json.loads((self.args.work / 'control' / 'automatic-plan.json').read_text())
-        self.assertEqual(plan['operation'], 'resume')
-        self.assertEqual(plan['before'], ap.snapshot(client.value))
-        self.assertEqual(plan['draft_identity'], ap.draft_identity(client.value))
-        self.assertFalse(any('POST' in call or 'PATCH' in call for call in client.calls))
+        self.assertFalse((self.args.work / 'control' / 'automatic-plan.json').exists())
+        self.assertEqual(client.calls, [])
+        proof = self.args.work / 'control' / ap.PROOF
+        with patch.dict(os.environ, EXPECTED_VALIDATION_RECEIPT_SHA256=fixtures.facts(proof)['sha256']):
+            self.assertEqual(ap.publish(self.args, client), 'published')
+        self.assertFalse(client.value['draft'])
+        self.assertEqual(client.release_id, 17)
+        self.assertEqual(len(client.value['assets']), 2)
+        self.assertFalse(any(call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases')
+                             for call in client.calls))
 
 
 if __name__ == '__main__':

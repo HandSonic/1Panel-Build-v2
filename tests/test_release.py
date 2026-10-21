@@ -66,6 +66,7 @@ class ReleaseTests(unittest.TestCase):
         (self.root/'build').mkdir()
         for module in (package_release,validate_artifacts,download_resources):
             p=patch.object(module,'resolve',return_value=self.entry);p.start();self.addCleanup(p.stop)
+        p=patch.object(download_resources,'CONFIG',self.root/'config');p.start();self.addCleanup(p.stop)
         p=patch.dict(os.environ,{'BUILD_REPOSITORY_COMMIT':'a'*40},clear=False);p.start();self.addCleanup(p.stop)
     def binaries(self,arch):
         for part in ('core','agent'):

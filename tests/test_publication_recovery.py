@@ -253,11 +253,21 @@ class VerifiedProducerRecovery(unittest.TestCase):
             def download(command,**kwargs):
                 kwargs['stdout'].write(data)
                 return SimpleNamespace(returncode=0)
-            with patch.object(manual,'github_json',side_effect=[run,metadata,{'jobs':jobs,'total_count':len(jobs)},run]),\
-                 patch.object(manual.subprocess,'run',side_effect=download):
-                provenance=manual.fetch_ci_bundle(root/'input','v2.4.0','10','22',digest,commit,'upstream-matrix')
-            self.assertEqual(provenance['build_repository_commit'],commit)
-            self.assertEqual(provenance['artifact_sha256'],digest)
+            for status,conclusion in (('completed','failure'),('completed','cancelled'),('in_progress',None)):
+                latest=dict(run,run_attempt=3,status=status,conclusion=conclusion)
+                future=dict(jobs[-1],id=100,run_attempt=3,status=status,conclusion=conclusion)
+                inventory=jobs+[future]
+                with self.subTest(latest_status=status,latest_conclusion=conclusion),\
+                     patch.object(manual,'github_json',side_effect=[latest,metadata,{'jobs':inventory,'total_count':len(inventory)},run]),\
+                     patch.object(manual.subprocess,'run',side_effect=download):
+                    provenance=manual.fetch_ci_bundle(root/('input-'+str(conclusion)),'v2.4.0','10','22',digest,commit,'upstream-matrix')
+                self.assertEqual(provenance['build_repository_commit'],commit)
+                self.assertEqual(provenance['artifact_sha256'],digest)
+            # Only the selected producer's terminal state determines eligibility.
+            with patch.object(manual,'github_json',side_effect=[run,metadata,{'jobs':jobs,'total_count':len(jobs)},dict(run,conclusion='cancelled')]),\
+                 patch.object(manual.subprocess,'run',side_effect=download),\
+                 self.assertRaisesRegex(ValueError,'terminal permitted build'):
+                manual.fetch_ci_bundle(root/'cancelled-producer','v2.4.0','10','22',digest,commit,'upstream-matrix')
 
 
 if __name__=='__main__':unittest.main()
