@@ -20,6 +20,9 @@ commits of official history anchored to that tip. Unmatched or unavailable
 history fails explicitly. GeoIP is bound to the same version archive, with full
 compressed size/hash and member size/hash checks, so later updates to the
 standalone GeoIP URL do not change the resolved build. Discovery also
+retains its authenticated GeoIP bytes as an optional local cache so resource
+preparation does not download the same official package twice. Older inputs
+without this cache keep the version-bound download path. Discovery
 selects toolchains satisfying both Go modules and every declared npm engine,
 and retains `npm ci --engine-strict`, archive integrity and all architecture gates.
 A source without a lock first reuses an exact-manifest-bound reviewed repair.
@@ -137,12 +140,15 @@ remains the default and publishes automatically; new releases need no extra step
 Matrix jobs use `fail-fast: false`. A failed architecture is omitted while successful
 branches are independently validated and aggregated. The schema-2 manifest records
 every requested architecture, its exact producer attempt/job identity, and its
-terminal result. Replay requires a complete exact-attempt job inventory; if a
-failed-only retry omits inherited successful jobs, rerun the full workflow. Shared source/preparation/validation failures block all dependent
+terminal result. Failed-only retries authenticate the latest job for each branch
+through the selected producer attempt, retaining inherited successful jobs by ID.
+Final verified artifact names include the attempt so retries preserve earlier
+artifacts. Retrying publication reuses its successful preparation and does not
+recompile. Shared source/preparation/validation failures block all dependent
 artifacts; cancelled runs cannot publish. Failure details remain in Actions jobs,
 warnings and summaries, never Release notes. Existing canonical assets are not
-renamed, deleted or replaced. Conflicting bytes or requested retirement stop for
-specific review before any upload.
+renamed, deleted or replaced. Conflicting bytes stop for specific review before
+any upload; other existing attachments stay outside the repair payload.
 An explicit `publish_candidate` dispatch creates a **new draft** tag/release
 and verifies uploaded SHA-256 and size. It never overwrites
 public release assets. `promote-existing` consumes an explicitly selected verified

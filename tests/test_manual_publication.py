@@ -30,14 +30,34 @@ class ManualPublicationTests(unittest.TestCase):
    data=archive.read_bytes();sha=hashlib.sha256(data).hexdigest();commit='a'*40
    asset={'expired':False,'workflow_run':{'id':10},'name':f'verified-1panel-v2.3.2-{commit}','digest':'sha256:'+sha,'size_in_bytes':len(data)}
    def download(args,**kwargs):kwargs['stdout'].write(data);return SimpleNamespace(returncode=0)
-   with patch.object(manual,'github_json',side_effect=[run,asset,{'jobs':jobs,'total_count':len(jobs)},run]),patch.object(manual.subprocess,'run',side_effect=download):
-    result=manual.fetch_ci_bundle(root/'input','v2.3.2','10','22',sha,commit,'upstream-matrix')
-    self.assertEqual(result['build_repository_commit'],commit)
+   for suffix in ('','-2','-3'):
+    selected=dict(asset,name=asset['name']+suffix)
+    with patch.object(manual,'github_json',side_effect=[run,selected,{'jobs':jobs,'total_count':len(jobs)},run]),patch.object(manual.subprocess,'run',side_effect=download):
+     if suffix=='-3':
+      with self.assertRaisesRegex(ValueError,'producer attempt'):
+       manual.fetch_ci_bundle(root/'mismatch','v2.3.2','10','22',sha,commit,'upstream-matrix')
+     else:
+      result=manual.fetch_ci_bundle(root/('input'+suffix),'v2.3.2','10','22',sha,commit,'upstream-matrix')
+      self.assertEqual(result['build_repository_commit'],commit)
    with patch.object(manual,'github_json',return_value=dict(run,conclusion='cancelled')):
     with self.assertRaises(ValueError):manual.fetch_ci_bundle(root/'bad','v2.3.2','10','22',sha,commit,'upstream-matrix')
  def test_wrong_version_tag_or_repository_rejected(self):
   for version,tag,repo in [('v2.3.2','v2.3.1',manual.REPOS['upstream-matrix']),('../../escape','../../escape',manual.REPOS['upstream-matrix']),('v2.3.2','v2.3.2','other/repo')]:
    with self.assertRaises(ValueError):manual.check_identity(version,tag,repo)
+ def test_proof_retry_keeps_original_attempt_and_rejects_future_identity(self):
+  import publication_contract as contract
+  from test_matrix_contract import MatrixContractTests
+  manifest,_,_=MatrixContractTests().fixture()
+  with tempfile.TemporaryDirectory() as t:
+   path=Path(t)/'build-manifest.json';path.write_text(json.dumps(manifest))
+   arguments=([path],'upstream-matrix',manifest['version'],manifest['version'],manual.UPSTREAM,'10','a'*40)
+   with patch.object(contract,'policy_fingerprint',return_value='f'*64),patch.dict(os.environ,GITHUB_RUN_ATTEMPT='2'):
+    proof=contract.make_proof(*arguments)
+   with patch.object(contract,'policy_fingerprint',return_value='f'*64),patch.dict(os.environ,GITHUB_RUN_ATTEMPT='3'):
+    self.assertEqual(contract.make_proof(*arguments,workflow_run_attempt=proof['workflow_run_attempt']),proof)
+    for invalid in (0,True,4):
+     with self.subTest(attempt=invalid),self.assertRaises(ValueError):
+      contract.make_proof(*arguments,workflow_run_attempt=invalid)
  def test_zip_checks_crc_during_its_only_extraction(self):
   with tempfile.TemporaryDirectory() as t:
    root=Path(t);archive=root/'input.zip';body=b'CRC payload'

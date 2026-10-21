@@ -217,6 +217,11 @@ def apply_contract(path, expected_digest, root, version):
     elif lock['kind'] == 'source':
         require(not absent, 'Source lock cannot be absent')
     payload = read_payload(path.parent, contract)
+    from geoip_cache import read as read_cache, write as write_cache
+    geoip = contract['resources']['geoip']
+    cached_geoip = read_cache(path.parent, geoip)
+    if cached_geoip is not None:
+        read_cache(root / 'config', geoip)
     # Runtime facts live in one authenticated per-run artifact, never a version registry.
     target = root / 'config/resolved-source.json'
     require(not target.parent.is_symlink(), 'Linked resolved input directory rejected')
@@ -227,6 +232,8 @@ def apply_contract(path, expected_digest, root, version):
         write_payload(root / 'config' / SIDECAR, payload)
     else:
         read_payload(root / 'config', contract)
+    if cached_geoip is not None:
+        write_cache(root / 'config', cached_geoip, geoip)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(canonical(contract))
     return contract

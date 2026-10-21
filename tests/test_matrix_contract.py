@@ -36,7 +36,7 @@ class MatrixContractTests(unittest.TestCase):
             value,run,jobs=self.fixture()
             if mutation=='shared':jobs[0]['conclusion']='failure'
             if mutation=='cancel':run['conclusion']='cancelled'
-            if mutation=='attempt':jobs[-1]['run_attempt']=1
+            if mutation=='attempt':jobs[-1]['run_attempt']=3
             if mutation=='hidden':jobs.append({'id':99,'name':'unexpected','conclusion':'failure'})
             if mutation=='wrongbranch':jobs[-1]['conclusion']='success'
             if mutation=='falsegreen':run['conclusion']='success'
@@ -71,3 +71,26 @@ class MatrixContractTests(unittest.TestCase):
         value,run,jobs=self.fixture()
         with self.assertRaisesRegex(ValueError,'Missing or duplicate architecture job'):
             m.verify_jobs(value,run,jobs[:-1],'a'*40)
+
+    def test_failed_only_retry_uses_inherited_success_and_latest_branch(self):
+        value,run,jobs=self.fixture()
+        for job in jobs:
+            if job['name'] in ('tests','prepare','compile (amd64)'):job['run_attempt']=1
+        previous=dict(jobs[-1],id=50,run_attempt=1)
+        jobs[-1]['conclusion']='success'
+        old_writer=dict(jobs[0],id=51,name='automatic_publication',conclusion='failure')
+        future=dict(jobs[-1],id=52,run_attempt=3,conclusion='failure')
+        jobs.extend([previous,old_writer,future])
+        value['outcomes']=m.collect(jobs,value['requested_architectures'],10,2)
+        value['artifacts'].append({'architecture':'arm64'})
+        run['conclusion']='success'
+        self.assertEqual(m.verify_jobs(value,run,jobs,'a'*40),['amd64','arm64'])
+        run.update(status='in_progress',conclusion=None)
+        jobs.append(dict(jobs[0],id=53,name='publication_prepare',run_attempt=2,
+                         status='in_progress',conclusion=None))
+        self.assertEqual(m.verify_current_jobs(value,run,jobs,'a'*40,10,2),['amd64','arm64'])
+        # The original successful job ID remains authenticated, not just its name.
+        value['outcomes'][0]['job_id']=99
+        value['outcomes'][0]['job_url']=f'https://github.com/{m.REPOSITORY}/actions/runs/10/job/99'
+        with self.assertRaisesRegex(ValueError,'effective API job identities'):
+            m.verify_current_jobs(value,run,jobs,'a'*40,10,2)

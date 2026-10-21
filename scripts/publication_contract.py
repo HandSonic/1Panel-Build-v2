@@ -36,7 +36,8 @@ def policy_fingerprint(contract,version,root=ROOT):
                'scripts/release_asset_repair.py','scripts/aggregate_shards.py',
                'scripts/automatic_frontend_lock.py','scripts/automatic_frontend_lock.mjs',
                'scripts/installer_resources.py','scripts/service_layout.py','scripts/download_resources.py',
-               'scripts/frontend_lock_origins.py','scripts/verify_bundled_archives.py','scripts/publication_lineage.py','scripts/automatic_publication.py']
+               'scripts/frontend_lock_origins.py','scripts/verify_bundled_archives.py','scripts/publication_lineage.py','scripts/automatic_publication.py',
+               'scripts/geoip_cache.py']
         facts={p:digest(root/p)['sha256'] for p in paths}
         facts['resolved_contract_sha256']=contract_digest(runtime_contract(version,root))
         return hashlib.sha256(json.dumps(facts,sort_keys=True).encode()).hexdigest()
@@ -69,13 +70,16 @@ def validate_payloads(directory,contract,version,root=ROOT):
     return sorted(files,key=lambda p:p.name)
 
 
-def make_proof(files,contract,version,tag,repository,workflow_run_id,workflow_commit,root=ROOT):
+def make_proof(files,contract,version,tag,repository,workflow_run_id,workflow_commit,root=ROOT,*,workflow_run_attempt=None):
     if repository!=REPOS[contract] or not (tag==version or tag.startswith(version+'-')):raise ValueError('Publication target/version mismatch')
     if not str(workflow_run_id).isdigit() or not re.fullmatch('[0-9a-f]{40}',workflow_commit):raise ValueError('Immutable workflow identity required')
+    current_attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
+    attempt=current_attempt if workflow_run_attempt is None else workflow_run_attempt
+    if type(attempt) is not int or not 0 < attempt <= current_attempt:raise ValueError('Invalid publication preparation attempt')
     proof={'schema':2 if contract=='upstream-matrix' else 1,'contract':contract,'version':version,'release_tag':tag,'repository':repository,
             'policy_fingerprint':policy_fingerprint(contract,version,root),
             'workflow_run_id':int(workflow_run_id),'workflow_commit':workflow_commit,
-            'workflow_run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+            'workflow_run_attempt':attempt,
             'files':{p.name:digest(p) for p in files}}
     if contract=='upstream-matrix':
         manifest=json.loads(next(p for p in files if p.name=='build-manifest.json').read_text())

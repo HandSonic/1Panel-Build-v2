@@ -46,19 +46,6 @@ class PackageMetadata(unittest.TestCase):
         self.assertEqual(set(pp.metadata_inventory(release,'v2.99.0')[0]),{'amd64'})
         release['assets'].append({'name':'unrelated'})
         self.assertEqual(set(pp.metadata_inventory(release,'v2.99.0')[0]),{'amd64'})
-    def test_control_removal_requires_confirmation_without_creating_backup(self):
-        from test_release_repair import FakeGitHub
-        from release_asset_repair import repair
-        client=FakeGitHub()
-        archive=self.root/'package.tar.gz';archive.write_bytes(b'old archive')
-        sha=self.root/'package.tar.gz.sha256';sha.write_bytes(b'new checksum')
-        journal=self.root/'journal.json'
-        with self.assertRaisesRegex(ValueError,'specific deletion confirmation'):
-            repair(client,[archive,sha],journal,retire=['checksums.txt'])
-        self.assertEqual(client.calls,[])
-        self.assertEqual(client.assets[2],('checksums.txt',b'old checksum'))
-        self.assertEqual([a['id'] for a in json.loads(journal.read_text())['conflicts']],[2])
-
     def test_legacy_repack_preserves_payload_bytes_modes_build_identity_and_is_idempotent(self):
         manifest=dict(self.manifest)
         manifest.pop('publication_format')

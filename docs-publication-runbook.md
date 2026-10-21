@@ -69,6 +69,10 @@ architecture matrix, with at most three compile runners active. The Go cache is
 separate by version, Go version and architecture; module inputs and the Go
 compatibility adapter invalidate it.
 
+Discovery retains the GeoIP bytes it already authenticated. Resource preparation
+checks that optional cache against the same contract instead of downloading the
+official archive again. It is not a required public artifact or a new input schema.
+
 Downloaded shards and the final aggregate are validated at their transfer
 boundaries. Shared preparation or validation failures block publication. A failed
 architecture is omitted while independently successful output can be published.
@@ -76,8 +80,12 @@ Failure details stay in Actions, not Release notes.
 
 Intermediate source/shard artifacts expire after three days. Failed-only retries
 reuse the original preparation artifact and replace only their own intermediate
-shard. A new full preparation has a new artifact ID. Final verified build artifacts
-remain immutable.
+shard. Inherited successful jobs remain authenticated by their original job IDs.
+A new full preparation has a new artifact ID. Final verified build artifacts
+include their producer attempt in the name and remain immutable across retries.
+Retrying only a publication job consumes its original successful preparation
+receipt and verified artifact, without compiling again. Reruns use the original
+workflow commit; code fixes require a new run or explicit artifact promotion.
 
 ## Publication and recovery
 

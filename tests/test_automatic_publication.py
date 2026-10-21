@@ -94,7 +94,7 @@ class AutomaticTransaction(unittest.TestCase):
         for target, replacement in [
             ('check_identity', lambda *a: {}),
             ('validate_payloads', lambda *a: self.files),
-            ('make_proof', lambda *a: self.proof),
+            ('make_proof', lambda *a, **kw: self.proof),
             ('optional_release', lambda c: c.release()),
             ('current_producer', self.producer),
             ('repair', self.repair),
@@ -141,6 +141,18 @@ class AutomaticTransaction(unittest.TestCase):
         self.assertEqual(kw['expected_snapshot']['id'], 17)
         self.assertEqual(self.producer_calls, 2)
         self.assertFalse(any('body=' in item for call in c.calls for item in call))
+
+    def test_writer_retry_preserves_the_preparation_proof_attempt(self):
+        self.proof['workflow_run_attempt']=1
+        self.proofpath.write_text(json.dumps(self.proof))
+        self.plan['receipt_sha256']=facts(self.proofpath)['sha256'];self.save_plan()
+        def original_proof(*args,**kwargs):
+            self.assertEqual(kwargs['workflow_run_attempt'],1)
+            return self.proof
+        with patch.dict(os.environ,GITHUB_RUN_ATTEMPT='2',
+                        EXPECTED_VALIDATION_RECEIPT_SHA256=facts(self.proofpath)['sha256']),\
+             patch.object(ap,'make_proof',side_effect=original_proof):
+            self.assertEqual(ap.publish(self.args,Client()),'published')
 
     def test_substituted_created_draft_never_adopted(self):
         c = Client(); c.substitute = True
@@ -246,11 +258,11 @@ class CurrentProducer(unittest.TestCase):
             if case=='pr':r['event']='pull_request'
             if case=='unknown-pending':j[-1]['name']='unexpected'
             if case=='shared':j[0]['conclusion']='failure'
-            if case=='job-attempt':j[-1]['run_attempt']=3
+            if case=='job-attempt':j[3]['run_attempt']=3
             if case=='unfinished-compile':j[3].update(status='in_progress',conclusion=None)
             with self.subTest(case=case),self.assertRaises(ValueError):verify_current_jobs(value,r,j,'a'*40,10,2)
 
-    def test_provider_fetches_only_exact_attempt_and_all_pages(self):
+    def test_provider_fetches_target_attempt_and_all_job_executions(self):
         from test_publication_lineage import producer_fixture
         value,run,jobs=producer_fixture();run.update(status='in_progress',conclusion=None)
         calls=[]
@@ -263,7 +275,26 @@ class CurrentProducer(unittest.TestCase):
         with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='2'),patch.object(ap,'github_json',side_effect=api):
             ap.current_producer(value,'a'*40)
         self.assertEqual(len(calls),3)
-        self.assertTrue(all('/runs/10/attempts/2' in path for path in calls))
+        self.assertIn('/runs/10/attempts/2',calls[0])
+        self.assertTrue(all('/runs/10/jobs?filter=all&' in path for path in calls[1:]))
+
+    def test_writer_only_retry_authenticates_original_terminal_producer(self):
+        from test_publication_lineage import producer_fixture
+        value,run,jobs=producer_fixture();run.update(status='completed',conclusion='failure')
+        jobs.append(dict(jobs[0],id=999,name='automatic_publication',conclusion='failure'))
+        calls=[]
+        def api(path):
+            calls.append(path)
+            if path.endswith('/attempts/2'):return run
+            if '/jobs?filter=all&' in path:return {'total_count':len(jobs),'jobs':jobs}
+            raise AssertionError(path)
+        with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3'),patch.object(ap,'github_json',side_effect=api):
+            ap.current_producer(value,'a'*40)
+        self.assertIn('/attempts/2',calls[0])
+        jobs[0]['conclusion']='failure'
+        with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3'),patch.object(ap,'github_json',side_effect=api):
+            with self.assertRaisesRegex(ValueError,'Shared producer gate failed'):
+                ap.current_producer(value,'a'*40)
 
 
 class RealAppendTransactions(unittest.TestCase):

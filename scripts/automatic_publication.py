@@ -53,17 +53,25 @@ def operation_allowed(action,event,ref,default_branch,mode,candidate):
 
 
 def current_producer(manifest,commit):
-    from matrix_contract import verify_current_jobs
-    run_id=int(os.environ['GITHUB_RUN_ID']);attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
+    from matrix_contract import verify_current_jobs, verify_jobs
+    run_id=int(os.environ['GITHUB_RUN_ID']);current_attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
+    attempt=manifest.get('producer_run_attempt')
+    if type(attempt) is not int or not 0 < attempt <= current_attempt:
+        raise ValueError('Invalid current producer attempt')
     run=github_json(f'repos/{GitHubRepo}/actions/runs/{run_id}/attempts/{attempt}')
+    if run.get('event') not in ('push','schedule','workflow_dispatch'):
+        raise ValueError('Automatic publication requires a trusted non-PR execution')
     jobs=[];page=1
     while True:
-        result=github_json(f'repos/{GitHubRepo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100&page={page}')
+        result=github_json(f'repos/{GitHubRepo}/actions/runs/{run_id}/jobs?filter=all&per_page=100&page={page}')
         jobs.extend(result['jobs'])
         if len(jobs)>=result['total_count']:break
         page+=1
         if page>10:raise ValueError('Excessive job inventory')
-    verify_current_jobs(manifest,run,jobs,commit,run_id,attempt)
+    if attempt==current_attempt:
+        verify_current_jobs(manifest,run,jobs,commit,run_id,attempt)
+    else:
+        verify_jobs(manifest,run,jobs,commit,allow_publication_failures=True)
 
 
 GitHubRepo='HandSonic/1Panel-Build-v2'
@@ -135,7 +143,8 @@ def publish(args,client=None):
     activate_release(work/'release',args.version)
     files=validate_payloads(work/'release',contract,args.version)
     proof=json.loads(proof_path.read_text())
-    expected=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
+    expected=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'],
+                        workflow_run_attempt=proof.get('workflow_run_attempt'))
     if proof!=expected:raise ValueError('Automatic publication contract changed')
     manifest=json.loads((work/'release'/'build-manifest.json').read_text())
     current=manifest['generations'][manifest['current_generation']] if manifest['schema_version']==3 else manifest
@@ -148,16 +157,24 @@ def publish(args,client=None):
         pairs,actual=metadata_inventory(current_release,args.version)
         preserved={asset['name']:asset for asset in current_release['assets']}
         complete_names={asset['name'] for pair in pairs.values() for asset in pair}
-        # A half-present pair can only be completed using these exact new
-        # verified bytes. Never combine a rebuilt package with an old,
-        # incompatible checksum or replace an existing member.
+        derived={}
         for path in published:
             if path.name in actual and path.name not in complete_names:
-                facts=digest(path);old=actual[path.name]
-                if old.get('size')!=facts['bytes'] or old.get('digest')!='sha256:'+facts['sha256']:
-                    raise ValueError('Incomplete public pair differs from this build; explicit repair required')
+                old=actual[path.name]
+                if path.name.endswith('.tar.gz'):
+                    old_sha=old.get('digest')
+                    if not isinstance(old_sha,str) or not re.fullmatch(r'sha256:[0-9a-f]{64}',old_sha):
+                        raise ValueError('Existing archive has no valid server SHA-256; explicit repair required')
+                    directory=control/'public-checksums';directory.mkdir(exist_ok=True)
+                    sidecar=directory/(path.name+'.sha256')
+                    sidecar.write_text(old_sha[7:]+'  '+path.name+'\n')
+                    derived[sidecar.name]=sidecar
+                else:
+                    facts=digest(path)
+                    if old.get('size')!=facts['bytes'] or old.get('digest')!='sha256:'+facts['sha256']:
+                        raise ValueError('Incomplete public pair differs from this build; explicit repair required')
         if {name:asset_identity(asset) for name,asset in plan['preserved'].items()}!={name:asset_identity(asset) for name,asset in preserved.items()}:raise ValueError('Preserved package inventory changed')
-        published=[path for path in published if path.name not in actual]
+        published=[derived.get(path.name,path) for path in published if path.name not in actual]
     journal=control/'automatic-journal.json'
     if journal.exists() or (control/'creation-journal.json').exists():raise ValueError('Existing automatic journal requires recovery review')
     expected_snapshot=plan['before']

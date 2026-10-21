@@ -8,10 +8,12 @@ can wait without the default single-pending replacement. Queue ordering follows
 when jobs reach the lock, not workflow dispatch order. Do not exceed that queue
 capacity. See the [GitHub concurrency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-Start with a bounded three-version build/validation cohort and coordinate hosted
-runner/disk use with downstream native tests. Each build still limits compile
-jobs to three; that is not a global cap across arbitrary workflow dispatches.
-Wait for old workflow revisions with the former branch-wide lock to finish
-before overlapping writers under this new policy. Promotion still requires the
-same exact producer/artifact and receipt binding, recoverable backups and public
-readback. These jobs do not alter repository-global latest-release metadata.
+Each build limits compile jobs to three; this is a per-run limit. Build only the
+versions needed for the change. Existing artifacts can be promoted without
+compiling another version or repeating a successful architecture.
+
+Publication retains the selected producer/artifact and receipt binding. It
+uploads only absent files and checks GitHub's returned digest and size. Existing
+attachments are preserved; only historical assets without a server digest need
+one download for verification. Publishing a canonical version updates release
+visibility and lets GitHub determine the Latest release from its normal policy.

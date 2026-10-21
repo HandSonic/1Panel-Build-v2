@@ -35,12 +35,11 @@ class RepairTests(unittest.TestCase):
     def test_all_conflicts_stop_before_any_upload(self):
         client,files,journal=self.fixture(False);before=copy.deepcopy(client.assets)
         new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.insert(0,new)
-        client.assets[9]=('retired.tar.gz',b'old retired')
         with self.assertRaisesRegex(ValueError,'specific deletion confirmation'):
-            repair(client,files,journal,retire=['retired.tar.gz'])
+            repair(client,files,journal)
         state=json.loads(journal.read_text())
         self.assertEqual(state['phase'],'confirmation_required')
-        self.assertEqual({a['id'] for a in state['conflicts']},{1,2,9})
+        self.assertEqual({a['id'] for a in state['conflicts']},{1,2})
         self.assertTrue(all(a['digest'].startswith('sha256:') for a in state['conflicts']))
         self.assertEqual(client.calls,[])
         for key in before:self.assertEqual(client.assets[key],before[key])
@@ -148,10 +147,5 @@ class RepairTests(unittest.TestCase):
             client.release=changed
             with self.assertRaises(ValueError):repair(client,files,journal)
             self.assertEqual(client.calls,[])
-
-    def test_retirement_cannot_overlap_accepted_files(self):
-        client,files,journal=self.fixture()
-        with self.assertRaises(ValueError):repair(client,files,journal,retire=['package.tar.gz'])
-        self.assertEqual(client.calls,[])
 
 if __name__=='__main__':unittest.main()

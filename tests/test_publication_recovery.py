@@ -140,6 +140,38 @@ class ManualRecovery(unittest.TestCase):
             self.assertTrue(all(release_id==17 for release_id,_ in remote.uploads))
             self.assertEqual(remote.downloads,[])
 
+    def test_public_gap_fill_preserves_other_assets_and_refuses_payload_conflicts(self):
+        for conflict in (False,True):
+            with self.subTest(conflict=conflict),tempfile.TemporaryDirectory() as temporary:
+                args,remote,files,expected,proof_path=self.fixture(Path(temporary),draft=False)
+                expected['outcomes'].append({'architecture':'arm64','status':'failure'})
+                proof=json.loads(proof_path.read_text());proof['outcomes']=expected['outcomes']
+                proof_path.write_text(json.dumps(proof))
+                names=[f'1panel-{self.version}-linux-{arch}.tar.gz'+suffix
+                       for arch in ('arm64','arm') for suffix in ('','.sha256')]
+                names+=['build-manifest.json','old-helper.txt']
+                for asset_id,name in enumerate(names,200):
+                    raw=('preserve '+name).encode()
+                    remote.contents[asset_id]=raw
+                    # Non-payload attachments need no digest or readback.
+                    remote.releases[17]['assets'].append({'id':asset_id,'name':name,'size':len(raw)})
+                if conflict:
+                    raw=b'existing different package'
+                    remote.contents[300]=raw
+                    remote.releases[17]['assets'].append({'id':300,'name':files[0].name,
+                                                         'size':len(raw),'digest':'sha256:'+sha(raw)})
+                before=copy.deepcopy(remote.releases[17]['assets'])
+                if conflict:
+                    with self.assertRaisesRegex(ValueError,'specific deletion confirmation'):
+                        self.publish(args,remote,files,expected,proof_path)
+                    self.assertEqual(remote.uploads,[])
+                else:
+                    self.publish(args,remote,files,expected,proof_path)
+                    self.assertEqual(remote.uploads,[(17,path.name) for path in files])
+                after={asset['id']:asset for asset in remote.releases[17]['assets']}
+                for asset in before:self.assertEqual(after[asset['id']],asset)
+                self.assertEqual(remote.downloads,[])
+
     def test_owned_draft_uses_server_digest_or_one_legacy_fallback_and_only_uploads_the_gap(self):
         for server_digest in (True,False):
             with self.subTest(server_digest=server_digest),tempfile.TemporaryDirectory() as temporary:

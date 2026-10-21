@@ -145,11 +145,10 @@ class MatrixTests(unittest.TestCase):
         self.assertIn('artifact_id: ${{ steps.source_upload.outputs.artifact-id }}', prepare)
         self.assertIn('artifact-ids: ${{ needs.prepare.outputs.artifact_id }}', compile_job)
         self.assertNotIn('github.run_attempt', compile_job)
-        self.assertNotIn('github.run_attempt', aggregate_job)
+        self.assertIn('name: verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}', aggregate_job)
         self.assertIn('overwrite: true', compile_job)
         self.assertNotIn('overwrite: true', aggregate_job)
-        # Transfer names retain the prepared-source generation. This does not
-        # assert that API provenance accepts inherited jobs from another attempt.
+        # Transfer names retain the prepared-source generation across retries.
         producer = {'artifact_id': '1'}
         def render(value, attempt):
             return (value.replace('${{ github.run_id }}', '123')

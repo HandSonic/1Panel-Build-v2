@@ -2,6 +2,9 @@
 import hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile
 from resolve_inputs import resolve
 from installer_resources import service_copies, resource_layout, validate_root_interface
+from geoip_cache import read as read_cache
+
+CONFIG = pathlib.Path(__file__).resolve().parents[1] / 'config'
 
 def download(url, dest, expected):
     subprocess.run(['curl','--fail','--location','--silent','--show-error','--retry','3','--connect-timeout','20','--max-time','180','--output',str(dest),url],check=True)
@@ -12,13 +15,16 @@ def main(version, destination):
     entry = resolve(version)
     if os.getenv('INSTALLER_REF', entry['installer_commit']) != entry['installer_commit']:
         raise ValueError('INSTALLER_REF must match reviewed lock')
+    cached_geoip = read_cache(CONFIG, {'sha256': entry['geoip_sha256'], 'bytes': entry.get('geoip_bytes')})
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.resources-',dir=destination) as tmp:
         stage=pathlib.Path(tmp)
         for rel, digest in entry['installer_sha256'].items():
             target=stage/rel; target.parent.mkdir(parents=True,exist_ok=True)
             download(f"https://raw.githubusercontent.com/1Panel-dev/installer/{entry['installer_commit']}/{rel}",target,digest)
-        if 'geoip_archive' in entry:
+        if cached_geoip is not None:
+            (stage/'GeoIP.mmdb').write_bytes(cached_geoip)
+        elif 'geoip_archive' in entry:
             from discover_inputs import Vendor, official_archive
             with (stage/'GeoIP.mmdb').open('wb') as output:
                 _, geoip = official_archive(Vendor(), version, entry['mode'], expected=entry['geoip_archive'], geoip_destination=output)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind partial architecture output to terminal jobs in one producer attempt."""
+"""Bind partial architecture output to the effective jobs of one producer attempt."""
 import re
 from resolved_contract import ARCHES
 
@@ -7,6 +7,7 @@ REPOSITORY = 'HandSonic/1Panel-Build-v2'
 FIELDS = {'schema_version', 'version', 'artifacts', 'requested_architectures',
           'producer_run_id', 'producer_run_attempt', 'producer_head_sha', 'outcomes'}
 OUTCOME_FIELDS = {'architecture', 'status', 'stage', 'reason', 'job_id', 'job_url'}
+WRITERS = {'candidate', 'automatic_publication', 'publication_repair'}
 
 
 def positive(value):
@@ -55,16 +56,39 @@ def validate(value, version=None):
     return successful
 
 
+def effective_jobs(jobs, run_id, attempt, head_sha=None):
+    """Keep the latest execution of each job at or before the selected attempt."""
+    if not positive(attempt):
+        raise ValueError('Invalid producer attempt')
+    selected, seen = {}, set()
+    for job in jobs:
+        job_attempt = job.get('run_attempt')
+        if not positive(job_attempt):
+            raise ValueError('Invalid producer job attempt')
+        if job_attempt > attempt:
+            continue
+        if job.get('run_id') != run_id or (head_sha is not None and job.get('head_sha') != head_sha):
+            raise ValueError('Producer job belongs to another run or commit')
+        name = job.get('name')
+        key = (name, job_attempt)
+        if key in seen:
+            raise ValueError('Duplicate job execution: ' + str(name))
+        seen.add(key)
+        if name not in selected or selected[name]['run_attempt'] < job_attempt:
+            selected[name] = job
+    return list(selected.values())
+
+
 def collect(jobs, requested, run_id, attempt):
-    """Use only the API's exact-attempt job endpoint, never an all-attempt merge."""
+    jobs = effective_jobs(jobs, run_id, attempt)
     result = []
     for arch in requested:
         matches = [job for job in jobs if job.get('name') == f'compile ({arch})']
         if len(matches) != 1:
             raise ValueError('Missing or duplicate architecture job: ' + arch)
         job = matches[0]
-        if job.get('run_id') != run_id or job.get('run_attempt') != attempt or job.get('status') != 'completed':
-            raise ValueError('Nonterminal or different-attempt architecture job')
+        if job.get('status') != 'completed':
+            raise ValueError('Nonterminal architecture job')
         conclusion = job.get('conclusion')
         if conclusion not in ('success', 'failure', 'timed_out'):
             raise ValueError('Cancelled, skipped or unsupported architecture conclusion')
@@ -92,9 +116,7 @@ def verify_execution(run, expected_commit, execution_commit=None):
 
 def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, allow_publication_failures=False):
     successful = validate(value)
-    for job in jobs:
-        if job.get('run_id') != value['producer_run_id'] or job.get('run_attempt') != value['producer_run_attempt'] or job.get('head_sha') != value['producer_head_sha']:
-            raise ValueError('Producer job belongs to another run, attempt or commit')
+    jobs = effective_jobs(jobs, value['producer_run_id'], value['producer_run_attempt'], value['producer_head_sha'])
     if run.get('id') != value['producer_run_id'] or run.get('run_attempt') != value['producer_run_attempt'] or run.get('head_sha') != value['producer_head_sha']:
         raise ValueError('Producer run identity mismatch')
     verify_execution(run,expected_commit,execution_commit)
@@ -105,11 +127,14 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, all
         if len(matches) != 1 or matches[0].get('conclusion') != 'success' or matches[0].get('status') != 'completed':
             raise ValueError('Shared producer gate failed: ' + name)
     if collect(jobs, value['requested_architectures'], value['producer_run_id'], value['producer_run_attempt']) != value['outcomes']:
-        raise ValueError('Declared outcomes differ from exact API job identities')
+        raise ValueError('Declared outcomes differ from effective API job identities')
     declared = {r['job_id'] for r in value['outcomes'] if r['status'] == 'failure'}
-    actual = {j['id'] for j in jobs if j.get('conclusion') not in ('success', 'skipped')}
+    # A rerun can reach publication preparation before its new writer is
+    # created. A failed writer from an older attempt is not this build's result.
+    actual = {j['id'] for j in jobs if j.get('conclusion') not in ('success', 'skipped') and
+              not (j.get('name') in WRITERS and j['run_attempt'] < value['producer_run_attempt'])}
     writers = {j['id'] for j in jobs if allow_publication_failures and
-               j.get('name') in ('candidate','automatic_publication','publication_repair') and
+               j.get('name') in WRITERS and j['run_attempt'] == value['producer_run_attempt'] and
                j.get('status')=='completed' and j.get('conclusion') in ('failure','timed_out')}
     if actual != declared | writers or (run['conclusion'] == 'success') != (not actual):
         raise ValueError('Overall producer failure is not explained by declared branches')
@@ -126,11 +151,10 @@ def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
         raise ValueError('Current workflow is cancelled or unavailable')
     if run.get('status')=='completed':
         return verify_jobs(value,run,jobs,expected_commit)
+    jobs = effective_jobs(jobs, run_id, attempt, value.get('producer_head_sha'))
     pending = {'publication_prepare', 'automatic_publication', 'publication_repair', 'candidate'}
     checked = []
     for job in jobs:
-        if job.get('run_id') != run_id or job.get('run_attempt') != attempt or job.get('head_sha') != value.get('producer_head_sha'):
-            raise ValueError('Current job identity mismatch')
         if job.get('status') != 'completed':
             if job.get('name') not in pending or job.get('conclusion') is not None:
                 raise ValueError('Unfinished shared or architecture gate')

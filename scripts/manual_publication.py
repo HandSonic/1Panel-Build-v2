@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Manual preparation and recoverable publication of validated architecture outputs."""
-import argparse,json,os,re,shutil,stat,subprocess,sys,tempfile,zipfile
+import argparse,json,os,re,shutil,stat,subprocess,tempfile,zipfile
 from pathlib import Path,PurePosixPath
-from publication_contract import PROOF,REPOS,ROOT,contract_for_repo,make_proof,validate_payloads
+from publication_contract import PROOF,REPOS,contract_for_repo,make_proof,validate_payloads
 from release_asset_repair import (GitHub,digest,repair,optional_release,require_owned_draft,
                                  release_snapshot,Journal,finalize_release)
 
@@ -42,7 +42,9 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
     if run.get('path','').split('@')[0]!='.github/workflows/build.yml':raise ValueError('Unexpected upstream workflow')
     metadata=github_json(f'repos/{UPSTREAM}/actions/artifacts/{artifact_id}')
     if metadata.get('expired') or metadata.get('workflow_run',{}).get('id')!=int(run_id):raise ValueError('Artifact/run mismatch or expired artifact')
-    if metadata.get('name')!=f'verified-1panel-{version}-{expected_commit}' or metadata.get('digest')!='sha256:'+expected_sha:
+    artifact_name=f'verified-1panel-{version}-{expected_commit}'
+    if (not re.fullmatch(re.escape(artifact_name)+r'(-[1-9][0-9]*)?',metadata.get('name','')) or
+        metadata.get('digest')!='sha256:'+expected_sha):
         raise ValueError('Selected artifact identity/digest mismatch')
     with tempfile.TemporaryDirectory(dir=Path(directory).parent) as temp:
         archive=Path(temp)/'upstream.zip'
@@ -54,9 +56,11 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
     from matrix_contract import verify_jobs
     attempt=manifest.get('producer_run_attempt')
     if type(attempt) is not int or attempt<=0:raise ValueError('Invalid producer attempt')
+    if metadata['name'] not in (artifact_name,f'{artifact_name}-{attempt}'):
+        raise ValueError('Selected artifact name differs from its producer attempt')
     jobs=[];page=1
     while True:
-        data=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100&page={page}')
+        data=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/jobs?filter=all&per_page=100&page={page}')
         jobs.extend(data['jobs'])
         if len(jobs)>=data['total_count']:break
         page+=1
@@ -95,24 +99,6 @@ def prepare(args):
     print(json.dumps({'contract':contract,'version':args.version,'package_count':sum(p.name.endswith('.tar.gz') for p in files),'publication_file_count':len(files)+1,'state':'validated_no_release_writes'}))
 
 
-def retired_upstream_assets(proof, version, release):
-    retired=[]
-    for row in proof['outcomes']:
-        if row['status']=='failure':
-            name=f'1panel-{version}-linux-{row["architecture"]}.tar.gz'
-            retired.extend([name,name+'.sha256'])
-    # Historical `arm` is superseded only by this exact version's verified armv7.
-    # Both old members must exist; unknown/incomplete names still fail in repair().
-    replacement=f'1panel-{version}-linux-armv7.tar.gz'
-    legacy=f'1panel-{version}-linux-arm.tar.gz'
-    names=[asset['name'] for asset in release.get('assets',[])]
-    if (any(row['architecture']=='armv7' and row['status']=='success' for row in proof['outcomes'])
-            and replacement in proof['files'] and replacement+'.sha256' in proof['files']
-            and names.count(legacy)==1 and names.count(legacy+'.sha256')==1):
-        retired.extend([legacy,legacy+'.sha256'])
-    return retired
-
-
 def publish(args):
     contract=check_identity(args.version,args.tag,args.repository)
     work=Path(args.work)
@@ -124,7 +110,8 @@ def publish(args):
     if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256'):
         raise ValueError('Downloaded validation receipt differs from the read-only preparation job')
     proof=json.loads(proof_path.read_text())
-    expected=make_proof(files,contract,args.version,args.tag,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
+    expected=make_proof(files,contract,args.version,args.tag,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'],
+                        workflow_run_attempt=proof.get('workflow_run_attempt'))
     if any(proof.get(k)!=v for k,v in expected.items()):raise ValueError('Prepared publication receipt changed')
     client=GitHub(args.repository,args.tag)
     release=optional_release(client)
@@ -135,7 +122,7 @@ def publish(args):
     if release.get('draft') is True and any(observed.get(key)!=release.get(key) for key in ('name','target_commitish','prerelease','author')):
         raise ValueError('Draft metadata changed before manual publication')
     # Public downloads contain only packages and their standard SHA sidecars.
-    from public_packages import package_files, recovery_assets
+    from public_packages import package_files
     files=package_files(files)
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
@@ -160,12 +147,9 @@ def publish(args):
         finalize_release(client,release,files,creation,fallback_assets=state.get('verified_legacy_assets'))
         print(json.dumps({'state':creation.state['phase'],'repository':args.repository,'tag':args.tag}))
         return
-    retired=retired_upstream_assets(proof,args.version,release) if contract=='upstream-matrix' else []
-    # Existing controls require explicit removal review before package-only publication.
-    from public_packages import CONTROLS
-    retired.extend(asset['name'] for asset in release['assets'] if asset['name'] in CONTROLS)
-    preserved={name:asset for name,asset in recovery_assets(release,args.version).items() if name not in retired}
-    state=repair(client,files,journal,retire=retired,preserved_assets=preserved,expected_snapshot=release_snapshot(release))
+    names={path.name for path in files}
+    preserved={asset['name']:asset for asset in release['assets'] if asset['name'] not in names}
+    state=repair(client,files,journal,preserved_assets=preserved,expected_snapshot=release_snapshot(release))
     print(json.dumps({'state':state['phase'],'repository':args.repository,'tag':args.tag}))
 
 if __name__=='__main__':

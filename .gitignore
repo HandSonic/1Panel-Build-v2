@@ -20,3 +20,7 @@ __pycache__/
 
 # Generated manual-publication payloads and journals
 publication-work/
+
+# Optional authenticated discovery cache
+/resolved-geoip.mmdb
+/config/resolved-geoip.mmdb

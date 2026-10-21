@@ -290,7 +290,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         id: bundle
         with:
-          name: verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}
+          name: verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}
           path: dist/*
           if-no-files-found: error
           compression-level: 0
@@ -317,8 +317,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: verified-1panel-${{ needs.build.outputs.version }}-${{ github.sha }}
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: dist
+          merge-multiple: true
       - name: Revalidate candidate artifact
         run: |
           python3 scripts/resolved_contract.py activate dist "$VERSION"
@@ -406,6 +407,7 @@ jobs:
             publication-work/control/
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
       - name: Upload small publication control evidence
         uses: actions/upload-artifact@v4
         with:

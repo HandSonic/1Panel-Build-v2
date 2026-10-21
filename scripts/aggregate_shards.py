@@ -87,7 +87,7 @@ if __name__ == '__main__':
     requested = architectures(sys.argv[4])
     run_id, attempt = int(os.environ['GITHUB_RUN_ID']), int(os.environ['GITHUB_RUN_ATTEMPT'])
     pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp',
-        f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100']))
+        f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{run_id}/jobs?filter=all&per_page=100']))
     jobs = [job for page in pages for job in page['jobs']]
     if any(j.get('head_sha')!=os.environ['PRODUCER_HEAD_SHA'] for j in jobs):raise ValueError('Producer job head differs from workflow event')
     outcomes = collect(jobs, requested, run_id, attempt)

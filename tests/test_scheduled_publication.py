@@ -33,9 +33,9 @@ class ScheduledPublication(unittest.TestCase):
         plan=json.loads((self.args.work/'control'/'automatic-plan.json').read_text())
         return plan
 
-    def publish(self,remote):
+    def publish(self,remote,event='schedule'):
         proof=self.args.work/'control'/automatic.PROOF
-        with patch.dict(os.environ,GITHUB_EVENT_NAME='schedule',
+        with patch.dict(os.environ,GITHUB_EVENT_NAME=event,
              EXPECTED_VALIDATION_RECEIPT_SHA256=automatic_tests.facts(proof)['sha256']):
             return automatic.publish(self.args,remote)
 
@@ -89,29 +89,37 @@ class ScheduledPublication(unittest.TestCase):
             remote.contents={asset['id']:(self.root/'previous'/name).read_bytes()}
         return remote,copy.deepcopy(asset)
 
-    def test_partial_pair_matching_current_candidate_only_uploads_the_missing_member(self):
+    def test_partial_pair_uses_old_archive_digest_or_matches_existing_checksum(self):
         self.payload(self.source,('amd64',),11,'b'*40)
         for index,suffix in enumerate(('','.sha256')):
             with self.subTest(existing_suffix=suffix):
                 self.args.work=self.root/f'work-{index}'
-                remote,existing=self.partial(suffix,matching=True)
-                plan=self.prepare(remote)
+                remote,existing=self.partial(suffix,matching=bool(suffix))
+                plan=self.prepare(remote,event='workflow_dispatch')
                 self.assertEqual(plan['operation'],'append')
                 self.assertEqual(set(plan['preserved']),{existing['name']})
-                self.assertEqual(self.publish(remote),'published')
+                original={path.name:path.read_bytes() for path in (self.args.work/'release').iterdir()}
+                proof=self.args.work/'control'/automatic.PROOF;receipt=proof.read_bytes()
+                self.assertEqual(self.publish(remote,event='workflow_dispatch'),'published')
                 missing=f'1panel-{remote.tag}-linux-amd64.tar.gz'+('' if suffix else '.sha256')
                 self.assertEqual(remote.uploads,[(8,missing)])
                 self.assertNotIn(existing['id'],remote.downloads)
                 self.assertEqual(next(row for row in remote.releases[8]['assets'] if row['id']==existing['id']),existing)
+                if not suffix:
+                    uploaded=next(row for row in remote.releases[8]['assets'] if row['name']==missing)
+                    expected=(existing['digest'][7:]+'  '+existing['name']+'\n').encode()
+                    self.assertEqual(remote.contents[uploaded['id']],expected)
+                    self.assertNotEqual(expected,original[missing])
+                self.assertEqual({path.name:path.read_bytes() for path in (self.args.work/'release').iterdir()},original)
+                self.assertEqual(proof.read_bytes(),receipt)
 
-    def test_partial_pair_candidate_mismatch_rejects_before_any_transfer(self):
+    def test_invalid_archive_digest_or_conflicting_orphan_checksum_rejects_before_transfer(self):
         self.payload(self.source,('amd64',),11,'b'*40)
-        for index,field in enumerate(('digest','size')):
-            with self.subTest(field=field):
+        for index,(suffix,invalid) in enumerate((('',None),('','sha256:short'),('.sha256',None))):
+            with self.subTest(suffix=suffix,digest=invalid):
                 self.args.work=self.root/f'work-{index}'
-                remote,existing=self.partial('',matching=True)
-                if field=='digest':remote.releases[8]['assets'][0]['digest']='sha256:'+'c'*64
-                else:remote.releases[8]['assets'][0]['size']+=1
+                remote,existing=self.partial(suffix,matching=False)
+                if not suffix:remote.releases[8]['assets'][0]['digest']=invalid
                 plan=self.prepare(remote)
                 self.assertEqual(plan['operation'],'append')
                 with self.assertRaises(ValueError):self.publish(remote)

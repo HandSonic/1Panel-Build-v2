@@ -144,7 +144,7 @@ def draft_metadata(release):
             'body':release.get('body') or '',
             'author_id':(release.get('author') or {}).get('id')}
 
-def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, preserved_assets=None, expected_draft=None):
+def repair(client, files, journal_path, *, expected_snapshot=None, preserved_assets=None, expected_draft=None):
     before=client.release()
     if expected_snapshot is not None and release_snapshot(before)!=expected_snapshot:
         raise ValueError('Release changed before the bound repair transaction')
@@ -154,8 +154,7 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
     if len(assets)!=len(before['assets']):raise ValueError('Duplicate remote asset names')
     expected={p.name:digest(p) for p in files}
     if len(expected)!=len(files):raise ValueError('Duplicate local publication filenames')
-    if set(retire) & set(expected) or len(set(retire)) != len(retire):raise ValueError('Invalid retired artifact names')
-    allowed=set(expected)|set(retire)
+    allowed=set(expected)
     if before.get('draft') is True and set(assets)-set(expected):
         raise ValueError('Draft recovery accepts only the selected validated package files')
     preserved_assets=preserved_assets or {}
@@ -193,13 +192,13 @@ def repair(client, files, journal_path, retire=(), *, expected_snapshot=None, pr
                     if facts['bytes']!=old['size']:raise ValueError('Original asset failed readback verification')
                     old_sha='sha256:'+facts['sha256']
                     (readback/name).unlink()
-                replacement=expected.get(name)
-                if replacement and old_sha=='sha256:'+replacement['sha256'] and old['size']==replacement['bytes']:
+                replacement=expected[name]
+                if old_sha=='sha256:'+replacement['sha256'] and old['size']==replacement['bytes']:
                     if not old.get('digest'):
                         state.setdefault('verified_legacy_assets',{})[name]={'id':old['id'],'size':old['size'],'sha256':facts['sha256']}
                     continue
                 state['conflicts'].append({**asset_identity(old),'digest':old_sha,
-                    'reason':'retirement' if name in retire else 'different_content',
+                    'reason':'different_content',
                     'replacement':replacement})
             if state['conflicts']:
                 state['phase']='confirmation_required';journal.save()

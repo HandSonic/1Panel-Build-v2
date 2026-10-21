@@ -253,6 +253,7 @@ def select_node(vendor, package, lock):
 
 def official_archive(vendor, version, mode, expected=None, geoip_destination=None):
     """Read all compressed bytes and hash small installer resources without extraction."""
+    import gzip
     import tarfile
     from pathlib import PurePosixPath
     base = f'https://resource.fit2cloud.com/1panel/package/v2/{mode}/{version}/release/'
@@ -287,7 +288,7 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
     resources, geoip, seen, logical_size = {}, None, set(), 0
     with vendor.open(base + name) as response:
         stream = HashedStream(response)
-        with tarfile.open(fileobj=stream, mode='r|gz') as archive:
+        with gzip.GzipFile(fileobj=stream) as decoded, tarfile.open(fileobj=decoded, mode='r|') as archive:
             for member in archive:
                 path = PurePosixPath(member.name)
                 if path.is_absolute() or '..' in path.parts or '\\' in member.name or str(path) in seen:
@@ -311,7 +312,9 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
                     part = payload.read(1024 * 1024)
                     if not part:
                         break
-                    sha.update(part); size += len(part)
+                    if rel == 'GeoIP.mmdb':
+                        sha.update(part)
+                    size += len(part)
                     if rel == 'GeoIP.mmdb' and geoip_destination is not None:
                         geoip_destination.write(part)
                     if rel in ARCHIVE_RESOURCES:
@@ -324,6 +327,9 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
                     resources[rel] = bytes(kept)
                 if rel == 'GeoIP.mmdb':
                     geoip = {'sha256': sha.hexdigest(), 'bytes': size}
+            # tar's end marker does not check the gzip CRC/trailer.
+            while decoded.read(1024 * 1024):
+                pass
         while stream.read(1024 * 1024):
             pass
     if stream.sha.hexdigest() != expected_sha or (expected is not None and stream.size != expected['bytes']) or not geoip or not geoip['bytes']:
@@ -333,8 +339,8 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
     return resources, geoip
 
 
-def installer_inputs(vendor, version, mode, root=ROOT):
-    resources, geoip = official_archive(vendor, version, mode)
+def installer_inputs(vendor, version, mode, root=ROOT, geoip_destination=None):
+    resources, geoip = official_archive(vendor, version, mode, geoip_destination=geoip_destination)
     # Current branch is resolved only once. Historical candidates remain exact commits.
     current = vendor.commit(INSTALLER, 'heads/v2')
     commits = [current]
@@ -384,14 +390,38 @@ def installer_inputs(vendor, version, mode, root=ROOT):
 
 
 
-def discover(vendor, version=None, mode='stable', root=ROOT):
+def discover(vendor, version=None, mode='stable', root=ROOT, geoip_destination=None):
     result, raw, repair = resolve_source(vendor, version, mode, root)
     tools = select_node(vendor, json.loads(raw['frontend/package.json']), json.loads(raw['frontend/package-lock.json']))
-    installer, geoip = installer_inputs(vendor, result['version'], mode, root)
+    installer, geoip = installer_inputs(vendor, result['version'], mode, root, geoip_destination)
     contract = {'schema': 1, 'kind': '1panel-resolved-build-inputs', 'version': result['version'], 'mode': mode, 'edition': 'community', 'architectures': ARCHES, 'source': result['source'], 'installer': installer, 'toolchain': dict(go=result['go'], **tools), 'resources': {'geoip': geoip}, 'configuration': result['configuration'], 'frontend_lock': result['frontend_lock']}
     # A generated lock travels with this exact run, never into a checked-in map.
     payload = raw['frontend/package-lock.json'] if result['frontend_lock']['kind'] == 'resolved' else None
     return contract, payload
+
+
+def write_discovery(vendor, output, version=None, mode='stable'):
+    import tempfile
+    from automatic_frontend_lock import SIDECAR, write_payload, read_payload, read_regular
+    from geoip_cache import MAX_GEOIP, write as write_cache
+    from resolved_contract import source_contract
+    output = Path(output)
+    with tempfile.TemporaryFile() as geoip:
+        contract, payload = discover(vendor, version, mode, geoip_destination=geoip)
+        encoded = canonical(contract)
+        sha = hashlib.sha256(encoded).hexdigest()
+        source_contract(encoded, sha, contract['version'], mode)
+        # A retry must not replace another discovery's already pinned inputs.
+        if output.exists() or output.is_symlink():
+            if read_regular(output, 1024 * 1024) != encoded:
+                raise ValueError('Refusing to replace a different resolved run contract')
+        if payload is not None:
+            write_payload(output.parent / SIDECAR, payload)
+        read_payload(output.parent, contract)
+        geoip.seek(0)
+        write_cache(output.parent, geoip.read(MAX_GEOIP + 1), contract['resources']['geoip'])
+        write_payload(output, encoded)
+    return sha
 
 
 if __name__ == '__main__':
@@ -408,15 +438,4 @@ if __name__ == '__main__':
     else:
         if args.output is None:
             parser.error('--output is required for immutable contract discovery')
-        contract, payload = discover(vendor, args.version, mode)
-        from automatic_frontend_lock import SIDECAR, write_payload, read_payload, read_regular
-        # A retry must not replace another discovery's already pinned inputs.
-        encoded = canonical(contract)
-        if args.output.exists() or args.output.is_symlink():
-            if read_regular(args.output, 1024 * 1024) != encoded:
-                raise ValueError('Refusing to replace a different resolved run contract')
-        if payload is not None:
-            write_payload(args.output.parent / SIDECAR, payload)
-        read_payload(args.output.parent, contract)
-        write_payload(args.output, encoded)
-        print(hashlib.sha256(encoded).hexdigest())
+        print(write_discovery(vendor, args.output, args.version, mode))
