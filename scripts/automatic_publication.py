@@ -95,7 +95,9 @@ def publish(args,client=None):
         raise ValueError('Automatic receipt differs from successful preparation')
     from resolved_contract import activate_release
     activate_release(work/'release',args.version)
-    files=validate_payloads(work/'release',contract,args.version)
+    # Preparation validated these bytes; authenticate the transfer without
+    # unpacking the same archives again.
+    files=sorted((work/'release').iterdir(),key=lambda path:path.name)
     proof=json.loads(proof_path.read_text())
     expected=make_proof(files,contract,args.version,args.version,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'],
                         workflow_run_attempt=proof.get('workflow_run_attempt'))

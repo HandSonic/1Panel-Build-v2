@@ -101,13 +101,14 @@ def prepare(args):
 def publish(args):
     contract=check_identity(args.version,args.tag,args.repository)
     work=Path(args.work)
-    if contract=='upstream-matrix':
-        from resolved_contract import activate_release
-        activate_release(work/'release',args.version)
-    files=validate_payloads(work/'release',contract,args.version)
     proof_path=work/'control'/PROOF
     if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256'):
         raise ValueError('Downloaded validation receipt differs from the read-only preparation job')
+    if contract=='upstream-matrix':
+        from resolved_contract import activate_release
+        activate_release(work/'release',args.version)
+    # The bound receipt covers the already validated files, including metadata.
+    files=sorted((work/'release').iterdir(),key=lambda path:path.name)
     proof=json.loads(proof_path.read_text())
     expected=make_proof(files,contract,args.version,args.tag,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'],
                         workflow_run_attempt=proof.get('workflow_run_attempt'))

@@ -97,7 +97,6 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(download_resources,'download',side_effect=fake):
             download_resources.main('v2.3.2',destination)
         self.assertEqual((destination/'install.sh').read_bytes(),(self.root/'install.sh').read_bytes())
-        self.assertTrue((destination/'resource-provenance.json').is_file())
     def test_download_failure_after_partial_stage_preserves_all(self):
         before={p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
         count=0

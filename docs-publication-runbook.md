@@ -4,8 +4,9 @@ Use the existing `build-offline` workflow in `.github/workflows/build.yml`.
 
 ## Daily updates
 
-At 08:00 UTC (16:00 Beijing time), GitHub reads the official Latest stable Release and this
-repository's matching public Release attachment names. An architecture is
+The check is scheduled for 08:00 UTC (16:00 Beijing time); GitHub may delay its
+actual start. It reads the official Latest stable Release and this repository's
+matching public Release attachment names. An architecture is
 present when its archive and `.sha256` attachment both exist. Existing pairs
 are trusted without downloading or validating their contents.
 
@@ -94,8 +95,9 @@ workflow commit; code fixes require a new run or explicit artifact promotion.
 ## Publication and recovery
 
 Preparation validates local files and records a receipt; it does not query or
-freeze remote Release state. One writer per canonical version checks that receipt
-and artifact, then discovers the current Release state. Release operations bind
+freeze remote Release state. One writer per canonical version authenticates that
+receipt and all transferred file hashes without unpacking the same archives again,
+then discovers the current Release state. Release operations bind
 to the observed Release ID and retain its asset snapshot. Only missing files are
 uploaded; this code does not rename, replace or delete existing assets.
 

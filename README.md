@@ -162,7 +162,8 @@ added to the Release body.
 
 Draft publication binds all reads and uploads to the created
 Release ID. Preparation validates local files and records a receipt; the serialized
-writer discovers the current Release state when it starts. A retry can reuse a
+writer authenticates the receipt and all file hashes without unpacking the same
+archives again, then discovers the current Release state. A retry can reuse a
 single empty draft created by GitHub Actions for the same version on this build's
 commit ancestry; its target is updated before upload. A nonempty owned draft can
 resume on the exact build commit when every existing attachment matches the
@@ -173,11 +174,6 @@ Only older assets without server digests need downloaded-byte verification.
 A run with successful build gates and only a
 known publication-writer failure can supply that artifact without another build.
 
-Scheduled runs trust existing archive/SHA-256 pairs by attachment name. They
-check the official stable version before tests, stop when all pairs exist, and
-build only missing architectures. Existing packages are not downloaded again.
-Only new output is validated; the append transaction verifies its uploaded
-server digest without downloading it again.
 Manual existing-release validation still checks actual package bytes, source
 inputs and architecture. It does not require old CI logs to remain online.
 Existing controls and recovery files are preserved; publication never deletes them.

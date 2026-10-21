@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile
+import hashlib, os, pathlib, shutil, subprocess, sys, tempfile
 from resolve_inputs import resolve
 from installer_resources import service_copies, resource_layout, validate_root_interface
 from geoip_cache import read as read_cache
@@ -41,6 +41,5 @@ def main(version, destination):
                 target=destination/file.relative_to(stage); target.parent.mkdir(parents=True,exist_ok=True)
                 os.replace(file,target)
     for name in ('1pctl','install.sh'): (destination/name).chmod(0o755)
-    (destination/'resource-provenance.json').write_text(json.dumps(entry,indent=2)+'\n')
 if __name__ == '__main__':
     main(sys.argv[1],pathlib.Path(sys.argv[2]))
