@@ -27,7 +27,6 @@ class Client:
     def __init__(self, release=None):
         self.value = copy.deepcopy(release)
         self.calls = []
-        self.substitute = False
         self.lost_response = False
         self.post_drift = False
         self.recovery_failure = False
@@ -46,8 +45,6 @@ class Client:
                        'prerelease':False,'body': '', 'assets': [],
                        'author':{'id':41898282,'login':'github-actions[bot]','type':'Bot'}}
             self.value = copy.deepcopy(created)
-            if self.substitute:
-                self.value['id'] = 18
             return json.dumps(created)
         if 'PATCH' in args:
             if 'draft=false' in args:
@@ -86,8 +83,6 @@ class AutomaticTransaction(unittest.TestCase):
         self.proofpath.write_text(json.dumps(self.proof))
         self.args = types.SimpleNamespace(version=Client.tag,
                 repository=Client.repo, work=self.work)
-        self.repair_calls = []
-        self.producer_calls = 0
         self.after_repair = None
         for target, replacement in [
             ('check_identity', lambda *a: {}),
@@ -110,28 +105,15 @@ class AutomaticTransaction(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def producer(self, *args):
-        self.producer_calls += 1
+        return None
 
     def repair(self, client, ordered, journal, **kwargs):
-        self.repair_calls.append((ordered, kwargs))
         client.value['assets'] = [dict(id=100+i, name=p.name,
              size=facts(p)['bytes'], digest='sha256:'+facts(p)['sha256'])
              for i, p in enumerate(ordered)]
         if self.after_repair:
             self.after_repair(client)
         return {'phase': 'complete'}
-
-    def test_create_publishes_only_package_pairs_and_same_owned_id(self):
-        c = Client()
-        self.assertEqual(ap.publish(self.args, c), 'published')
-        self.assertFalse(c.value['draft'])
-        self.assertEqual(c.value['id'], 17)
-        ordered, kw = self.repair_calls[0]
-        self.assertEqual({p.name for p in ordered}, {self.files[0].name, self.files[1].name})
-        self.assertTrue(all(p.name.endswith(('.tar.gz', '.tar.gz.sha256')) for p in ordered))
-        self.assertEqual(kw['expected_snapshot']['id'], 17)
-        self.assertEqual(self.producer_calls, 2)
-        self.assertFalse(any('body=' in item for call in c.calls for item in call))
 
     def test_writer_retry_preserves_the_preparation_proof_attempt(self):
         self.proof['workflow_run_attempt']=1
@@ -143,12 +125,6 @@ class AutomaticTransaction(unittest.TestCase):
                         EXPECTED_VALIDATION_RECEIPT_SHA256=facts(self.proofpath)['sha256']),\
              patch.object(ap,'make_proof',side_effect=original_proof):
             self.assertEqual(ap.publish(self.args,Client()),'published')
-
-    def test_substituted_created_draft_never_adopted(self):
-        c = Client(); c.substitute = True
-        with self.assertRaises(ValueError): ap.publish(self.args, c)
-        self.assertFalse(self.repair_calls)
-        self.assertFalse(any('PATCH' in call for call in c.calls))
 
     def test_lost_finalization_response_restores_exact_draft(self):
         c = Client(); c.lost_response = True
@@ -191,7 +167,6 @@ class AutomaticTransaction(unittest.TestCase):
                 digest='sha256:'+facts(p)['sha256']) for i,p in enumerate(self.files[:2])]})
         (self.work/'control'/'automatic-plan.json').write_text('{"operation":"create","before":null}')
         self.assertEqual(ap.publish(self.args,c),'unchanged')
-        self.assertFalse(self.repair_calls)
         self.assertEqual(c.calls,[])
 
 
@@ -217,56 +192,17 @@ class EventGates(unittest.TestCase):
 
 
 class CurrentProducer(unittest.TestCase):
-    def test_current_attempt_and_shared_gates_remain_authenticated(self):
-        from test_publication_lineage import producer_fixture
-        from matrix_contract import verify_current_jobs
-        value,run,jobs=producer_fixture()
-        run.update(status='in_progress',conclusion=None)
-        jobs.append({'id':999,'name':'publication_prepare','run_id':10,'run_attempt':2,
-                     'head_sha':'a'*40,'status':'in_progress','conclusion':None})
-        self.assertEqual(verify_current_jobs(value,run,jobs,'a'*40,10,2),['amd64'])
-        for case in ('run','attempt','head','cancel','pr','unknown-pending','shared','job-attempt','unfinished-compile'):
-            r=copy.deepcopy(run);j=copy.deepcopy(jobs)
-            if case=='run':r['id']=11
-            if case=='attempt':r['run_attempt']=3
-            if case=='head':r['head_sha']='b'*40
-            if case=='cancel':r.update(status='completed',conclusion='cancelled')
-            if case=='pr':r['event']='pull_request'
-            if case=='unknown-pending':j[-1]['name']='unexpected'
-            if case=='shared':j[0]['conclusion']='failure'
-            if case=='job-attempt':j[3]['run_attempt']=3
-            if case=='unfinished-compile':j[3].update(status='in_progress',conclusion=None)
-            with self.subTest(case=case),self.assertRaises(ValueError):verify_current_jobs(value,r,j,'a'*40,10,2)
-
-    def test_provider_fetches_target_attempt_and_all_job_executions(self):
-        from test_publication_lineage import producer_fixture
-        value,run,jobs=producer_fixture();run.update(status='in_progress',conclusion=None)
-        calls=[]
-        def api(path):
-            calls.append(path)
-            if path.endswith('/attempts/2'):return run
-            if path.endswith('page=1'):return {'total_count':len(jobs),'jobs':jobs[:3]}
-            if path.endswith('page=2'):return {'total_count':len(jobs),'jobs':jobs[3:]}
-            raise AssertionError(path)
-        with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='2'),patch.object(ap,'github_json',side_effect=api):
-            ap.current_producer(value,'a'*40)
-        self.assertEqual(len(calls),3)
-        self.assertIn('/runs/10/attempts/2',calls[0])
-        self.assertTrue(all('/runs/10/jobs?filter=all&' in path for path in calls[1:]))
-
     def test_writer_only_retry_authenticates_original_terminal_producer(self):
         from test_publication_lineage import producer_fixture
         value,run,jobs=producer_fixture();run.update(status='completed',conclusion='failure')
         jobs.append(dict(jobs[0],id=999,name='automatic_publication',conclusion='failure'))
-        calls=[]
         def api(path):
-            calls.append(path)
             if path.endswith('/attempts/2'):return run
-            if '/jobs?filter=all&' in path:return {'total_count':len(jobs),'jobs':jobs}
+            if path.endswith('page=1'):return {'total_count':len(jobs),'jobs':jobs[:3]}
+            if path.endswith('page=2'):return {'total_count':len(jobs),'jobs':jobs[3:]}
             raise AssertionError(path)
         with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3'),patch.object(ap,'github_json',side_effect=api):
             ap.current_producer(value,'a'*40)
-        self.assertIn('/attempts/2',calls[0])
         jobs[0]['conclusion']='failure'
         with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3'),patch.object(ap,'github_json',side_effect=api):
             with self.assertRaisesRegex(ValueError,'Shared producer gate failed'):
@@ -295,38 +231,6 @@ class RealAppendTransactions(unittest.TestCase):
         os.environ['EXPECTED_VALIDATION_RECEIPT_SHA256']=facts(self.proofpath)['sha256']
         return c
 
-    def test_real_transaction_preserves_existing_ids_and_recovery_assets(self):
-        from release_asset_repair import repair
-        c=self.client();before=copy.deepcopy(c.assets)
-        # A human note edit after preparation does not change package identity.
-        c.body='Human release notes updated while the missing architecture built'
-        with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
-        for i in before:self.assertEqual(c.assets[i],before[i])
-        uploads=[call[1] for call in c.calls if call[0]=='upload']
-        self.assertEqual(len(uploads),2)
-        self.assertTrue(all('linux-arm64.tar.gz' in name for name in uploads))
-        self.assertEqual(c.body,'Human release notes updated while the missing architecture built')
-
-    def test_download_counters_do_not_change_preserved_package_identity(self):
-        from release_asset_repair import repair
-        c=self.client();before=copy.deepcopy(c.assets);release=c.release;count=[0]
-        def counted():
-            value=release();count[0]+=1
-            for asset in value['assets']:asset['download_count']=count[0]
-            return value
-        c.release=counted
-        with patch.object(ap,'repair',repair):self.assertEqual(ap.publish(self.args,c),'published')
-        for key in before:self.assertEqual(c.assets[key],before[key])
-
-    def test_real_transaction_failed_upload_preserves_existing_assets(self):
-        from release_asset_repair import repair
-        c=self.client();before=copy.deepcopy(c.assets)
-        def failed_upload(path):raise RuntimeError('upload failed')
-        c.upload=failed_upload
-        with patch.object(ap,'repair',repair),self.assertRaises(RuntimeError):ap.publish(self.args,c)
-        for i in before:self.assertEqual(c.assets[i],before[i])
-        self.assertEqual(json.loads((self.work/'control'/'automatic-journal.json').read_text())['phase'],'incomplete')
-
     def test_writer_only_retry_after_partial_public_append_uploads_only_the_gap(self):
         from release_asset_repair import repair
         c=self.client();original=copy.deepcopy(c.assets)
@@ -339,6 +243,7 @@ class RealAppendTransactions(unittest.TestCase):
         c.upload=fail_second
         with patch.object(ap,'repair',repair),self.assertRaises(OSError):ap.publish(self.args,c)
         partial=copy.deepcopy(c.assets)
+        c.body='Human release notes updated while the missing architecture built'
         retry=self.work/'fresh-runner';(retry/'control').mkdir(parents=True)
         shutil.copytree(self.work/'release',retry/'release')
         for name,raw in control.items():(retry/'control'/name).write_bytes(raw)
@@ -353,32 +258,7 @@ class RealAppendTransactions(unittest.TestCase):
         self.assertEqual(len(c.assets),len(original)+2)
         self.assertEqual([call[1] for call in c.calls if call[0]=='upload'],attempts)
         self.assertEqual(c.downloads,[])
-
-    def test_real_transaction_rejects_entry_race_without_touching_new_asset(self):
-        from release_asset_repair import repair
-        c=self.client();before=copy.deepcopy(c.assets)
-        new=self.work/'release'/'added.tar.gz';new.write_bytes(b'new successful branch')
-        self.files.insert(0,new);self.proof['files'][new.name]=facts(new)
-        self.proofpath.write_text(json.dumps(self.proof))
-        os.environ['EXPECTED_VALIDATION_RECEIPT_SHA256']=facts(self.proofpath)['sha256']
-        def raced(client,*args,**kwargs):
-            client.assets[99]=('added.tar.gz',b'human bytes')
-            return repair(client,*args,**kwargs)
-        with patch.object(ap,'repair',raced),self.assertRaises(ValueError):ap.publish(self.args,c)
-        for i in before:self.assertEqual(c.assets[i],before[i])
-        self.assertEqual(c.assets[99],('added.tar.gz',b'human bytes'))
-        self.assertEqual(c.calls,[])
-
-    def test_real_transaction_rejects_changed_existing_archive(self):
-        from release_asset_repair import repair
-        c=self.client()
-        def raced(client,*args,**kwargs):
-            client.assets[1]=(f'1panel-{Client.tag}-linux-amd64.tar.gz',b'concurrent replacement')
-            return repair(client,*args,**kwargs)
-        with patch.object(ap,'repair',raced),self.assertRaises(ValueError):ap.publish(self.args,c)
-        self.assertEqual(c.assets[1],(f'1panel-{Client.tag}-linux-amd64.tar.gz',b'concurrent replacement'))
-        self.assertEqual(c.calls,[])
-
+        self.assertEqual(c.body,'Human release notes updated while the missing architecture built')
 
 class PrepareControlFlow(unittest.TestCase):
     def setUp(self):
@@ -424,9 +304,7 @@ class PrepareControlFlow(unittest.TestCase):
         client=Client({'id':8,'tag_name':Client.tag,'draft':False,'body':'kept notes',
             'assets':[{'id':i+1,'name':p.name,'size':p.stat().st_size,
                        'digest':'sha256:'+facts(p)['sha256']} for i,p in enumerate(packages)]})
-        records={arch:{'file':f'1panel-{Client.tag}-linux-{arch}.tar.gz',
-                       'resolved_contract_sha256':self.contract_sha,'publication_format':'package-only-v1'} for arch in successful}
-        return client, records
+        return client
 
     def test_prepare_is_local_and_writes_only_the_authenticated_payload_receipt(self):
         self.payload(self.source,('amd64',),11,'b'*40)

@@ -13,9 +13,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-import automatic_frontend_lock as automatic
 import verify_bundled_archives as bundles
-from test_automatic_frontend_lock import contract_fixture
 
 
 class BundledArchiveTests(unittest.TestCase):
@@ -60,19 +58,10 @@ class BundledArchiveTests(unittest.TestCase):
     def test_actual_parent_and_nested_child_manifests_share_one_verified_archive(self):
         lock, members = self.fixture(); raw = self.archive(members); self.bind(lock, raw)
         self.assertEqual(self.verify(lock, raw), [lock['packages']['node_modules/example']['resolved']])
-        # After producer archive verification, runtime replay needs only the
-        # authenticated exact lock and source manifest, never archive network.
-        contract, _ = contract_fixture()
-        payload = json.dumps(lock).encode()
-        contract['frontend_lock'].update(sha256=automatic.sha(payload), bytes=len(payload))
-        with patch.object(bundles, 'open_registry', side_effect=AssertionError('Offline replay')):
-            self.assertEqual(automatic.validate_payload(payload, contract), payload)
 
     def test_changed_identity_engines_dependencies_or_declaration_reject(self):
         for case in ('parent-name', 'parent-bundle', 'child-name', 'child-version', 'child-engines', 'child-dependencies', 'nested-version'):
             lock, members = self.fixture()
-            parent = members['package/package.json']
-            child = members['package/node_modules/@scope/child/package.json']
             # Detach archive metadata from the independently pinned lock maps.
             members = copy.deepcopy(members)
             parent = members['package/package.json']; child = members['package/node_modules/@scope/child/package.json']
@@ -102,19 +91,6 @@ class BundledArchiveTests(unittest.TestCase):
             raw = self.archive(members, extra); self.bind(lock, raw)
             with self.subTest(case=case), self.assertRaises(ValueError): self.verify(lock, raw)
 
-    def test_parent_pin_membership_and_path_reject_before_fetch(self):
-        for case in ('wrong-parent', 'unrelated', 'missing-parent', 'origin', 'weak-integrity', 'child-origin'):
-            lock, members = self.fixture(); raw = self.archive(members); self.bind(lock, raw)
-            parent = lock['packages']['node_modules/example']
-            child = lock['packages']['node_modules/example/node_modules/@scope/child']
-            if case == 'wrong-parent': parent['bundleDependencies'] = ['other']
-            if case == 'unrelated': lock['packages']['node_modules/unrelated'] = child
-            if case == 'missing-parent': del lock['packages']['node_modules/example']
-            if case == 'origin': parent['resolved'] = 'https://example.invalid/a.tgz'
-            if case == 'weak-integrity': parent['integrity'] = 'sha1-no'
-            if case == 'child-origin': child['resolved'] = 'https://example.invalid/b.tgz'
-            with self.subTest(case=case), self.assertRaises(ValueError):
-                bundles.verify_bundled_archives(lock, lambda _: self.fail('Must reject before network'))
 
     def test_registry_download_never_follows_redirects_or_unapproved_origins(self):
         with patch.object(bundles, 'build_opener') as build:

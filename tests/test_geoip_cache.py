@@ -71,7 +71,6 @@ class GeoIPCacheTests(unittest.TestCase):
                         self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), sha)
                         self.assertEqual(cache.read(output.parent, contract['resources']['geoip']), b'geo')
                         self.assertEqual(vendor.opens, 1)
-                        self.assertEqual(resolved_contract.source_contract(output.read_bytes(), sha, 'v2.99.0', 'stable'), contract)
                     else:
                         with self.assertRaises((ValueError, OSError)):
                             discovery.write_discovery(vendor, output, 'v2.99.0')

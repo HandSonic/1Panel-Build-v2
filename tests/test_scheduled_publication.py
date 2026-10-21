@@ -18,12 +18,12 @@ class ScheduledPublication(unittest.TestCase):
     old_release=automatic_tests.PrepareControlFlow.old_release
 
     def remote(self,successful=('amd64',)):
-        previous,records=self.old_release(successful)
+        previous=self.old_release(successful)
         release=previous.release()
         remote=recovery_tests.RemoteRelease(automatic_tests.Client.tag,release,[])
         remote.contents={asset['id']:(self.root/'previous'/asset['name']).read_bytes()
                          for asset in release['assets']}
-        return remote,records
+        return remote
 
     def prepare(self,event='schedule'):
         with patch.dict(os.environ,GITHUB_EVENT_NAME=event):
@@ -37,7 +37,7 @@ class ScheduledPublication(unittest.TestCase):
 
     def test_schedule_append_transfers_only_new_successful_architecture(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        remote,_=self.remote()
+        remote=self.remote()
         # Existing pairs need no historical digest or package download.
         for asset in remote.releases[8]['assets']:asset.pop('digest')
         before=copy.deepcopy(remote.releases[8]['assets'])
@@ -54,7 +54,7 @@ class ScheduledPublication(unittest.TestCase):
 
     def test_preserved_asset_id_or_digest_drift_rejects_without_download_or_write(self):
         self.payload(self.source,('arm64',),11,'b'*40)
-        remote,_=self.remote();self.prepare()
+        remote=self.remote();self.prepare()
         baseline=copy.deepcopy(remote.releases[8])
         transaction=automatic.repair
         for field,value in (('id',999),('digest','sha256:'+'c'*64)):
@@ -69,7 +69,7 @@ class ScheduledPublication(unittest.TestCase):
                 self.assertEqual(remote.downloads,[])
 
     def partial(self,suffix,*,matching):
-        remote,_=self.remote()
+        remote=self.remote()
         name=f'1panel-{remote.tag}-linux-amd64.tar.gz'+suffix
         asset=next(row for row in remote.releases[8]['assets'] if row['name']==name)
         remote.releases[8]['assets']=[asset]

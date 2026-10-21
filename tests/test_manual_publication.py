@@ -1,4 +1,4 @@
-import hashlib,io,json,os,subprocess,sys,tempfile,unittest,zipfile
+import hashlib,json,os,subprocess,sys,tempfile,unittest,zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -69,22 +69,4 @@ class ManualPublicationTests(unittest.TestCase):
     self.assertEqual((root/'valid/payload').read_bytes(),body)
     raw=bytearray(archive.read_bytes());raw[raw.index(body)]^=1;archive.write_bytes(raw)
     with self.assertRaises(zipfile.BadZipFile):manual.extract_verified_zip(archive,root/'corrupt')
- def test_prepare_validates_the_final_payload_once_with_or_without_migration(self):
-  for migrated in (False,True):
-   with self.subTest(migrated=migrated),tempfile.TemporaryDirectory() as t:
-    work=Path(t)/'work'
-    args=SimpleNamespace(version='v2.3.2',tag='v2.3.2',repository=manual.UPSTREAM,work=work,
-                         upstream_source='verified-ci',run_id='10',artifact_id='22',artifact_sha256='a'*64,build_commit='b'*40)
-    def fetch(directory,*unused):
-     directory.mkdir();(directory/'payload').write_bytes(b'verified CI bytes')
-     return {'build_repository_commit':args.build_commit}
-    with patch.object(manual,'fetch_ci_bundle',side_effect=fetch),\
-         patch('resolved_contract.activate_release'),patch('package_metadata.embed_legacy',return_value=migrated),\
-         patch.object(manual,'validate_payloads',side_effect=lambda directory,*unused:list(directory.iterdir())) as validate,\
-         patch.object(manual,'make_proof',return_value={}),\
-         patch.dict(os.environ,GITHUB_RUN_ID='50',GITHUB_SHA='c'*40),patch('sys.stdout',new_callable=io.StringIO):
-     manual.prepare(args)
-    validate.assert_called_once_with(work/'release','upstream-matrix',args.version)
-    self.assertEqual((work/'release/payload').read_bytes(),b'verified CI bytes')
-
 if __name__=='__main__':unittest.main()

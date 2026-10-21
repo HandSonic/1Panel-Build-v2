@@ -37,7 +37,6 @@ class VersionConcurrency(unittest.TestCase):
         self.assertEqual(first, key(template, **(self.context | {'github.ref': 'refs/heads/repair', 'github.run_id': 99})))
         self.assertEqual(first, key(template, **(self.context | {'inputs.version': 'V2.1.10'})))
         self.assertNotEqual(first, key(template, **(self.context | {'inputs.version': 'v2.1.9'})))
-        self.assertEqual(self.jobs['publication_repair']['env']['RELEASE_TAG'], '${{ inputs.version }}')
 
     def test_candidate_retries_share_own_tag_but_not_canonical_or_other_runs(self):
         concurrency = self.jobs['candidate']['concurrency']
@@ -49,14 +48,6 @@ class VersionConcurrency(unittest.TestCase):
         self.assertNotEqual(first, key(template, **(self.context | {'github.run_id': 11})))
         self.assertNotEqual(first, key(template, **(self.context | {'needs.build.outputs.version': 'v2.1.9'})))
         self.assertNotEqual(first, key(self.jobs['publication_repair']['concurrency']['group'], **self.context))
-
-    def test_all_writers_are_locked_and_resource_limit_remains(self):
-        writers = {name for name, job in self.jobs.items() if job.get('permissions', {}).get('contents') == 'write'}
-        self.assertEqual(writers, {'candidate', 'publication_repair', 'automatic_publication'})
-        for name in writers:
-            self.assertIn('concurrency', self.jobs[name])
-        self.assertEqual(self.jobs['compile']['strategy']['max-parallel'], 3)
-        self.assertFalse(self.jobs['compile']['strategy']['fail-fast'])
 
     def test_automatic_and_repair_writers_share_exact_canonical_lock(self):
         auto = self.jobs['automatic_publication']

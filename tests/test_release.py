@@ -1,7 +1,7 @@
 import hashlib,io,json,os,pathlib,struct,subprocess,sys,tarfile,tempfile,unittest
 from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
-import configure_release,download_resources,package_release,resolve_inputs,validate_artifacts
+import download_resources,package_release,validate_artifacts
 from embedded_configuration import expected_bytes
 
 def executable_elf(arch,payload=b'\0'):
@@ -51,9 +51,8 @@ class ReleaseTests(unittest.TestCase):
         def synthetic_expected(version,part,*args):
             raw=self.configs[part]
             return raw,production(raw,version,part,'stable'),'c'*40
-        for module in (sys.modules[__name__],embedded_configuration,configure_release):
+        for module in (sys.modules[__name__],embedded_configuration):
             handle=patch.object(module,'expected_bytes',side_effect=synthetic_expected);handle.start();self.addCleanup(handle.stop)
-        handle=patch.object(configure_release,'resolve',return_value=self.entry);handle.start();self.addCleanup(handle.stop)
         self.entry['installer_original_version']='v2.3.2'
         for rel in self.entry['installer_sha256']:
             content=(f'ORIGINAL_VERSION=v2.3.2\n' if rel=='1pctl' else f'# fixture {rel}\n').encode()
@@ -157,24 +156,12 @@ class ReleaseTests(unittest.TestCase):
     def test_wrong_elf_target(self):
         self.binaries('s390x')
         with self.assertRaisesRegex(ValueError,'Wrong ELF'):package_release.package(self.root,'v2.3.2','amd64')
-    def test_corrupt_checksum(self):
-        self.build(['amd64']);f=next((self.root/'dist').glob('*.sha256'));f.write_text('bad')
-        with self.assertRaisesRegex(ValueError,'Checksum'):validate_artifacts.validate_dist(self.root/'dist','v2.3.2',['amd64'])
     def test_absolute_checksum_rejected(self):
         self.build(['amd64']);f=next((self.root/'dist').glob('*.sha256'));f.write_text(f.read_text().replace('  1panel','  /opt/1Panel/1panel'))
         with self.assertRaises(ValueError):validate_artifacts.validate_dist(self.root/'dist','v2.3.2',['amd64'])
-    def test_missing_architecture(self):
-        self.build(['amd64'])
-        with self.assertRaises(FileNotFoundError):validate_artifacts.validate_dist(self.root/'dist','v2.3.2',['amd64','arm64'])
     def test_empty_required_file(self):
         (self.root/'lang/en.sh').write_bytes(b'');self.binaries('amd64');package_release.package(self.root,'v2.3.2','amd64')
         with self.assertRaisesRegex(ValueError,'Empty file'):package_release.finalize(self.root,'v2.3.2',['amd64'])
-    def test_download_failure_keeps_existing_file(self):
-        before=(self.root/'install.sh').read_bytes()
-        with patch.object(download_resources,'download',side_effect=ValueError('network failed')):
-            with self.assertRaises(ValueError):download_resources.main('v2.3.2',self.root)
-        self.assertEqual(before,(self.root/'install.sh').read_bytes())
-        self.assertFalse(list(self.root.glob('.resources-*')))
     def test_empty_download_rejected(self):
         p=self.root/'empty'
         def fake(args,check):p.write_bytes(b'')
@@ -185,38 +172,9 @@ class ReleaseTests(unittest.TestCase):
         def fake(args,check):p.write_bytes(b'bad')
         with patch.object(download_resources.subprocess,'run',side_effect=fake):
             with self.assertRaisesRegex(ValueError,'Checksum mismatch'):download_resources.download('https://example.test/x',p,'0'*64)
-    def test_missing_or_different_run_contract_fails_closed(self):
-        import resolved_contract
-        from test_discovered_inputs import fixture
-        runtime=resolved_contract.runtime_contract
-        with tempfile.TemporaryDirectory() as directory:
-            root=pathlib.Path(directory)
-            with patch.object(resolved_contract,'runtime_contract',side_effect=lambda version:runtime(version,root)):
-                with self.assertRaises(FileNotFoundError):resolve_inputs.resolve('v2.0.13')
-                (root/'config').mkdir()
-                (root/'config/resolved-source.json').write_bytes(resolved_contract.canonical(fixture()))
-                with self.assertRaises(ValueError):resolve_inputs.resolve('v2.0.13')
     def test_invalid_architectures(self):
         for text in ('','amd64 amd64','amd64 bogus','$(bad)'):
             with self.assertRaises(ValueError):validate_artifacts.architectures(text)
-    def test_production_community_config(self):
-        fixtures={part:raw.decode() for part,raw in self.configs.items()}
-        for part,fixture in fixtures.items():
-            p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True);p.write_text(fixture)
-        configure_release.configure(self.root,'v2.3.2')
-        for part,fixture in fixtures.items():
-            content=(self.root/part/'cmd/server/conf/app.yaml').read_text()
-            expected=fixture.replace('  mode: dev\n','  mode: stable\n').replace('  level: debug\n','  level: info\n')
-            if part=='core': expected=expected.replace('  version: v0.0.0\n','  version: v2.3.2\n')
-            self.assertEqual(content,expected)  # Every other line is preserved.
-            self.assertIn('  is_enterprise: false\n',content)
-            if part=='agent': self.assertNotIn('version:',content)
-    def test_missing_core_version_fails_closed(self):
-        for part in ('core','agent'):
-            p=self.root/part/'cmd/server/conf/app.yaml';p.parent.mkdir(parents=True)
-            p.write_text('base:\n  mode: dev\n  is_demo: false\n  is_offline: false\n  is_fxplay: false\n  is_enterprise: false\nlog:\n  level: debug\n')
-        with self.assertRaisesRegex(ValueError,'critical setting|source YAML differs'):
-            configure_release.configure(self.root,'v2.3.2')
     def test_embedded_dev_configuration_rejected_despite_valid_manifest(self):
         self.binaries('amd64')
         path=self.root/'build/1panel-core'

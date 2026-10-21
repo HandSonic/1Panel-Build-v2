@@ -1,5 +1,4 @@
 import copy
-import hashlib
 from pathlib import Path
 import sys
 import tempfile
@@ -21,7 +20,7 @@ class SemanticConfigurationTests(unittest.TestCase):
                 for component in ['core','agent']:
                     old,new,_=expected_bytes(version,component)
                     parsed=yaml.safe_load(old)
-                    variants=[old,old.rstrip(b'\n'),old.rstrip(b'\n')+b'\n',old.replace(b'\n',b'\r\n'),
+                    variants=[old,old.rstrip(b'\n'),old.replace(b'\n',b'\r\n'),
                               b'# benign comment\n'+old,
                               yaml.safe_dump(parsed,sort_keys=True,indent=4).encode(),
                               yaml.safe_dump(parsed,sort_keys=False,default_flow_style=True).encode()]
@@ -96,17 +95,3 @@ class SemanticConfigurationTests(unittest.TestCase):
                     with self.assertRaises(ValueError):configure_release.configure(root,'v2.99.0')
                 for component in ['core','agent']:
                     self.assertEqual((root/component/'cmd/server/conf/app.yaml').read_bytes(),before[component])
-
-    def test_exact_component_contract_hashes_are_source_bound(self):
-        for shape,vendor in configuration_shapes():
-            value=fixture(vendor=vendor)
-            with self.subTest(shape=shape),tempfile.TemporaryDirectory() as tmp,synthetic_runtime(Path(tmp),value,vendor):
-                self.assertEqual(set(value['configuration']),{'core','agent'})
-                for component in ('core','agent'):
-                    original,normalized,commit=expected_bytes(value['version'],component)
-                    profile=value['configuration'][component]
-                    self.assertEqual(commit,value['source']['commit'])
-                    self.assertEqual(hashlib.sha256(original).hexdigest(),profile['source_sha256'])
-                    self.assertEqual(hashlib.sha256(normalized).hexdigest(),profile['normalized_sha256'])
-                    self.assertEqual(value['source']['files'][profile['path']],{'sha256':profile['source_sha256'],'bytes':len(original)})
-

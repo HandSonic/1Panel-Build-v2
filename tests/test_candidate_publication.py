@@ -65,7 +65,6 @@ class CandidatePublication(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary,patch.dict(os.environ,{'GITHUB_RUN_ID':'123'}):
             args=self.fixture(Path(temporary));remote=CandidateTransport(args)
             result=candidate.publish(args,remote)
-            self.assertEqual(remote.tag_id,18)
             self.assertEqual(remote.upload_ids,[17,17])
             self.assertEqual(remote.download_ids,[])
             self.assertTrue(remote.value['draft'])

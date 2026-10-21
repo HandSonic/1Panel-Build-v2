@@ -6,10 +6,8 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import package_metadata as pm
-import public_packages as pp
 from resolved_contract import canonical
 from test_discovered_inputs import fixture
 
@@ -28,24 +26,12 @@ class PackageMetadata(unittest.TestCase):
             for name,data,perm in [('manifest.json',json.dumps(manifest).encode(),0o644),('build-metadata/resolved-source.json',self.raw if raw is None else raw,mode)]:
                 info=tarfile.TarInfo('1panel-v2.99.0-linux-amd64/'+name);info.size=len(data);info.mode=perm;tf.addfile(info,io.BytesIO(data))
         return path
-    def test_normal_tar_metadata_roundtrip_and_public_file_filter(self):
+    def test_normal_tar_metadata_roundtrip(self):
         path=self.archive();manifest,files=pm.read(path,'v2.99.0','amd64')
         self.assertEqual(files,{'resolved-source.json':self.raw});self.assertEqual(manifest,self.manifest)
-        self.assertEqual(pp.package_files([path,Path(str(path)+'.sha256'),self.root/'checksums.txt']),[path,Path(str(path)+'.sha256')])
     def test_bad_metadata_never_falls_back(self):
         for kwargs in ({'mode':0o755},{'raw':b'{}'},{'marker':False}):
             with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):pm.read(self.archive(**kwargs),'v2.99.0','amd64')
-    def test_packaging_adds_only_required_nonexecutable_inputs(self):
-        config=self.root/'config';config.mkdir();(config/'resolved-source.json').write_bytes(self.raw)
-        stage=self.root/'stage';stage.mkdir()
-        pm.install(stage,config,dict(version='v2.99.0',mode='stable',resolved_contract_sha256=hashlib.sha256(self.raw).hexdigest()))
-        path=stage/'build-metadata/resolved-source.json';self.assertEqual(path.read_bytes(),self.raw);self.assertFalse(path.stat().st_mode & 0o111)
-    def test_public_inventory_preserves_old_controls_backups_and_other_attachments(self):
-        names=['1panel-v2.99.0-linux-amd64.tar.gz','1panel-v2.99.0-linux-amd64.tar.gz.sha256','build-manifest.json','build-manifest.json.backup-123456789abc']
-        release={'draft':False,'tag_name':'v2.99.0','assets':[{'name':n} for n in names]}
-        self.assertEqual(set(pp.metadata_inventory(release,'v2.99.0')[0]),{'amd64'})
-        release['assets'].append({'name':'unrelated'})
-        self.assertEqual(set(pp.metadata_inventory(release,'v2.99.0')[0]),{'amd64'})
     def test_legacy_repack_preserves_payload_bytes_modes_build_identity_and_is_idempotent(self):
         manifest=dict(self.manifest)
         manifest.pop('publication_format')

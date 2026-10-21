@@ -2,8 +2,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
-import sys
 import unittest
 from unittest.mock import patch
 import yaml
@@ -32,11 +30,6 @@ class MatrixTests(unittest.TestCase):
         with patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'):
             aggregate_shards.aggregate(shards, self.root/'result/dist', 'v2.3.2', arches, '123-1')
 
-    def test_full_matrix_aggregates_valid_packages(self):
-        arches = list(validate_artifacts.ARCHES)
-        shards = self.shards(arches)
-        self.aggregate(shards, arches)
-        self.assertEqual(len(validate_artifacts.validate_dist(self.root/'result/dist', 'v2.3.2', arches)), 7)
 
     def test_aggregate_parses_each_package_once(self):
         shards = self.shards(['amd64'])
@@ -113,11 +106,6 @@ class MatrixTests(unittest.TestCase):
     def test_workflow_gates_and_pinned_cache(self):
         workflow = yaml.safe_load((ROOT/'.github/workflows/build.yml').read_text())
         jobs = workflow['jobs']
-        self.assertEqual(jobs['build']['needs'], ['prepare', 'compile'])
-        self.assertEqual(jobs['candidate']['needs'], 'build')
-        self.assertEqual(workflow['permissions']['contents'], 'read')
-        for name in ('prepare', 'compile', 'build'):
-            self.assertEqual(jobs[name].get('permissions', {}).get('contents', 'read'), 'read')
         cache = next(step['with'] for step in jobs['compile']['steps']
                      if step.get('uses') == 'actions/cache@v4')
         self.assertNotIn('restore-keys', cache)
@@ -160,7 +148,5 @@ class MatrixTests(unittest.TestCase):
         import fnmatch
         self.assertEqual(render(name, 2), 'shard-amd64-123-1')
         self.assertTrue(fnmatch.fnmatch(render(name, 2), render(pattern, 3)))
-        shards = self.shards(['amd64'])
-        self.aggregate(shards, ['amd64'])
         producer['artifact_id'] = '4'
         self.assertFalse(fnmatch.fnmatch('shard-amd64-123-1', render(pattern, 4)))

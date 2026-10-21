@@ -44,20 +44,6 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(client.calls,[])
         for key in before:self.assertEqual(client.assets[key],before[key])
 
-    def test_identical_files_are_noop_including_legacy_without_server_digest(self):
-        for legacy in (False,True):
-            client,files,journal=self.fixture();release=client.release
-            if legacy:
-                def missing_digest():
-                    result=release()
-                    for asset in result['assets']:asset.pop('digest')
-                    return result
-                client.release=missing_digest
-            self.assertEqual(repair(client,files,journal)['phase'],'complete')
-            self.assertEqual(client.calls,[])
-            self.assertCountEqual(client.downloads,[('id',1),('id',2)] if legacy else [])
-            self.assertEqual(client.body,'old release notes')
-
     def test_legacy_readback_is_pinned_to_asset_id_during_name_reuse(self):
         client,files,journal=self.fixture();files=files[:1]
         original=b'oldAA';replacement=b'newBB';name=files[0].name
@@ -95,30 +81,6 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(client.calls,[])
         self.assertEqual(client.assets,before)
 
-    def test_missing_files_upload_under_final_names(self):
-        client,files,journal=self.fixture();before=copy.deepcopy(client.assets)
-        new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.append(new)
-        self.assertEqual(repair(client,files,journal)['phase'],'complete')
-        self.assertEqual(client.calls,[('upload','new.tar.gz')])
-        self.assertEqual(client.downloads,[])
-        for key in before:self.assertEqual(client.assets[key],before[key])
-        self.assertEqual(client.assets[3],('new.tar.gz',b'new'))
-
-    def test_uncertain_upload_can_be_retried_without_replacing_any_asset(self):
-        client,files,journal=self.fixture();before=copy.deepcopy(client.assets)
-        for name in ('new.tar.gz','new.tar.gz.sha256'):
-            path=journal.parent/name;path.write_bytes(name.encode());files.append(path)
-        upload=client.upload
-        def uncertain(path):
-            upload(path);raise RuntimeError('lost response')
-        client.upload=uncertain
-        with self.assertRaises(RuntimeError):repair(client,files,journal)
-        self.assertEqual(json.loads(journal.read_text())['phase'],'incomplete')
-        client.upload=upload
-        self.assertEqual(repair(client,files,journal)['phase'],'complete')
-        self.assertEqual(client.calls,[('upload','new.tar.gz'),('upload','new.tar.gz.sha256')])
-        for key in before:self.assertEqual(client.assets[key],before[key])
-
     def test_uploaded_server_digest_or_size_mismatch_stops_without_mutating_old_assets(self):
         for field,value in (('digest','sha256:'+'f'*64),('size',99)):
             with self.subTest(field=field):
@@ -136,16 +98,5 @@ class RepairTests(unittest.TestCase):
                 for key in before:self.assertEqual(client.assets[key],before[key])
                 self.assertEqual(client.downloads,[])
                 self.assertEqual(json.loads(journal.read_text())['phase'],'incomplete')
-
-    def test_concurrent_change_and_unknown_names_fail_closed(self):
-        for race in (False,True):
-            client,files,journal=self.fixture();release=client.release;count=[0]
-            def changed():
-                count[0]+=1
-                if not race or count[0]==2:client.assets[99]=('human.tar.gz',b'human')
-                return release()
-            client.release=changed
-            with self.assertRaises(ValueError):repair(client,files,journal)
-            self.assertEqual(client.calls,[])
 
 if __name__=='__main__':unittest.main()

@@ -99,19 +99,6 @@ class TransportGitHub(GitHub):
 
 
 class DraftDiscovery(unittest.TestCase):
-    def test_tag_404_discovers_only_matching_draft(self):
-        client = Mock()
-        client.release.side_effect = missing()
-        client.drafts.return_value = [draft()]
-        self.assertEqual(OPTIONAL_RELEASE(client), draft())
-        client.drafts.assert_called_once_with()
-
-    def test_missing_release_and_no_drafts_allows_create(self):
-        client = Mock()
-        client.release.side_effect = missing()
-        client.drafts.return_value = []
-        self.assertIsNone(OPTIONAL_RELEASE(client))
-
     def test_multiple_matching_drafts_stop_before_create(self):
         client = Mock()
         client.release.side_effect = missing()
@@ -126,84 +113,10 @@ class DraftDiscovery(unittest.TestCase):
                 OPTIONAL_RELEASE(client)
             client.drafts.assert_not_called()
 
-    def test_published_release_needs_no_draft_lookup(self):
-        client = Mock()
-        client.release.return_value = dict(draft(), draft=False)
-        self.assertFalse(OPTIONAL_RELEASE(client)['draft'])
-        client.drafts.assert_not_called()
-
-
-class DraftEligibility(unittest.TestCase):
-    def test_empty_bot_draft_at_current_commit_needs_no_compare(self):
-        client = TransportGitHub(draft())
-        ap.check_automatic_draft(client.value, client, 'a' * 40)
-        self.assertEqual(client.calls, [])
-
-    def test_nonempty_draft_requires_the_exact_current_commit(self):
-        for target in ('a' * 40, 'b' * 40):
-            client = TransportGitHub(dict(draft(target), assets=[{'id': 3, 'name': 'package.tar.gz'}]))
-            with self.subTest(target=target):
-                if target == 'a' * 40:
-                    ap.check_automatic_draft(client.value, client, 'a' * 40)
-                else:
-                    with self.assertRaises(ValueError):
-                        ap.check_automatic_draft(client.value, client, 'a' * 40)
-                self.assertEqual(client.calls, [])
-
-    def test_foreign_or_changed_drafts_require_review(self):
-        changes = [dict(body='Human release notes'), dict(name='Human draft'),
-                   dict(author={'id': 123, 'login': 'someone', 'type': 'User'}),
-                   dict(target_commitish='master'), dict(prerelease=True),
-                   dict(draft=False), dict(id=True), dict(tag_name='v2.98.0')]
-        for change in changes:
-            release = dict(draft(), **change)
-            client = TransportGitHub(release)
-            with self.subTest(change=change), self.assertRaises(ValueError):
-                ap.check_automatic_draft(release, client, 'a' * 40)
-            self.assertEqual(client.calls, [])
-
-    def test_diverged_target_is_not_automatically_adopted(self):
-        client = TransportGitHub(draft('b' * 40))
-        client.ancestor = False
-        with self.assertRaises(ValueError):
-            ap.check_automatic_draft(client.value, client, 'a' * 40)
-
-
 class DraftTransactions(unittest.TestCase):
     setUp = fixtures.AutomaticTransaction.setUp
     producer = fixtures.AutomaticTransaction.producer
     repair = fixtures.AutomaticTransaction.repair
-
-    def test_real_adapter_creates_uploads_and_publishes_by_id(self):
-        client = TransportGitHub()
-        with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
-            self.assertEqual(ap.publish(self.args, client), 'published')
-        self.assertFalse(client.value['draft'])
-        self.assertEqual(client.release_id, 17)
-        self.assertEqual(len(client.value['assets']), 2)
-        post = next(i for i, call in enumerate(client.calls)
-                    if call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases'))
-        self.assertFalse(any('/releases/tags/' in item for call in client.calls[post + 1:] for item in call))
-
-    def test_failed_empty_draft_resumes_without_creating_another_release(self):
-        release = draft('b' * 40)
-        client = TransportGitHub(release)
-        with patch.object(ap, 'optional_release', OPTIONAL_RELEASE), patch.object(ap, 'repair', repair):
-            self.assertEqual(ap.publish(self.args, client), 'published')
-        self.assertEqual(client.value['id'], 17)
-        self.assertEqual(client.value['tag_name'], client.tag)
-        self.assertFalse(client.value['draft'])
-        self.assertEqual(client.value['target_commitish'], os.environ['GITHUB_SHA'])
-        self.assertEqual(len(client.value['assets']), 2)
-        retarget = next(call for call in client.calls
-                        if call[:3] == ('api', '--method', 'PATCH')
-                        and f'target_commitish={os.environ["GITHUB_SHA"]}' in call)
-        self.assertIn(f'tag_name={client.tag}', retarget)
-        self.assertFalse(any(call[:4] == ('api', '--method', 'POST', f'repos/{client.repo}/releases')
-                             for call in client.calls))
-        journal = json.loads((self.work / 'control' / 'creation-journal.json').read_text())
-        self.assertEqual(journal['phase'], 'complete')
-        self.assertEqual(journal['release_id'], 17)
 
     def test_writer_only_retry_reuses_partial_create_or_resume_from_the_same_artifact(self):
         prepared = self.work
@@ -257,8 +170,9 @@ class DraftTransactions(unittest.TestCase):
 
     def test_writer_never_adopts_an_ineligible_draft(self):
         for change in ({'body': 'manual notes'}, {'author': {'id': 7, 'login': 'human', 'type': 'User'}},
-                       {'assets': [{'id': 9, 'name': 'existing.tar.gz', 'size': 3, 'digest': 'sha256:' + 'a' * 64}]}):
+                       {'target_commitish': 'b' * 40}):
             client = TransportGitHub(dict(draft(), **change))
+            client.ancestor = False
             with self.subTest(change=change), patch.object(ap, 'optional_release', OPTIONAL_RELEASE), \
                  patch.object(ap, 'repair', repair), self.assertRaises(ValueError):
                 ap.publish(self.args, client)

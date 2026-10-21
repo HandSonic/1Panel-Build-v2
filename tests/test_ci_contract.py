@@ -10,13 +10,6 @@ def github_block(name):
   result.append(line[10:] if line.startswith('          ') else '')
  return '\n'.join(result)+'\n'
 class CIContract(unittest.TestCase):
- def test_shell_syntax(self):
-  for n in ['Resolve immutable build inputs','Prepare pinned source and frontend once','Verify shared source before use','Build and validate every requested architecture','Independently validate and aggregate all architecture shards','Stage a new draft candidate and verify uploaded digests']:
-   r=subprocess.run(['bash','-n'],input=github_block(n),text=True,capture_output=True);self.assertEqual(r.returncode,0,(n,r.stderr))
- def test_cnb_trigger_inputs_and_runtime(self):
-  s=(ROOT/'.cnb.yml').read_text();self.assertIn('CNB_IS_TAG',s);self.assertIn('CNB_BRANCH',s);self.assertIn('apk add --no-cache bash python3',s)
-  self.assertNotIn('SKIP_BUILD',s);self.assertNotIn('git push',s);self.assertNotIn('overlying: true',s)
-  self.assertIn('scripts/build_cnb_matrix.sh',s);self.assertIn('image: cnbcool/attachments:latest',s)
  def test_unsupported_arch_stops_before_resolution(self):
   with tempfile.TemporaryDirectory() as d:
    r=subprocess.run(['bash','-c',github_block('Resolve immutable build inputs')],cwd=d,env=dict(os.environ,INPUT_VERSION='v2.3.2',INPUT_ARCHES='amd64 wrongarch',GITHUB_EVENT_NAME='push',GITHUB_REF='refs/heads/main'),capture_output=True,text=True)

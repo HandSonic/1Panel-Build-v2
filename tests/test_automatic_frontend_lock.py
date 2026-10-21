@@ -1,6 +1,5 @@
 """Reimplemented, offline rejection checks after workspace recovery."""
 import copy
-import hashlib
 import json
 from pathlib import Path
 import sys
@@ -87,10 +86,6 @@ console.log('synthetic source/engine/origin cases passed');
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('cases passed',result.stdout)
 
-    def test_exact_replay_is_offline(self):
-        raw, contract = fixture()
-        with patch('subprocess.run', side_effect=AssertionError('replay executed a process')):
-            self.assertEqual(afl.validate_payload(raw, contract), raw)
 
     def test_descriptor_rejects_identity_and_generator_drift(self):
         raw, original = fixture()

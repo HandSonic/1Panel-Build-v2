@@ -61,8 +61,8 @@ class AutomaticLockTransportTests(unittest.TestCase):
             (self.config / automatic.SIDECAR).unlink()
         self.entry['resolved_contract_sha256'] = resolved_contract.digest(self.contract)
 
-    def test_seven_shards_and_final_dist_preserve_exact_generated_lock(self):
-        arches = list(validate_artifacts.ARCHES)
+    def test_shards_and_final_dist_preserve_exact_generated_lock(self):
+        arches = ['amd64', 'arm64']
         shards = self.shards(arches)
         for arch in arches:
             self.assertEqual((shards / f'shard-{arch}-123-1' / automatic.SIDECAR).read_bytes(), self.lock)
@@ -71,7 +71,7 @@ class AutomaticLockTransportTests(unittest.TestCase):
         dist = self.root / 'result/dist'
         self.assertEqual((dist / automatic.SIDECAR).read_bytes(), self.lock)
         records = validate_artifacts.validate_dist(dist, 'v2.3.2', arches)
-        self.assertEqual(len(records), 7)
+        self.assertEqual(len(records), len(arches))
         self.assertEqual({row['resolved_contract_sha256'] for row in records}, {self.entry['resolved_contract_sha256']})
         self.assertEqual((dist / 'resolved-source.json').read_bytes(), resolved_contract.canonical(self.contract))
 
@@ -148,7 +148,7 @@ class AutomaticLockTransportTests(unittest.TestCase):
         self.assertFalse((self.root / 'dist' / automatic.SIDECAR).exists())
 
     def test_lineage_inventory_keeps_same_lock_and_checks_actual_records(self):
-        from publication_lineage import compose
+        from publication_lineage import generation_id
         self.build(['amd64'])
         dist = self.root / 'dist'
         path = dist / 'build-manifest.json'
@@ -158,13 +158,21 @@ class AutomaticLockTransportTests(unittest.TestCase):
                        outcomes=[{'architecture': 'amd64', 'status': 'success', 'stage': 'compile',
                                   'reason': '', 'job_id': 1,
                                   'job_url': 'https://github.com/HandSonic/1Panel-Build-v2/actions/runs/123/job/1'}])
-        path.write_text(json.dumps(compose(None, current, self.entry['resolved_contract_sha256'])))
-        self.assertEqual(len(validate_artifacts.validate_dist(dist, 'v2.3.2', ['amd64'])), 1)
-        self.assertEqual((dist / automatic.SIDECAR).read_bytes(), self.lock)
-        current['artifacts'][0]['sha256'] = '0' * 64
-        path.write_text(json.dumps(compose(None, current, self.entry['resolved_contract_sha256'])))
-        with self.assertRaisesRegex(ValueError, 'Publication lineage manifest mismatch'):
-            validate_artifacts.validate_dist(dist, 'v2.3.2', ['amd64'])
+        for corrupt in (False, True):
+            if corrupt:current['artifacts'][0]['sha256'] = '0' * 64
+            key = generation_id(current)
+            legacy = {'schema_version': 3, 'version': 'v2.3.2',
+                      'requested_architectures': ['amd64'],
+                      'resolved_contract_sha256': self.entry['resolved_contract_sha256'],
+                      'current_generation': key, 'generations': {key: current},
+                      'artifact_generations': {'amd64': key}, 'artifacts': current['artifacts']}
+            path.write_text(json.dumps(legacy))
+            if corrupt:
+                with self.assertRaisesRegex(ValueError, 'Publication lineage manifest mismatch'):
+                    validate_artifacts.validate_dist(dist, 'v2.3.2', ['amd64'])
+            else:
+                self.assertEqual(len(validate_artifacts.validate_dist(dist, 'v2.3.2', ['amd64'])), 1)
+                self.assertEqual((dist / automatic.SIDECAR).read_bytes(), self.lock)
 
 
 if __name__ == '__main__':

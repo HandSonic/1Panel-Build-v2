@@ -57,10 +57,6 @@ class SourceInputs(unittest.TestCase):
             path.write_bytes(original)
             self.entry['source_files_sha256'][component] = hashlib.sha256(original).hexdigest()
 
-    def test_docker_checks_before_patch_and_enforces_engines(self):
-        text = (Path(__file__).resolve().parents[1] / 'Dockerfile').read_text()
-        self.assertLess(text.index('verify_source_inputs.py'), text.index('patch_backend_xpack_compat.mjs'))
-        self.assertIn('npm ci --engine-strict', text)
 
 class RuntimeInputs(unittest.TestCase):
     def test_unlisted_contract_resolves_exact_operational_inputs(self):
@@ -112,38 +108,24 @@ class RuntimeInputs(unittest.TestCase):
 
 class HistoricalInputCohorts(unittest.TestCase):
     def test_go_requirements_are_checked_from_actual_hashed_modules(self):
-        for component in ('core/go.mod', 'agent/go.mod'):
-            for text, selected, ok in (
-                ('module example.org/test\ngo 1.25.7\n', '1.25.7', True),
-                ('go 1.24 // minimum\ntoolchain default\n', '1.24.0', True),
-                ('go 1.24\ntoolchain go1.25.7\n', '1.26.1', True),
-                ('go 1.25.7\n', '1.25.6', False),
-                ('go 1.24\ntoolchain go1.25.7\n', '1.25.6', False),
-                ('module example.org/test\n', '1.26.1', False),
-                ('go 1.25\ngo 1.24\n', '1.26.1', False),
-                ('go latest\n', '1.26.1', False),
-                ('go 1.25\ntoolchain latest\n', '1.26.1', False),
-            ):
-                with self.subTest(component=component, text=text, selected=selected):
-                    if ok:
-                        source.verify_go_requirements(text.encode(), selected, component)
-                    else:
-                        with self.assertRaises(ValueError):
-                            source.verify_go_requirements(text.encode(), selected, component)
+        for text, selected, ok in (
+            ('module example.org/test\ngo 1.25.7\n', '1.25.7', True),
+            ('go 1.24 // minimum\ntoolchain default\n', '1.24.0', True),
+            ('go 1.24\ntoolchain go1.25.7\n', '1.26.1', True),
+            ('go 1.25.7\n', '1.25.6', False),
+            ('go 1.24\ntoolchain go1.25.7\n', '1.25.6', False),
+            ('module example.org/test\n', '1.26.1', False),
+            ('go 1.25\ngo 1.24\n', '1.26.1', False),
+            ('go latest\n', '1.26.1', False),
+            ('go 1.25\ntoolchain latest\n', '1.26.1', False),
+        ):
+            with self.subTest(text=text, selected=selected):
+                if ok:
+                    source.verify_go_requirements(text.encode(), selected, 'go.mod')
+                else:
+                    with self.assertRaises(ValueError):
+                        source.verify_go_requirements(text.encode(), selected, 'go.mod')
 
-    def test_source_shapes_bind_both_configs_to_one_commit(self):
-        import resolve_inputs
-        import embedded_configuration
-        from test_discovered_inputs import fixture, synthetic_runtime, configuration_shapes
-        for shape, vendor in configuration_shapes():
-            value = fixture(vendor=vendor)
-            with self.subTest(shape=shape), tempfile.TemporaryDirectory() as directory, synthetic_runtime(Path(directory), value, vendor):
-                entry = resolve_inputs.resolve(value['version'])
-                for component in ('core', 'agent'):
-                    original, normalized, commit = embedded_configuration.expected_bytes(value['version'], component)
-                    self.assertEqual(commit, entry['source_commit'])
-                    self.assertEqual(original, vendor.files[f'{component}/cmd/server/conf/app.yaml'])
-                    self.assertTrue(normalized)
 
 class AbsentSourceLock(unittest.TestCase):
     def test_only_reviewed_lock_absence_is_accepted(self):

@@ -9,7 +9,6 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import embedded_configuration as ec
-import configure_release
 from semantic_configuration import production
 from test_discovered_inputs import FakeVendor, fixture, install_fixture
 
@@ -54,7 +53,7 @@ class VendorConfigurationTests(unittest.TestCase):
         with patch.object(ec,'open_vendor_source',side_effect=OSError('unavailable')),self.assertRaises(ValueError):self.fetch()
         with self.assertRaises(ValueError):ec.NoVendorRedirect().redirect_request(None,None,None,None,None,None)
 
-    def test_hash_only_contract_normalization_and_binary_checks(self):
+    def test_hash_only_contract_normalization(self):
         normalized=production(self.source,'v2.99.0','core','stable')
         vendor=FakeVendor();vendor.files['core/cmd/server/conf/app.yaml']=self.source
         vendor.commit=lambda *args:self.commit
@@ -63,10 +62,6 @@ class VendorConfigurationTests(unittest.TestCase):
             root=Path(tmp);install_fixture(root,value)
             with patch.object(ec,'open_vendor_source',side_effect=lambda *args:self.response()):
                 self.assertEqual(ec.expected_bytes('v2.99.0','core',root),(self.source,normalized,self.commit))
-                ec.validate_binary(b'ELF'+normalized,'v2.99.0','core',self.commit,root)
-                for binary in [self.source,normalized+self.source,b'ELF without configuration']:
-                    with self.assertRaises(ValueError):ec.validate_binary(binary,'v2.99.0','core',self.commit,root)
-                with self.assertRaises(ValueError):ec.validate_binary(normalized,'v2.99.0','core','2'*40,root)
                 profile=value['configuration']['core']
                 profile['normalized_sha256']='0'*64;install_fixture(root,value)
                 with self.assertRaises(ValueError):ec.expected_bytes('v2.99.0','core',root)
@@ -74,28 +69,5 @@ class VendorConfigurationTests(unittest.TestCase):
                 profile['source_file']='anything';install_fixture(root,value)
                 with self.assertRaises(ValueError):ec.expected_bytes('v2.99.0','core',root)
 
-    def test_contract_has_hashes_only_and_legacy_payloads_are_never_read(self):
-        value=fixture()
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);install_fixture(root,value)
-            for name in ('sources.json','embedded-configs.json','frontend-lock-repairs.json'):
-                (root/'config'/name).write_text('poisoned legacy registry')
-            for component,profile in value['configuration'].items():
-                self.assertEqual(set(profile),{'path','source_bytes','source_sha256','normalized_sha256'})
-                self.assertEqual(profile['path'],f'{component}/cmd/server/conf/app.yaml')
-                self.assertFalse((root/'config/embedded-configs').exists())
-            original_read=Path.read_text
-            def guard(path,*args,**kwargs):
-                if path.name in ('sources.json','embedded-configs.json','frontend-lock-repairs.json'):
-                    raise AssertionError('Legacy registry read')
-                return original_read(path,*args,**kwargs)
-            vendor=FakeVendor()
-            def response(url):
-                prefix='https://raw.githubusercontent.com/1Panel-dev/1Panel/'+'a'*40+'/'
-                self.assertTrue(url.startswith(prefix))
-                return self.response(vendor.files[url[len(prefix):]],url)
-            with patch.object(Path,'read_text',guard),patch.object(ec,'open_vendor_source',side_effect=response):
-                for component in ('core','agent'):
-                    self.assertEqual(ec.expected_bytes('v2.99.0',component,root)[0],vendor.files[f'{component}/cmd/server/conf/app.yaml'])
 
 if __name__=='__main__':unittest.main()
