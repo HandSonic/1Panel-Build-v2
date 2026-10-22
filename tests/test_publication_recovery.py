@@ -260,14 +260,14 @@ class VerifiedProducerRecovery(unittest.TestCase):
                 with self.subTest(latest_status=status,latest_conclusion=conclusion),\
                      patch.object(manual,'github_json',side_effect=[latest,metadata,{'jobs':inventory,'total_count':len(inventory)},run]),\
                      patch.object(manual.subprocess,'run',side_effect=download):
-                    provenance=manual.fetch_ci_bundle(root/('input-'+str(conclusion)),'v2.4.0','10','22',digest,commit,'upstream-matrix')
+                    provenance=manual.fetch_ci_bundle(root/('input-'+str(conclusion)),'v2.4.0','10','22',digest,commit)
                 self.assertEqual(provenance['build_repository_commit'],commit)
                 self.assertEqual(provenance['artifact_sha256'],digest)
             # Only the selected producer's terminal state determines eligibility.
             with patch.object(manual,'github_json',side_effect=[run,metadata,{'jobs':jobs,'total_count':len(jobs)},dict(run,conclusion='cancelled')]),\
                  patch.object(manual.subprocess,'run',side_effect=download),\
                  self.assertRaisesRegex(ValueError,'terminal permitted build'):
-                manual.fetch_ci_bundle(root/'cancelled-producer','v2.4.0','10','22',digest,commit,'upstream-matrix')
+                manual.fetch_ci_bundle(root/'cancelled-producer','v2.4.0','10','22',digest,commit)
 
 
 if __name__=='__main__':unittest.main()

@@ -65,7 +65,7 @@ def publish(args,client=None):
         state=repair(client,files,control/'repair-journal.json',
                      expected_snapshot=release_snapshot(created),expected_draft=created)
         if state['phase']!='complete':raise ValueError('Candidate upload did not complete')
-        verify_new_release(client.release(),created,files,True,fallback_assets=state.get('verified_legacy_assets'))
+        verify_new_release(client.release(),created,state['files'],True,fallback_assets=state.get('verified_legacy_assets'))
         creation.state['phase']='complete';creation.save()
     except Exception as error:
         creation.state.update(phase='incomplete',failure=str(error));creation.save()

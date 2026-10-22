@@ -35,14 +35,14 @@ class ManualPublicationTests(unittest.TestCase):
     with patch.object(manual,'github_json',side_effect=[run,selected,{'jobs':jobs,'total_count':len(jobs)},run]),patch.object(manual.subprocess,'run',side_effect=download):
      if suffix=='-3':
       with self.assertRaisesRegex(ValueError,'producer attempt'):
-       manual.fetch_ci_bundle(root/'mismatch','v2.3.2','10','22',sha,commit,'upstream-matrix')
+       manual.fetch_ci_bundle(root/'mismatch','v2.3.2','10','22',sha,commit)
      else:
-      result=manual.fetch_ci_bundle(root/('input'+suffix),'v2.3.2','10','22',sha,commit,'upstream-matrix')
+      result=manual.fetch_ci_bundle(root/('input'+suffix),'v2.3.2','10','22',sha,commit)
       self.assertEqual(result['build_repository_commit'],commit)
    for invalid in (dict(run,id=11),dict(run,path='.github/workflows/other.yml')):
     with patch.object(manual,'github_json',return_value=invalid):
      with self.assertRaisesRegex(ValueError,'Unexpected upstream workflow'):
-      manual.fetch_ci_bundle(root/'bad','v2.3.2','10','22',sha,commit,'upstream-matrix')
+      manual.fetch_ci_bundle(root/'bad','v2.3.2','10','22',sha,commit)
  def test_wrong_version_tag_or_repository_rejected(self):
   for version,tag,repo in [('v2.3.2','v2.3.1',manual.REPOS['upstream-matrix']),('../../escape','../../escape',manual.REPOS['upstream-matrix']),('v2.3.2','v2.3.2','other/repo')]:
    with self.assertRaises(ValueError):manual.check_identity(version,tag,repo)
@@ -68,7 +68,7 @@ class ManualPublicationTests(unittest.TestCase):
    def download(command,**kwargs):kwargs['stdout'].write(data);return SimpleNamespace(returncode=0)
    with patch.object(manual,'github_json',side_effect=api),patch.object(manual.subprocess,'run',side_effect=download),\
         patch.object(manual,'github_job_log',return_value='\n'.join(lines)+'\n') as logs:
-    result=manual.fetch_ci_bundle(root/'input','v2.4.1','10','22',sha,commit['sha'],'upstream-matrix')
+    result=manual.fetch_ci_bundle(root/'input','v2.4.1','10','22',sha,commit['sha'])
    self.assertEqual(result['build_repository_commit'],commit['sha']);logs.assert_called_once_with(3)
  def test_checkout_log_transport_only_retries_the_gh_terminal_control_guard(self):
   guarded=subprocess.CalledProcessError(1,['gh'],stderr='the response contains terminal escape sequences')

@@ -9,6 +9,7 @@ import test_release
 import aggregate_shards
 import matrix_contract
 import validate_artifacts
+from workflow_helpers import github_jobs, step_by_id
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -238,27 +239,30 @@ class MatrixTests(unittest.TestCase):
         }, set(re.findall(r"'([^']+)'", hash_args)))
 
     def test_shard_transport_names_bind_the_prepared_generation(self):
-        workflow = (ROOT/'.github/workflows/build.yml').read_text()
-        prepare = workflow.split('  prepare:\n')[1].split('  compile:\n')[0]
-        compile_job = workflow.split('  compile:\n')[1].split('  build:\n')[0]
-        aggregate_job = workflow.split('  build:\n')[1].split('  candidate:\n')[0]
-        self.assertIn('artifact_id: ${{ steps.source_upload.outputs.artifact-id }}', prepare)
-        self.assertIn('artifact-ids: ${{ needs.prepare.outputs.artifact_id }}', compile_job)
-        self.assertNotIn('github.run_attempt', compile_job)
-        self.assertIn('name: verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}', aggregate_job)
-        self.assertIn('overwrite: true', compile_job)
-        self.assertNotIn('overwrite: true', aggregate_job)
+        jobs = github_jobs()
+        compile_job = jobs['compile']
+        aggregate_job = jobs['build']
+        download = step_by_id(compile_job, 'source_download')
+        shard = step_by_id(compile_job, 'shard_upload')['with']
+        shards = step_by_id(aggregate_job, 'shards_download')['with']
+        bundle = step_by_id(aggregate_job, 'bundle')['with']
+        self.assertEqual(jobs['prepare']['outputs']['artifact_id'], '${{ steps.source_upload.outputs.artifact-id }}')
+        self.assertEqual(download['with']['artifact-ids'], '${{ needs.prepare.outputs.artifact_id }}')
+        self.assertEqual(bundle['name'], 'verified-1panel-${{ needs.prepare.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}')
+        self.assertTrue(shard['overwrite'])
+        self.assertFalse(bundle.get('overwrite', False))
+        self.assertEqual(compile_job['env']['SHARD_GENERATION'], aggregate_job['env']['SHARD_GENERATION'])
         # Transfer names retain the prepared-source generation across retries.
         producer = {'artifact_id': '1'}
         def render(value, attempt):
-            return (value.replace('${{ github.run_id }}', '123')
-                    .replace('${{ needs.prepare.outputs.artifact_id }}', producer['artifact_id'])
-                    .replace('${{ github.run_attempt }}', str(attempt))
-                    .replace('${{ matrix.arch }}', 'amd64'))
-        name = next(line.split('name: ', 1)[1] for line in compile_job.splitlines() if 'name: shard-' in line)
-        pattern = next(line.split('pattern: ', 1)[1] for line in aggregate_job.splitlines() if 'pattern: shard-' in line)
+            values = {'github.run_id': '123', 'needs.prepare.outputs.artifact_id': producer['artifact_id'],
+                      'github.run_attempt': str(attempt), 'matrix.arch': 'amd64'}
+            return re.sub(r'\$\{\{\s*([\w.]+)\s*\}\}', lambda match: values[match[1]], value)
+        name, pattern = shard['name'], shards['pattern']
         import fnmatch
         self.assertEqual(render(name, 2), 'shard-amd64-123-1')
         self.assertTrue(fnmatch.fnmatch(render(name, 2), render(pattern, 3)))
+        self.assertEqual(render(compile_job['env']['SHARD_GENERATION'], 2),
+                         render(compile_job['env']['SHARD_GENERATION'], 3))
         producer['artifact_id'] = '4'
         self.assertFalse(fnmatch.fnmatch('shard-amd64-123-1', render(pattern, 4)))
