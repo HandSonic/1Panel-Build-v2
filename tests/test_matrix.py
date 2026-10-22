@@ -7,6 +7,7 @@ from unittest.mock import patch
 import yaml
 import test_release
 import aggregate_shards
+import matrix_contract
 import validate_artifacts
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,6 +103,87 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual([r['architecture'] for r in manifest['artifacts']],['amd64'])
         self.assertFalse((self.root/'result/dist/1panel-v2.3.2-linux-arm64.tar.gz').exists())
         self.assertEqual(len(validate_artifacts.validate_dist(self.root/'result/dist','v2.3.2',['amd64'])),1)
+
+    def recorded_shards(self, failed=()):
+        shards=self.shards(['amd64','arm64'])
+        temporary=self.root/'recording/dist';temporary.parent.mkdir()
+        with patch.dict(os.environ,GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',PRODUCER_HEAD_SHA='a'*40):
+            for arch in ['amd64','arm64']:
+                shard=shards/f'shard-{arch}-123-1'
+                shard.rename(temporary)
+                matrix_contract.record(temporary,'v2.3.2',arch,'123-1','failure' if arch in failed else 'success')
+                temporary.rename(shard)
+        return shards
+
+    def recorded_jobs(self):
+        return [{'id':i,'name':name,'run_id':123,'run_attempt':1,'head_sha':'a'*40,
+                 'status':'queued','conclusion':None,
+                 'html_url':f'https://github.com/HandSonic/1Panel-Build-v2/actions/runs/123/job/{i}'}
+                for i,name in enumerate(['compile (amd64)','compile (arm64)','build'],1)]
+
+    def test_stale_api_status_does_not_discard_recorded_successful_shards(self):
+        import json
+        shards=self.recorded_shards();jobs=self.recorded_jobs()
+        destination=self.root/'result/dist'
+        env=dict(GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',PRODUCER_HEAD_SHA='a'*40,
+                 GITHUB_REPOSITORY='HandSonic/1Panel-Build-v2',MATRIX_RESULT='success',
+                 GITHUB_OUTPUT=str(self.root/'output'),GITHUB_STEP_SUMMARY='')
+        with patch.dict(os.environ,env),patch.object(matrix_contract.time,'sleep'),\
+             patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'),\
+             patch.object(aggregate_shards,'github_json',return_value={'jobs':jobs,'total_count':3}) as api:
+            aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        manifest=json.loads((destination/'build-manifest.json').read_text())
+        self.assertEqual([r['architecture'] for r in manifest['artifacts']],['amd64','arm64'])
+        self.assertEqual(manifest['outcome_source'],'package-step')
+        self.assertEqual(api.call_count,1)
+        shutil.rmtree(destination)
+        with patch.dict(os.environ,env),patch.object(matrix_contract.time,'sleep'),\
+             patch.object(aggregate_shards,'github_json',return_value={'jobs':jobs[:1]+jobs[2:],'total_count':2}) as api:
+            with self.assertRaisesRegex(ValueError,'did not settle.*arm64'):
+                aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        self.assertFalse(destination.exists())
+        self.assertEqual(api.call_count,13)
+
+    def test_recorded_partial_build_rejects_old_success_and_infrastructure_failure(self):
+        import json
+        shards=self.recorded_shards(failed=['arm64']);jobs=self.recorded_jobs()
+        destination=self.root/'result/dist';output=self.root/'output'
+        self.assertEqual({p.name for p in (shards/'shard-arm64-123-1').iterdir()},{matrix_contract.BRANCH_RESULT})
+        env=dict(GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',PRODUCER_HEAD_SHA='a'*40,
+                 GITHUB_REPOSITORY='HandSonic/1Panel-Build-v2',MATRIX_RESULT='success',GITHUB_OUTPUT=str(output),GITHUB_STEP_SUMMARY='')
+        with patch.dict(os.environ,env),\
+             patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'),\
+             patch.object(aggregate_shards,'github_json',return_value={'jobs':jobs,'total_count':3}):
+            aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        manifest=json.loads((destination/'build-manifest.json').read_text())
+        self.assertEqual([r['architecture'] for r in manifest['artifacts']],['amd64'])
+        self.assertEqual(output.read_text(),'complete=false\n')
+        shutil.rmtree(destination)
+        for result in ('failure','cancelled'):
+            with patch.dict(os.environ,env|{'MATRIX_RESULT':result}),self.assertRaisesRegex(ValueError,'infrastructure'):
+                aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        jobs[0]['run_attempt']=2;jobs[2]['run_attempt']=2
+        with patch.dict(os.environ,env|{'GITHUB_RUN_ATTEMPT':'2'}),\
+             patch.object(aggregate_shards,'github_json',return_value={'jobs':jobs,'total_count':3}),\
+             self.assertRaisesRegex(ValueError,'older execution: amd64'):
+            aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        self.assertFalse(destination.exists())
+        jobs[0]['run_attempt']=1;jobs[2]['run_attempt']=1
+        path=shards/'shard-arm64-123-1'/matrix_contract.BRANCH_RESULT
+        original=json.loads(path.read_text())
+        for field,value in [('architecture','amd64'),('producer_run_id',124),
+                            ('producer_run_attempt',2),('build_repository_commit','b'*40),
+                            ('generation','123-2'),('reason',''),('status','unknown')]:
+            path.write_text(json.dumps(original|{field:value}))
+            with self.subTest(field=field),patch.dict(os.environ,env),\
+                 patch.object(aggregate_shards,'github_json',return_value={'jobs':jobs,'total_count':3}),\
+                 self.assertRaises(ValueError):
+                aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+            self.assertFalse(destination.exists())
+        path.write_text(json.dumps(original))
+        (path.parent/'leftover.tar.gz').write_bytes(b'old package')
+        with patch.dict(os.environ,env),self.assertRaisesRegex(ValueError,'Failed architecture shard contains'):
+            aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
 
     def test_workflow_gates_and_pinned_cache(self):
         workflow = yaml.safe_load((ROOT/'.github/workflows/build.yml').read_text())

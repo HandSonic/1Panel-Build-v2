@@ -256,6 +256,7 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
     import gzip
     import tarfile
     from pathlib import PurePosixPath
+    from package_metadata import MAX_ARCHIVE_BYTES, MAX_MEMBER_BYTES, MAX_UNPACKED_BYTES, MAX_MEMBERS
     base = f'https://resource.fit2cloud.com/1panel/package/v2/{mode}/{version}/release/'
     name = f'1panel-{version}-linux-amd64.tar.gz'
     if expected is None:
@@ -281,7 +282,7 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
                 n = 1024 * 1024
             data = self.stream.read(min(n, 1024 * 1024))
             self.size += len(data)
-            if self.size > 512 * 1024 * 1024:
+            if self.size > MAX_ARCHIVE_BYTES:
                 raise ValueError('Official archive exceeds bound')
             self.sha.update(data)
             return data
@@ -294,14 +295,14 @@ def official_archive(vendor, version, mode, expected=None, geoip_destination=Non
                 if path.is_absolute() or '..' in path.parts or '\\' in member.name or str(path) in seen:
                     raise ValueError('Unsafe or duplicate official archive member')
                 seen.add(str(path))
-                if len(seen) > 10000 or not path.parts or path.parts[0] != name[:-7]:
+                if len(seen) > MAX_MEMBERS or not path.parts or path.parts[0] != name[:-7]:
                     raise ValueError('Unexpected official archive structure')
                 if member.isdir():
                     continue
-                if not member.isfile() or member.issparse() or member.size < 0 or member.size > 256 * 1024 * 1024:
+                if not member.isfile() or member.issparse() or member.size < 0 or member.size > MAX_MEMBER_BYTES:
                     raise ValueError('Unsupported official archive member')
                 logical_size += member.size
-                if logical_size > 1024 * 1024 * 1024:
+                if logical_size > MAX_UNPACKED_BYTES:
                     raise ValueError('Official archive logical size exceeds bound')
                 rel = '/'.join(path.parts[1:])
                 payload = archive.extractfile(member)

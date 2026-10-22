@@ -9,7 +9,7 @@ from release_asset_repair import (GitHub,digest,repair,optional_release,require_
 UPSTREAM=REPOS['upstream-matrix']
 
 def github_json(endpoint):
-    result=subprocess.run(['gh','api',endpoint],check=True,capture_output=True,text=True)
+    result=subprocess.run(['gh','api',endpoint],check=True,capture_output=True,text=True,timeout=30)
     return json.loads(result.stdout)
 
 
@@ -52,21 +52,17 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
         if digest(archive)!= {'bytes':metadata['size_in_bytes'],'sha256':expected_sha}:raise ValueError('Downloaded CI ZIP differs from GitHub metadata')
         extract_verified_zip(archive,directory)
     manifest=json.loads((Path(directory)/'build-manifest.json').read_text())
-    from matrix_contract import verify_jobs
+    from matrix_contract import read_jobs, retry_pending, verify_jobs
     attempt=manifest.get('producer_run_attempt')
     if type(attempt) is not int or attempt<=0:raise ValueError('Invalid producer attempt')
     if metadata['name'] not in (artifact_name,f'{artifact_name}-{attempt}'):
         raise ValueError('Selected artifact name differs from its producer attempt')
-    jobs=[];page=1
-    while True:
-        data=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/jobs?filter=all&per_page=100&page={page}')
-        jobs.extend(data['jobs'])
-        if len(jobs)>=data['total_count']:break
-        page+=1
-        if page>10:raise ValueError('Excessive producer job inventory')
-    run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/attempts/{attempt}')
-    execution=github_json(f'repos/{UPSTREAM}/git/commits/{expected_commit}') if run.get('event')=='pull_request' else None
-    verify_jobs(manifest,run,jobs,expected_commit,execution,allow_publication_failures=True)
+    def snapshot():
+        jobs=read_jobs(github_json,UPSTREAM,run_id)
+        run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/attempts/{attempt}')
+        execution=github_json(f'repos/{UPSTREAM}/git/commits/{expected_commit}') if run.get('event')=='pull_request' else None
+        return verify_jobs(manifest,run,jobs,expected_commit,execution,allow_publication_failures=True)
+    retry_pending(snapshot)
     records=manifest['artifacts']
     if not records or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')
     return {'repository':UPSTREAM,'run_id':int(run_id),'artifact_id':int(artifact_id),'artifact_sha256':expected_sha,

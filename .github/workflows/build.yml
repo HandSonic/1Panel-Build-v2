@@ -128,16 +128,12 @@ jobs:
             version=${SCHEDULED_VERSION:?Missing scheduled version}
             requested=${SCHEDULED_ARCHES:?Missing scheduled architectures}
           fi
-          arches=$(printf '%s' "$requested" | tr ',;' ' ')
-          for arch in $arches; do
-            case "$arch" in amd64|arm64|armv7|ppc64le|s390x|loong64|riscv64) ;; *) exit 1;; esac
-          done
-          [[ -n "$arches" ]]
+          arches=$(python3 -c 'import sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(" ".join(architectures(sys.argv[1])))' "$requested")
           if [[ -z "$version" && "$GITHUB_REF" == refs/tags/* ]]; then version=$GITHUB_REF_NAME; fi
           if [[ -z "$version" ]]; then
             version=$(python3 scripts/discover_inputs.py --latest --mode "$INPUT_CHANNEL")
           fi
-          matrix=$(python3 -c 'import json,sys;sys.path.insert(0,"scripts");from validate_artifacts import architectures;print(json.dumps({"arch":architectures(sys.argv[1])}))' "$arches")
+          matrix=$(python3 -c 'import json,sys;print(json.dumps({"arch":sys.argv[1].split()}))' "$arches")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "arches=$arches" >> "$GITHUB_OUTPUT"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
@@ -190,6 +186,8 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       TARGET_ARCHES: ${{ matrix.arch }}
       BUILD_REPOSITORY_COMMIT: ${{ github.sha }}
+      PRODUCER_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SHARD_GENERATION: ${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
       GOTOOLCHAIN: local
       PREPARED_SHA256: ${{ needs.prepare.outputs.source_sha256 }}
       RESOLVED_CONTRACT_SHA256: ${{ needs.prepare.outputs.resolved_contract_sha256 }}
@@ -236,6 +234,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-user
           python3 scripts/verify_go_sqlite_compat.py prepared-source --qemu qemu-loongarch64
       - name: Build and validate every requested architecture
+        id: package
+        # Package failures are recorded below; infrastructure failures stay fatal.
+        continue-on-error: true
         run: |
           set -euo pipefail
           source build-inputs.env
@@ -243,7 +244,15 @@ jobs:
           tools="$PWD/scripts"
           (cd prepared-source; bash "$tools/build_release.sh")
           cp build-inputs.env prepared-source/dist/build-inputs.env
+      - name: Record architecture result
+        id: outcome_record
+        if: ${{ !cancelled() }}
+        env:
+          BRANCH_RESULT: ${{ steps.package.outcome }}
+        run: |
+          python3 scripts/matrix_contract.py record prepared-source/dist "$VERSION" "$TARGET_ARCHES" "$SHARD_GENERATION" "$BRANCH_RESULT"
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.outcome_record.outcome == 'success' }}
         with:
           name: shard-${{ matrix.arch }}-${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
           # A failed-only rerun replaces just its own intermediate shard.
@@ -263,12 +272,14 @@ jobs:
       version: ${{ needs.prepare.outputs.version }}
       arches: ${{ needs.prepare.outputs.arches }}
       artifact_id: ${{ steps.bundle.outputs.artifact-id }}
+      complete: ${{ steps.aggregate.outputs.complete }}
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TARGET_ARCHES: ${{ needs.prepare.outputs.arches }}
       BUILD_REPOSITORY_COMMIT: ${{ github.sha }}
       GH_TOKEN: ${{ github.token }}
       PRODUCER_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      MATRIX_RESULT: ${{ needs.compile.result }}
       SHARD_GENERATION: ${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
       RESOLVED_CONTRACT_SHA256: ${{ needs.prepare.outputs.resolved_contract_sha256 }}
     steps:
@@ -283,6 +294,7 @@ jobs:
           pattern: shard-*-${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
           path: shards
       - name: Independently validate and aggregate all architecture shards
+        id: aggregate
         run: |
           set -euo pipefail
           python3 scripts/aggregate_shards.py shards dist "$VERSION" "$TARGET_ARCHES" "$SHARD_GENERATION"
@@ -339,7 +351,6 @@ jobs:
           path: candidate-control/
           if-no-files-found: warn
           retention-days: 90
-
   publication_prepare:
     needs: [tests, build]
     permissions:
@@ -509,7 +520,7 @@ jobs:
           python3 scripts/automatic_publication.py publish --repository "$GITHUB_REPOSITORY" \
             --version "$VERSION" --work publication-work
       - name: Fill missing scheduled checksums from server digests
-        if: github.event_name == 'schedule' && needs.check_update.outputs.checksum_required == 'true'
+        if: ${{ !cancelled() && github.event_name == 'schedule' && needs.check_update.outputs.checksum_required == 'true' }}
         run: |
           python3 scripts/scheduled_release.py --repository "$GITHUB_REPOSITORY" \
             --version "$VERSION" --repair-checksums --work checksum-work
@@ -523,3 +534,16 @@ jobs:
             checksum-work/
           if-no-files-found: warn
           retention-days: 90
+  matrix_status:
+    needs: [build, candidate, automatic_publication, publication_repair]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      MATRIX_COMPLETE: ${{ needs.build.outputs.complete }}
+    steps:
+      - name: Report complete architecture result after publication
+        run: |
+          if [[ "$MATRIX_COMPLETE" != true ]]; then
+            echo '::error title=Partial architecture build::Some requested architectures failed. Verified successful outputs were retained; see the architecture outcomes.'
+            exit 1
+          fi

@@ -81,9 +81,29 @@ boundaries. Shared preparation or validation failures block publication. A faile
 architecture is omitted while independently successful output can be published.
 Failure details stay in Actions, not Release notes.
 
-Intermediate source/shard artifacts expire after three days. Failed-only retries
-reuse the original preparation artifact and replace only their own intermediate
-shard. Inherited successful jobs remain authenticated by their original job IDs.
+The scheduler dependency waits for the matrix. Only the package build step may
+continue after failure; each branch then uploads a result record, with validated
+packages on success or no package files on failure. All surrounding native jobs,
+including result transport and post-job cleanup, must succeed before aggregation.
+The jobs API binds immutable job IDs and attempts; its live status is not used as
+a second completion gate. Missing identities are refreshed at most 13 times,
+five seconds apart. Missing records and infrastructure failures block publication.
+The manifest marks this contract with `outcome_source: package-step`.
+
+Same-run publication authenticates its native workflow identity and the exact
+preparation receipt supplied by job outputs, without polling live job status.
+Cross-run promotion still verifies the terminal producer and exact job identities.
+After publication, `matrix_status` makes a partially successful run red so failed
+package branches remain visible. See [the CI design audit](docs-ci-audit.md).
+
+Intermediate source/shard artifacts expire after three days. Rerunning a specific
+compile job reuses the original preparation artifact and replaces only its own
+intermediate shard and result record. Inherited successful jobs remain
+authenticated by their original job IDs. For a recorded package failure, rerun
+that architecture's compile job or start a build selecting the missing architectures.
+**Re-run failed jobs** repairs failed infrastructure/publication jobs, but cannot
+recompile a package failure whose native compile job succeeded; rerunning only
+`matrix_status` repeats its red result.
 A new full preparation has a new artifact ID. Final verified build artifacts
 include their producer attempt in the name for exact selection. GitHub controls
 retention: [a full workflow rerun can delete prior artifacts](https://github.com/orgs/community/discussions/45415),
@@ -100,6 +120,12 @@ receipt and all transferred file hashes without unpacking the same archives agai
 then discovers the current Release state. Release operations bind
 to the observed Release ID and retain its asset snapshot. Only missing files are
 uploaded; this code does not rename, replace or delete existing assets.
+
+After a successful upload, the returned asset ID binds readback verification.
+Only a newly uploaded asset or digest that is not yet visible is re-read, at most
+seven times with five seconds between reads. The upload is never repeated by this
+wait. Conflicting bytes, changed asset IDs or changes to the existing inventory
+still stop the transaction immediately.
 
 A new canonical Release is staged as an owned draft. Its new attachments are
 verified before it becomes public. If finalization has an uncertain result, the

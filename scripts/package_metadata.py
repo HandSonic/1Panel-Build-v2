@@ -9,6 +9,29 @@ import tempfile
 
 FORMAT = 'package-only-v1'
 DIRECTORY = 'build-metadata'
+# Keep custom and official archive readers within the same resource envelope.
+MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_MEMBER_BYTES = 256 * 1024 * 1024
+MAX_UNPACKED_BYTES = 1024 * 1024 * 1024
+MAX_MEMBERS = 10000
+
+
+def check_archive_size(path):
+    if not 0 < Path(path).stat().st_size <= MAX_ARCHIVE_BYTES:
+        raise ValueError('Package archive exceeds compressed size bound')
+
+
+def bounded_members(archive):
+    total = 0
+    for count, member in enumerate(archive, 1):
+        if count > MAX_MEMBERS:
+            raise ValueError('Package archive exceeds member count bound')
+        if member.issparse() or member.size < 0 or member.size > MAX_MEMBER_BYTES:
+            raise ValueError('Package archive member exceeds size bound or is sparse')
+        total += member.size
+        if total > MAX_UNPACKED_BYTES:
+            raise ValueError('Package archive exceeds unpacked size bound')
+        yield member
 
 
 def embed_legacy(directory, version):
@@ -110,8 +133,9 @@ def install(stage, config, entry):
 
 def read(path, version, arch):
     """Read only bounded data; absence means legacy, malformed new data never does."""
+    check_archive_size(path)
     with tarfile.open(path, 'r:gz') as archive:
-        return _read_members(archive.getmembers(), lambda member: archive.extractfile(member).read(), version, arch)
+        return _read_members(list(bounded_members(archive)), lambda member: archive.extractfile(member).read(), version, arch)
 
 
 def _read_members(members, read_body, version, arch):

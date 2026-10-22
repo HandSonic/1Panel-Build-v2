@@ -116,6 +116,21 @@ class ReleaseTests(unittest.TestCase):
                 p.write_bytes(body)
                 with self.assertRaises((EOFError,OSError)):
                     validate_artifacts.validate_package(p,'v2.3.2','amd64')
+    def test_archive_resource_bounds_apply_to_package_and_metadata_readers(self):
+        import package_metadata
+        self.build(['amd64']);path=next((self.root/'dist').glob('*.tar.gz'))
+        with tarfile.open(path) as archive:members=archive.getmembers()
+        bounds={
+            'MAX_ARCHIVE_BYTES':path.stat().st_size-1,
+            'MAX_MEMBER_BYTES':max(member.size for member in members)-1,
+            'MAX_UNPACKED_BYTES':sum(member.size for member in members)-1,
+            'MAX_MEMBERS':len(members)-1,
+        }
+        for setting,limit in bounds.items():
+            for reader in (validate_artifacts.validate_package,package_metadata.read):
+                with self.subTest(setting=setting,reader=reader.__name__),patch.object(package_metadata,setting,limit):
+                    with self.assertRaisesRegex(ValueError,'bound'):
+                        reader(path,'v2.3.2','amd64')
     def test_unsafe_duplicate_or_linked_archive_members_are_rejected(self):
         self.build(['amd64']);path=next((self.root/'dist').glob('*.tar.gz'))
         with tarfile.open(path) as archive:

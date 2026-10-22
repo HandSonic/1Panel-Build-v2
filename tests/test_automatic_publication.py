@@ -192,21 +192,35 @@ class EventGates(unittest.TestCase):
 
 
 class CurrentProducer(unittest.TestCase):
-    def test_writer_only_retry_authenticates_original_terminal_producer(self):
+    def test_same_run_and_writer_only_retry_use_native_identity_without_status_api(self):
         from test_publication_lineage import producer_fixture
-        value,run,jobs=producer_fixture();run.update(status='completed',conclusion='failure')
-        jobs.append(dict(jobs[0],id=999,name='automatic_publication',conclusion='failure'))
-        def api(path):
-            if path.endswith('/attempts/2'):return run
-            if path.endswith('page=1'):return {'total_count':len(jobs),'jobs':jobs[:3]}
-            if path.endswith('page=2'):return {'total_count':len(jobs),'jobs':jobs[3:]}
-            raise AssertionError(path)
-        with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3'),patch.object(ap,'github_json',side_effect=api):
-            ap.current_producer(value,'a'*40)
-        jobs[0]['conclusion']='failure'
-        with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3'),patch.object(ap,'github_json',side_effect=api):
-            with self.assertRaisesRegex(ValueError,'Shared producer gate failed'):
-                ap.current_producer(value,'a'*40)
+        value,_,_=producer_fixture()
+        for current_attempt in ('2','3'):
+            for event in ('push','schedule','workflow_dispatch'):
+                with self.subTest(current_attempt=current_attempt,event=event),\
+                     patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT=current_attempt,
+                         GITHUB_SHA='a'*40,GITHUB_REPOSITORY=Client.repo,GITHUB_EVENT_NAME=event),\
+                     patch('subprocess.run',side_effect=AssertionError('Same-run publication must not query job status')):
+                    ap.current_producer(value,'a'*40)
+
+    def test_forged_or_cross_run_producers_never_pass_the_same_run_gate(self):
+        from test_publication_lineage import producer_fixture
+        original,_,_=producer_fixture()
+        for mutation in ('run','future-attempt','invalid-attempt','head','built-commit','payload-commit','repository','event','outcome'):
+            value=copy.deepcopy(original);commit='a'*40
+            env=dict(GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='3',GITHUB_SHA='a'*40,
+                     GITHUB_REPOSITORY=Client.repo,GITHUB_EVENT_NAME='schedule')
+            if mutation=='run':value['producer_run_id']=11
+            elif mutation=='future-attempt':value['producer_run_attempt']=4
+            elif mutation=='invalid-attempt':value['producer_run_attempt']=True
+            elif mutation=='head':value['producer_head_sha']='b'*40
+            elif mutation=='built-commit':commit='b'*40
+            elif mutation=='payload-commit':value['artifacts'][0]['build_repository_commit']='b'*40
+            elif mutation=='repository':env['GITHUB_REPOSITORY']='another/repository'
+            elif mutation=='event':env['GITHUB_EVENT_NAME']='pull_request'
+            elif mutation=='outcome':value['outcomes'][0]['status']='failure'
+            with self.subTest(mutation=mutation),patch.dict(os.environ,env):
+                with self.assertRaises(ValueError):ap.current_producer(value,commit)
 
 
 class RealAppendTransactions(unittest.TestCase):
@@ -309,7 +323,7 @@ class PrepareControlFlow(unittest.TestCase):
     def test_prepare_is_local_and_writes_only_the_authenticated_payload_receipt(self):
         self.payload(self.source,('amd64',),11,'b'*40)
         with patch.object(ap,'GitHub',side_effect=AssertionError('Preparation must not discover Releases')), \
-             patch.object(ap,'github_json',side_effect=AssertionError('Preparation must not read remote jobs')), \
+             patch('manual_publication.github_json',side_effect=AssertionError('Preparation must not read remote jobs')), \
              patch.object(ap,'current_producer',side_effect=AssertionError('Writer authenticates the producer')):
             ap.prepare(self.args)
         control=self.args.work/'control'
