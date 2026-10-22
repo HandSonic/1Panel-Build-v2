@@ -144,6 +144,36 @@ class MatrixTests(unittest.TestCase):
         self.assertFalse(destination.exists())
         self.assertEqual(api.call_count,13)
 
+    def test_partial_rerun_aggregates_original_report_when_api_copies_successful_job(self):
+        import copy
+        import json
+        shards=self.recorded_shards();jobs=self.recorded_jobs()
+        old=jobs[0]
+        old.update(status='completed',conclusion='success',created_at='2026-10-12T10:54:44Z',
+                   started_at='2026-10-12T10:54:46Z',completed_at='2026-10-12T10:55:58Z',
+                   runner_id=1000013085,runner_name='GitHub Actions 1000013085',
+                   runner_group_id=0,runner_group_name='GitHub Actions',labels=['ubuntu-latest'],
+                   steps=[{'name':'Package','status':'completed','conclusion':'success'}])
+        inherited=copy.deepcopy(old)
+        inherited.update(id=88,run_attempt=2,created_at='2026-10-13T01:53:43Z',runner_group_id=None,
+                         html_url='https://github.com/HandSonic/1Panel-Build-v2/actions/runs/123/job/88')
+        jobs.extend([inherited]);jobs[1]['run_attempt']=2;jobs[2]['run_attempt']=2
+        report=shards/'shard-arm64-123-1'/matrix_contract.BRANCH_RESULT
+        result=json.loads(report.read_text());result['producer_run_attempt']=2
+        report.write_text(json.dumps(result))
+        destination=self.root/'result/dist'
+        env=dict(GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='2',PRODUCER_HEAD_SHA='a'*40,
+                 GITHUB_REPOSITORY='HandSonic/1Panel-Build-v2',MATRIX_RESULT='success',
+                 GITHUB_OUTPUT=str(self.root/'output'),GITHUB_STEP_SUMMARY='')
+        with patch.dict(os.environ,env),\
+             patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'),\
+             patch.object(aggregate_shards,'github_json',return_value={'jobs':jobs,'total_count':len(jobs)}):
+            aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        manifest=json.loads((destination/'build-manifest.json').read_text())
+        self.assertEqual(manifest['producer_run_attempt'],2)
+        self.assertEqual([row['job_id'] for row in manifest['outcomes']],[1,2])
+        self.assertEqual((self.root/'output').read_text(),'complete=true\n')
+
     def test_recorded_partial_build_rejects_old_success_and_infrastructure_failure(self):
         import json
         shards=self.recorded_shards(failed=['arm64']);jobs=self.recorded_jobs()

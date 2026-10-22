@@ -115,11 +115,65 @@ def validate(value, version=None):
     return successful
 
 
+def latest_executed_job(jobs):
+    """Keep genuine reruns, resolving exact successful GitHub metadata copies.
+
+    Partial reruns may assign an inherited job a new ID/attempt while retaining
+    the original execution times, runner and steps. Only an exact copy created
+    after that execution can refer back to a unique original successful job.
+    """
+    fields = ('name', 'run_id', 'head_sha', 'status', 'conclusion',
+              'started_at', 'completed_at', 'runner_id', 'runner_name',
+              'runner_group_name', 'labels', 'steps')
+    def instant(value):
+        if not isinstance(value, str):
+            raise ValueError('Invalid producer job timestamp')
+        try:
+            parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError as error:
+            raise ValueError('Invalid producer job timestamp') from error
+        if parsed.tzinfo is None:
+            raise ValueError('Unzoned producer job timestamp')
+        return parsed
+
+    executed = []
+    for job in sorted(jobs, key=lambda row: row['run_attempt']):
+        # GitHub can create a skipped dependency node after the workflow has
+        # ended, with completed_at preceding created_at. It remains a skipped
+        # job in this attempt, never an inherited successful execution.
+        if job.get('status') == 'completed' and job.get('conclusion') == 'skipped':
+            executed.append(job)
+            continue
+        # Missing timing metadata never grants inherited-producer treatment.
+        copied = (job.get('created_at') is not None and job.get('completed_at') is not None and
+                  instant(job['created_at']) > instant(job['completed_at']))
+        if not copied:
+            executed.append(job)
+            continue
+        if (job.get('status') != 'completed' or job.get('conclusion') != 'success' or
+            any(field not in job for field in fields) or not positive(job.get('runner_id')) or
+            not isinstance(job.get('steps'), list) or not job['steps'] or
+            instant(job['started_at']) > instant(job['completed_at'])):
+            raise ValueError('Invalid inherited producer job metadata')
+        originals = [old for old in executed if
+                     all(field in old and old[field] == job[field] for field in fields) and
+                     (old.get('runner_group_id') == job.get('runner_group_id') or
+                      (old.get('runner_group_id') == 0 and 'runner_group_id' in job and
+                       job['runner_group_id'] is None and old.get('runner_group_name') == 'GitHub Actions')) and
+                     old.get('created_at') is not None and
+                     instant(old['created_at']) <= instant(old['started_at'])]
+        if len(originals) != 1:
+            raise ValueError('Missing or ambiguous original producer job')
+    if not executed:
+        raise ValueError('Missing executed producer job')
+    return executed[-1]
+
+
 def effective_jobs(jobs, run_id, attempt, head_sha=None):
-    """Keep the latest execution of each job at or before the selected attempt."""
+    """Keep the latest real execution through the selected producer attempt."""
     if not positive(attempt):
         raise ValueError('Invalid producer attempt')
-    selected, seen = {}, set()
+    grouped, seen, ids = {}, set(), set()
     for job in jobs:
         job_attempt = job.get('run_attempt')
         if not positive(job_attempt):
@@ -129,13 +183,14 @@ def effective_jobs(jobs, run_id, attempt, head_sha=None):
         if job.get('run_id') != run_id or (head_sha is not None and job.get('head_sha') != head_sha):
             raise ValueError('Producer job belongs to another run or commit')
         name = job.get('name')
+        if not isinstance(name, str) or not name or not positive(job.get('id')):
+            raise ValueError('Invalid producer job identity')
         key = (name, job_attempt)
-        if key in seen:
+        if key in seen or job['id'] in ids:
             raise ValueError('Duplicate job execution: ' + str(name))
-        seen.add(key)
-        if name not in selected or selected[name]['run_attempt'] < job_attempt:
-            selected[name] = job
-    return list(selected.values())
+        seen.add(key); ids.add(job['id'])
+        grouped.setdefault(name, []).append(job)
+    return [latest_executed_job(rows) for rows in grouped.values()]
 
 
 def collect(jobs, requested, run_id, attempt, *, head_sha=None):
