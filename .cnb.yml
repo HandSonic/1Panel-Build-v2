@@ -25,7 +25,7 @@
       contract_sha=$(python3 scripts/discover_inputs.py --version "$version" --output resolved-source.json)
       python3 scripts/resolved_contract.py apply resolved-source.json "$version" --sha256 "$contract_sha"
       python3 scripts/resolve_inputs.py "$version" > build-inputs.env
-      python3 -m unittest discover -s tests -v
+      env -u GITHUB_STEP_SUMMARY -u GITHUB_OUTPUT python3 -m unittest discover -s tests -v
       echo "##[set-output BUILD_VERSION=$version]"
       echo "##[set-output BUILD_ARCHES=$arches]"
     exports:
