@@ -38,8 +38,9 @@ class GitHubReleaseClientTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'package + #.tar.gz'
             path.write_bytes(b'package bytes')
-            with patch('release_asset_repair.subprocess.run',return_value=self.result({})) as run:
-                GitHub(self.repo,self.tag,17).upload(path)
+            asset={'id':81,'name':path.name,'size':path.stat().st_size}
+            with patch('release_asset_repair.subprocess.run',return_value=self.result(asset)) as run:
+                self.assertEqual(GitHub(self.repo,self.tag,17).upload(path),asset)
             run.assert_called_once_with(['gh','api','--method','POST',
                 f'https://uploads.github.com/repos/{self.repo}/releases/17/assets?name=package%20%2B%20%23.tar.gz',
                 '-H','Content-Type: application/octet-stream','--input',str(path)],

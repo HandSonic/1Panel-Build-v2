@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from release_asset_repair import repair
@@ -98,5 +99,49 @@ class RepairTests(unittest.TestCase):
                 for key in before:self.assertEqual(client.assets[key],before[key])
                 self.assertEqual(client.downloads,[])
                 self.assertEqual(json.loads(journal.read_text())['phase'],'incomplete')
+
+    def test_delayed_upload_readback_never_repeats_the_write_and_times_out_without_cleanup(self):
+        for pending in ('asset','digest'):
+            for settles in (True,False):
+                with self.subTest(pending=pending,settles=settles):
+                    client,files,journal=self.fixture();before=copy.deepcopy(client.assets)
+                    new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.append(new)
+                    release=client.release;readbacks=[]
+                    def delayed_metadata():
+                        result=release()
+                        if client.calls:
+                            readbacks.append(result)
+                            if not settles or len(readbacks)<=2:
+                                if pending=='asset':
+                                    result['assets']=[row for row in result['assets'] if row['name']!=new.name]
+                                else:
+                                    next(row for row in result['assets'] if row['name']==new.name).pop('digest')
+                        return result
+                    client.release=delayed_metadata
+                    with patch('release_asset_repair.time.sleep'):
+                        if settles:
+                            repair(client,files,journal)
+                        else:
+                            with self.assertRaisesRegex(ValueError,'readback did not become available'):
+                                repair(client,files,journal)
+                    self.assertEqual(client.calls,[('upload',new.name)])
+                    for identity,value in before.items():self.assertEqual(client.assets[identity],value)
+                    self.assertIn((new.name,b'new'),client.assets.values())
+                    self.assertEqual(client.downloads,[])
+                    self.assertEqual(json.loads(journal.read_text())['phase'],'complete' if settles else 'incomplete')
+
+    def test_upload_response_id_binds_readback_before_another_asset_can_be_uploaded(self):
+        client,files,journal=self.fixture()
+        new=journal.parent/'new.tar.gz';new.write_bytes(b'new');files.append(new)
+        upload=client.upload
+        def different_asset_id(path):
+            upload(path)
+            return {'id':999,'name':path.name,'size':path.stat().st_size}
+        client.upload=different_asset_id
+        with patch('release_asset_repair.time.sleep') as sleep:
+            with self.assertRaisesRegex(ValueError,'asset identity changed'):
+                repair(client,files,journal)
+        sleep.assert_not_called()
+        self.assertEqual(client.calls,[('upload',new.name)])
 
 if __name__=='__main__':unittest.main()

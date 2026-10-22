@@ -12,7 +12,7 @@ def github_block(name):
 class CIContract(unittest.TestCase):
  def test_unsupported_arch_stops_before_resolution(self):
   with tempfile.TemporaryDirectory() as d:
-   r=subprocess.run(['bash','-c',github_block('Resolve immutable build inputs')],cwd=d,env=dict(os.environ,INPUT_VERSION='v2.3.2',INPUT_ARCHES='amd64 wrongarch',GITHUB_EVENT_NAME='push',GITHUB_REF='refs/heads/main'),capture_output=True,text=True)
+   r=subprocess.run(['bash','-c',github_block('Resolve immutable build inputs')],cwd=d,env=dict(os.environ,PYTHONPATH=str(ROOT/'scripts'),INPUT_VERSION='v2.3.2',INPUT_ARCHES='amd64 wrongarch',GITHUB_EVENT_NAME='push',GITHUB_REF='refs/heads/main'),capture_output=True,text=True)
    self.assertNotEqual(r.returncode,0);self.assertFalse((Path(d)/'build-inputs.env').exists())
  def test_tag_selected_not_latest_fallback(self):
   with tempfile.TemporaryDirectory() as d:

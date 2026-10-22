@@ -41,13 +41,14 @@ def validate_elf(data, arch):
 
 def validate_package(path, version, arch, *, require_embedded=False):
     entry=resolve(version); root=f'1panel-{version}-linux-{arch}'
-    from package_metadata import DIRECTORY, _read_members
+    from package_metadata import DIRECTORY, _read_members, bounded_members, check_archive_size
     from automatic_frontend_lock import MAX_LOCK
     from resolved_contract import MAX_CONTROL
     required=set(entry['installer_sha256'])|{'1panel-core','1panel-agent','1panel-core.service','1panel-agent.service','GeoIP.mmdb','manifest.json'}
+    check_archive_size(path)
     data={};members=[]
     with gzip.open(path,'rb') as stream, tarfile.open(fileobj=stream,mode='r|') as tf:
-        for member in tf:
+        for member in bounded_members(tf):
             members.append(member)
             p=pathlib.PurePosixPath(member.name)
             if p.is_absolute() or '..' in p.parts or not p.parts or p.parts[0]!=root: raise ValueError('Unsafe archive path')
@@ -95,10 +96,12 @@ def validate_package(path, version, arch, *, require_embedded=False):
     return manifest
 
 def validate_dist(dist,version,arches, *, require_embedded=False):
+    from package_metadata import check_archive_size
     expected=set(); records=[]
     for arch in arches:
         name=f'1panel-{version}-linux-{arch}.tar.gz'; expected|={name,name+'.sha256'}
-        path=dist/name; digest=hashlib.sha256(path.read_bytes()).hexdigest()
+        path=dist/name; check_archive_size(path)
+        digest=hashlib.sha256(path.read_bytes()).hexdigest()
         if (dist/(name+'.sha256')).read_text()!=f'{digest}  {name}\n': raise ValueError('Checksum must match bytes and relative basename')
         manifest=validate_package(path,version,arch,require_embedded=require_embedded)
         records.append({'architecture':arch,'file':name,'sha256':digest,'size':path.stat().st_size,'source_commit':manifest['source_commit'],'installer_commit':manifest['installer_commit'],'build_repository_commit':manifest['build_repository_commit']})

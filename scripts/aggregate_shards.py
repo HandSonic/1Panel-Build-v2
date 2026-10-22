@@ -82,20 +82,33 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
         # matrix fields changed, and validate() checked their final contract.
 
 
-if __name__ == '__main__':
-    from matrix_contract import collect
-    requested = architectures(sys.argv[4])
+def github_json(endpoint):
+    return json.loads(subprocess.check_output(['gh', 'api', endpoint], text=True, timeout=30))
+
+
+def main(argv=None):
+    from matrix_contract import collect, read_jobs, retry_pending
+    shards, destination, version, requested, generation = sys.argv[1:] if argv is None else argv
+    requested = architectures(requested)
     run_id, attempt = int(os.environ['GITHUB_RUN_ID']), int(os.environ['GITHUB_RUN_ATTEMPT'])
-    pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp',
-        f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{run_id}/jobs?filter=all&per_page=100']))
-    jobs = [job for page in pages for job in page['jobs']]
-    if any(j.get('head_sha')!=os.environ['PRODUCER_HEAD_SHA'] for j in jobs):raise ValueError('Producer job head differs from workflow event')
-    outcomes = collect(jobs, requested, run_id, attempt)
+    def snapshot():
+        jobs = read_jobs(github_json, os.environ['GITHUB_REPOSITORY'], run_id)
+        return collect(jobs, requested, run_id, attempt,
+                       head_sha=os.environ['PRODUCER_HEAD_SHA'],
+                       matrix_result=os.environ['MATRIX_RESULT'], current_job='build')
+    # needs.compile is the scheduler barrier. The API only supplies branch
+    # identities/results and may still lag behind that barrier; refresh its
+    # evidence without accepting a nonterminal or inconsistent branch.
+    outcomes = retry_pending(snapshot)
     for row in outcomes:
         if row['status'] == 'failure':
-            print(f'::warning title=Architecture omitted::{sys.argv[3]} / {row["architecture"]}: {row["reason"]}; {row["job_url"]}')
+            print(f'::warning title=Architecture omitted::{version} / {row["architecture"]}: {row["reason"]}; {row["job_url"]}')
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
             for row in outcomes:
-                summary.write(f'- {sys.argv[3]} / {row["architecture"]}: {row["status"]}; {row["reason"]} {row["job_url"]}\n')
-    aggregate(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], requested, sys.argv[5], outcomes)
+                summary.write(f'- {version} / {row["architecture"]}: {row["status"]}; {row["reason"]} {row["job_url"]}\n')
+    aggregate(Path(shards), Path(destination), version, requested, generation, outcomes)
+
+
+if __name__ == '__main__':
+    main()

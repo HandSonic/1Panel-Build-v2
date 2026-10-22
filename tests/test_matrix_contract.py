@@ -1,6 +1,7 @@
 import copy
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import matrix_contract as m
@@ -94,3 +95,76 @@ class MatrixContractTests(unittest.TestCase):
         value['outcomes'][0]['job_url']=f'https://github.com/{m.REPOSITORY}/actions/runs/10/job/99'
         with self.assertRaisesRegex(ValueError,'effective API job identities'):
             m.verify_current_jobs(value,run,jobs,'a'*40,10,2)
+
+    def test_manifest_cannot_hide_a_successful_architecture(self):
+        value,run,jobs=self.fixture()
+        jobs[-1]['conclusion']='success';run['conclusion']='success'
+        value['requested_architectures']=['amd64']
+        value['outcomes']=value['outcomes'][:1]
+        with self.assertRaisesRegex(ValueError,'Unrequested architecture jobs'):
+            m.verify_jobs(value,run,jobs,'a'*40)
+
+    def test_rerun_snapshot_must_match_scheduler_and_current_aggregate(self):
+        _,_,jobs=self.fixture()
+        jobs[3]['run_attempt']=1
+        jobs[-1]['run_attempt']=1
+        jobs[-1]['conclusion']='success'
+        jobs[2].update(status='in_progress',conclusion=None)
+        def inspect():
+            return m.collect(jobs,['amd64','arm64'],10,2,head_sha='a'*40,
+                             matrix_result='failure',current_job='build')
+        with self.assertRaisesRegex(m.PendingJobs,'differ from scheduler'):
+            inspect()
+        newest=dict(jobs[-1],id=99,run_attempt=2,conclusion='failure',
+                    html_url=f'https://github.com/{m.REPOSITORY}/actions/runs/10/job/99')
+        jobs.append(newest)
+        self.assertEqual(inspect()[-1]['job_id'],99)
+        jobs[2]['run_attempt']=1
+        with self.assertRaisesRegex(m.PendingJobs,'Current build job'):
+            inspect()
+        jobs[2]['run_attempt']=2
+        for status,conclusion in [('unknown-state',None),('completed','cancelled'),('in_progress','success')]:
+            jobs[2].update(status=status,conclusion=conclusion)
+            with self.subTest(status=status,conclusion=conclusion),self.assertRaises(ValueError) as error:
+                inspect()
+            self.assertNotIsInstance(error.exception,m.PendingJobs)
+
+    def test_only_incomplete_snapshots_are_retried(self):
+        _,_,jobs=self.fixture()
+        pending=copy.deepcopy(jobs);pending[-1].update(status='in_progress',conclusion=None)
+        snapshots=iter([pending,jobs])
+        with patch.object(m.time,'sleep') as sleep:
+            result=m.retry_pending(lambda:m.collect(next(snapshots),['amd64','arm64'],10,2))
+        self.assertEqual([r['status'] for r in result],['success','failure'])
+        sleep.assert_called_once()
+        for kind in ('cancelled','skipped','wrong_head','unknown_state','contradictory'):
+            bad=copy.deepcopy(jobs)
+            if kind=='wrong_head':bad[-1]['head_sha']='b'*40
+            elif kind=='unknown_state':bad[-1].update(status='unknown-state',conclusion=None)
+            elif kind=='contradictory':bad[-1].update(status='in_progress',conclusion='success')
+            else:bad[-1]['conclusion']=kind
+            with self.subTest(kind=kind),patch.object(m.time,'sleep') as sleep:
+                with self.assertRaises(ValueError):
+                    m.retry_pending(lambda:m.collect(bad,['amd64','arm64'],10,2,head_sha='a'*40))
+                sleep.assert_not_called()
+        with patch.object(m.time,'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError,r'did not settle.*arm64: job=5.*in_progress'):
+                m.retry_pending(lambda:m.collect(pending,['amd64','arm64'],10,2),attempts=3)
+            self.assertEqual(sleep.call_count,2)
+
+    def test_live_and_historical_producer_states_keep_strict_boundaries(self):
+        value,run,jobs=self.fixture()
+        run.update(status='in_progress',conclusion=None)
+        with self.assertRaises(m.PendingJobs):m.verify_jobs(value,run,jobs,'a'*40)
+        publication=dict(jobs[0],id=6,name='publication_prepare',status='queued',conclusion=None)
+        self.assertEqual(m.verify_current_jobs(value,run,jobs+[publication],'a'*40,10,2),['amd64'])
+        publication['status']='unknown-state'
+        with self.assertRaises(ValueError) as error:
+            m.verify_current_jobs(value,run,jobs+[publication],'a'*40,10,2)
+        self.assertNotIsInstance(error.exception,m.PendingJobs)
+
+    def test_job_pagination_does_not_accept_a_truncated_inventory(self):
+        api=unittest.mock.Mock(side_effect=[{'jobs':[{'id':1}],'total_count':2},
+                                           {'jobs':[],'total_count':2}])
+        with self.assertRaises(m.PendingJobs):m.read_jobs(api,m.REPOSITORY,10)
+        self.assertEqual(api.call_count,2)

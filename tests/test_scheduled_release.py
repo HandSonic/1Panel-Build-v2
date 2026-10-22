@@ -124,6 +124,24 @@ class ScheduledRelease(unittest.TestCase):
         publish = next(i for i, step in enumerate(steps) if step.get('name') == 'Create or append verified canonical artifacts')
         checksum = next(i for i, step in enumerate(steps) if step.get('name') == 'Fill missing scheduled checksums from server digests')
         self.assertLess(publish, checksum)
+        # Repairing an existing attachment's checksum is independent of new
+        # package publication, including when that preceding step failed.
+        condition = steps[checksum]['if'].removeprefix('${{').removesuffix('}}').strip()
+        for event, required, succeeded, cancelled, expected in (
+                ('schedule', 'true', True, False, True),
+                ('schedule', 'true', False, False, True),
+                ('schedule', 'true', False, True, False),
+                ('schedule', 'false', False, False, False),
+                ('workflow_dispatch', 'true', True, False, False)):
+            code = condition
+            if not any(name + '()' in code for name in ('always', 'success', 'failure', 'cancelled')):
+                code = 'success() && (' + code + ')'
+            for old, new in {'cancelled()': repr(cancelled), 'success()': repr(succeeded),
+                             'github.event_name': repr(event),
+                             'needs.check_update.outputs.checksum_required': repr(required)}.items():
+                code = code.replace(old, new)
+            with self.subTest(event=event, checksum=required, succeeded=succeeded, cancelled=cancelled):
+                self.assertEqual(eval(code.replace('!', ' not ').replace('&&', ' and '), {'__builtins__': {}}), expected)
         for step in steps:
             if step.get('uses') == 'actions/download-artifact@v4':
                 self.assertEqual(step['if'], "needs.publication_prepare.result == 'success'")
@@ -132,13 +150,15 @@ class ScheduledRelease(unittest.TestCase):
         self.run_prepare('schedule', 'amd64 arm64', 'riscv64', 'riscv64')
 
     def test_manual_build_keeps_requested_architectures(self):
-        self.run_prepare('workflow_dispatch', 'amd64 arm64', '', 'amd64 arm64')
+        for requested in ('amd64 arm64', ' amd64,\narm64; ', 'amd64\tarm64'):
+            with self.subTest(requested=requested):
+                self.run_prepare('workflow_dispatch', requested, '', 'amd64 arm64')
 
     def run_prepare(self, event, requested, missing, expected):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'scripts').mkdir()
-            (root / 'scripts/validate_artifacts.py').write_text('def architectures(value): return value.split()\n')
+            (root / 'scripts/validate_artifacts.py').write_text('def architectures(value): return value.replace(",", " ").replace(";", " ").split()\n')
             (root / 'scripts/discover_inputs.py').write_text('import sys; assert "--latest" not in sys.argv; print("a" * 64)\n')
             (root / 'scripts/resolved_contract.py').write_text('')
             (root / 'scripts/resolve_inputs.py').write_text('print("SOURCE_COMMIT=fixture\\nGO_VERSION=1.26.1")\n')

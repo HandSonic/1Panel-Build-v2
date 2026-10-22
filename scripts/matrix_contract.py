@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Bind partial architecture output to the effective jobs of one producer attempt."""
 import re
+import sys
+import time
 from resolved_contract import ARCHES
 
 REPOSITORY = 'HandSonic/1Panel-Build-v2'
@@ -8,6 +10,50 @@ FIELDS = {'schema_version', 'version', 'artifacts', 'requested_architectures',
           'producer_run_id', 'producer_run_attempt', 'producer_head_sha', 'outcomes'}
 OUTCOME_FIELDS = {'architecture', 'status', 'stage', 'reason', 'job_id', 'job_url'}
 WRITERS = {'candidate', 'automatic_publication', 'publication_repair'}
+PENDING_STATUSES = {'queued', 'in_progress', 'waiting', 'pending', 'requested'}
+
+
+class PendingJobs(ValueError):
+    """An incomplete API snapshot, rather than a failed or invalid producer."""
+
+
+def job_pending(job):
+    status, conclusion = job.get('status'), job.get('conclusion')
+    if status == 'completed':
+        return conclusion is None
+    if status not in PENDING_STATUSES or conclusion is not None:
+        raise ValueError(f'Invalid job state: {job.get("name")} job={job.get("id")} status={status} conclusion={conclusion}')
+    return True
+
+
+def retry_pending(check, *, attempts=13, delay=5):
+    """Refresh read-only evidence; never retry invalid identities or writes."""
+    for index in range(attempts):
+        try:
+            return check()
+        except PendingJobs as error:
+            if index + 1 == attempts:
+                raise ValueError(f'GitHub job state did not settle after {attempts} snapshots: {error}') from error
+            print(f'Waiting for GitHub job state ({index + 1}/{attempts}): {error}', file=sys.stderr, flush=True)
+            time.sleep(delay)
+
+
+def read_jobs(fetch_json, repository, run_id):
+    """Include inherited executions when a failed-only rerun omits old jobs."""
+    jobs = []
+    for page in range(1, 11):
+        result = fetch_json(f'repos/{repository}/actions/runs/{run_id}/jobs?filter=all&per_page=100&page={page}')
+        if not isinstance(result, dict):
+            raise ValueError('Invalid producer job inventory')
+        rows, total = result.get('jobs'), result.get('total_count')
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows) or type(total) is not int or total < 0:
+            raise ValueError('Invalid producer job inventory')
+        jobs.extend(rows)
+        if len(jobs) == total:
+            return jobs
+        if not rows or len(jobs) > total:
+            raise PendingJobs('Producer job inventory changed during pagination')
+    raise ValueError('Excessive producer job inventory')
 
 
 def positive(value):
@@ -79,22 +125,41 @@ def effective_jobs(jobs, run_id, attempt, head_sha=None):
     return list(selected.values())
 
 
-def collect(jobs, requested, run_id, attempt):
-    jobs = effective_jobs(jobs, run_id, attempt)
+def collect(jobs, requested, run_id, attempt, *, head_sha=None, matrix_result=None, current_job=None):
+    jobs = effective_jobs(jobs, run_id, attempt, head_sha)
+    names = {f'compile ({arch})' for arch in requested}
+    extra = {j.get('name') for j in jobs if isinstance(j.get('name'), str) and
+             j['name'].startswith('compile')} - names
+    if extra:
+        raise ValueError('Unrequested architecture jobs: ' + ', '.join(sorted(extra)))
+    if matrix_result is not None and matrix_result not in ('success', 'failure'):
+        raise ValueError('Cancelled, skipped or unsupported matrix result: ' + str(matrix_result))
+    if current_job is not None:
+        active = [j for j in jobs if j.get('name') == current_job and j['run_attempt'] == attempt]
+        if not active:
+            raise PendingJobs(f'Current {current_job} job for attempt {attempt} is not visible as in_progress')
+        if not job_pending(active[0]):
+            raise ValueError(f'Current {current_job} job is already terminal: {active[0].get("conclusion")}')
+        if active[0].get('status') != 'in_progress':
+            raise PendingJobs(f'Current {current_job} job for attempt {attempt} is not visible as in_progress')
     result = []
     for arch in requested:
         matches = [job for job in jobs if job.get('name') == f'compile ({arch})']
         if len(matches) != 1:
-            raise ValueError('Missing or duplicate architecture job: ' + arch)
+            raise PendingJobs('Missing or duplicate architecture job: ' + arch)
         job = matches[0]
-        if job.get('status') != 'completed':
-            raise ValueError('Nonterminal architecture job')
+        detail = f'{arch}: job={job.get("id")} attempt={job["run_attempt"]} status={job.get("status")} conclusion={job.get("conclusion")}'
+        if job_pending(job):
+            raise PendingJobs('Nonterminal architecture job: ' + detail)
         conclusion = job.get('conclusion')
         if conclusion not in ('success', 'failure', 'timed_out'):
-            raise ValueError('Cancelled, skipped or unsupported architecture conclusion')
+            raise ValueError('Cancelled, skipped or unsupported architecture conclusion: ' + detail)
         result.append({'architecture': arch, 'status': 'success' if conclusion == 'success' else 'failure',
                        'stage': 'compile', 'reason': '' if conclusion == 'success' else 'GitHub job ' + conclusion,
                        'job_id': job['id'], 'job_url': job['html_url']})
+    derived = 'failure' if any(row['status'] == 'failure' for row in result) else 'success'
+    if matrix_result is not None and derived != matrix_result:
+        raise PendingJobs(f'Architecture API outcomes ({derived}) differ from scheduler matrix result ({matrix_result})')
     return result
 
 
@@ -120,10 +185,16 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, all
     if run.get('id') != value['producer_run_id'] or run.get('run_attempt') != value['producer_run_attempt'] or run.get('head_sha') != value['producer_head_sha']:
         raise ValueError('Producer run identity mismatch')
     verify_execution(run,expected_commit,execution_commit)
-    if run.get('status') != 'completed' or run.get('conclusion') not in ('success', 'failure') or run.get('path', '').split('@')[0] != '.github/workflows/build.yml':
+    if run.get('path', '').split('@')[0] != '.github/workflows/build.yml':
+        raise ValueError('Producer is not a terminal permitted build')
+    if job_pending(run):
+        raise PendingJobs('Producer run not yet terminal')
+    if run.get('conclusion') not in ('success', 'failure'):
         raise ValueError('Producer is not a terminal permitted build')
     for name in ('tests', 'prepare', 'build'):
         matches = [j for j in jobs if j.get('name') == name]
+        if not matches or job_pending(matches[0]):
+            raise PendingJobs('Shared producer gate not yet terminal: ' + name)
         if len(matches) != 1 or matches[0].get('conclusion') != 'success' or matches[0].get('status') != 'completed':
             raise ValueError('Shared producer gate failed: ' + name)
     if collect(jobs, value['requested_architectures'], value['producer_run_id'], value['producer_run_attempt']) != value['outcomes']:
@@ -147,6 +218,13 @@ def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
         raise ValueError('Automatic publication requires a trusted non-PR execution')
     if value.get('producer_run_id') != run_id or value.get('producer_run_attempt') != attempt:
         raise ValueError('Automatic publication must consume its own exact attempt')
+    if run.get('id') != run_id or run.get('run_attempt') != attempt or run.get('head_sha') != value.get('producer_head_sha'):
+        raise ValueError('Producer run identity mismatch')
+    verify_execution(run, expected_commit)
+    if run.get('path', '').split('@')[0] != '.github/workflows/build.yml':
+        raise ValueError('Producer is not a permitted build workflow')
+    if run.get('status') in PENDING_STATUSES - {'in_progress'} and run.get('conclusion') is None:
+        raise PendingJobs('Current producer run not yet visible as in_progress')
     if run.get('status') not in ('in_progress', 'completed') or run.get('conclusion') not in (None, 'success', 'failure'):
         raise ValueError('Current workflow is cancelled or unavailable')
     if run.get('status')=='completed':
@@ -155,9 +233,9 @@ def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
     pending = {'publication_prepare', 'automatic_publication', 'publication_repair', 'candidate'}
     checked = []
     for job in jobs:
-        if job.get('status') != 'completed':
-            if job.get('name') not in pending or job.get('conclusion') is not None:
-                raise ValueError('Unfinished shared or architecture gate')
+        if job_pending(job):
+            if job.get('name') not in pending:
+                raise PendingJobs('Unfinished shared or architecture gate: ' + str(job.get('name')))
             continue
         checked.append(job)
     terminal = dict(run, status='completed', conclusion='failure' if any(r['status']=='failure' for r in value['outcomes']) else 'success')

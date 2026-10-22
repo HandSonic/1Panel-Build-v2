@@ -192,6 +192,24 @@ class EventGates(unittest.TestCase):
 
 
 class CurrentProducer(unittest.TestCase):
+    def test_delayed_build_gate_is_refreshed_before_publication(self):
+        from test_publication_lineage import producer_fixture
+        import matrix_contract
+        value,run,jobs=producer_fixture();run.update(status='in_progress',conclusion=None)
+        pending=copy.deepcopy(jobs)
+        next(j for j in pending if j['name']=='build').update(status='in_progress',conclusion=None)
+        inventory=iter([pending,jobs])
+        def api(path):
+            if '/attempts/2' in path:return run
+            if path.endswith('page=1'):
+                rows=next(inventory)
+                return {'jobs':rows,'total_count':len(rows)}
+            raise AssertionError(path)
+        with patch.dict(os.environ,GITHUB_RUN_ID='10',GITHUB_RUN_ATTEMPT='2'),\
+             patch.object(ap,'github_json',side_effect=api),patch.object(matrix_contract.time,'sleep') as sleep:
+            ap.current_producer(value,'a'*40)
+        sleep.assert_called_once()
+
     def test_writer_only_retry_authenticates_original_terminal_producer(self):
         from test_publication_lineage import producer_fixture
         value,run,jobs=producer_fixture();run.update(status='completed',conclusion='failure')

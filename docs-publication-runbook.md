@@ -81,6 +81,14 @@ boundaries. Shared preparation or validation failures block publication. A faile
 architecture is omitted while independently successful output can be published.
 Failure details stay in Actions, not Release notes.
 
+The scheduler dependency waits for the matrix. The jobs API then authenticates
+individual results and rerun identities; temporarily incomplete reads are
+refreshed at most 13 times, five seconds apart. The aggregate requires its current
+job attempt and agreement with the scheduler's matrix result. Invalid identities,
+cancellation and unexpected branches fail immediately; a state that never settles
+fails with the affected job's details. Publication uses the same bounded refresh
+for producer evidence. See [the CI design audit](docs-ci-audit.md).
+
 Intermediate source/shard artifacts expire after three days. Failed-only retries
 reuse the original preparation artifact and replace only their own intermediate
 shard. Inherited successful jobs remain authenticated by their original job IDs.
@@ -100,6 +108,12 @@ receipt and all transferred file hashes without unpacking the same archives agai
 then discovers the current Release state. Release operations bind
 to the observed Release ID and retain its asset snapshot. Only missing files are
 uploaded; this code does not rename, replace or delete existing assets.
+
+After a successful upload, the returned asset ID binds readback verification.
+Only a newly uploaded asset or digest that is not yet visible is re-read, at most
+seven times with five seconds between reads. The upload is never repeated by this
+wait. Conflicting bytes, changed asset IDs or changes to the existing inventory
+still stop the transaction immediately.
 
 A new canonical Release is staged as an owned draft. Its new attachments are
 verified before it becomes public. If finalization has an uncertain result, the

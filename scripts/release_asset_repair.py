@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 import hashlib
 from urllib.parse import quote
@@ -40,7 +41,7 @@ class GitHub:
     def upload(self,path):
         if self.release_id is None:return self.run('release','upload',self.tag,str(path),'--repo',self.repo)
         endpoint=f'https://uploads.github.com/repos/{self.repo}/releases/{self.release_id}/assets?name={quote(Path(path).name,safe="")}'
-        self.run('api','--method','POST',endpoint,'-H','Content-Type: application/octet-stream','--input',str(path))
+        return json.loads(self.run('api','--method','POST',endpoint,'-H','Content-Type: application/octet-stream','--input',str(path)))
     def download(self,name,directory):
         if self.release_id is None:return self.run('release','download',self.tag,'--repo',self.repo,'--pattern',name,'--dir',str(directory))
         matches=[asset for asset in self.release()['assets'] if asset['name']==name]
@@ -209,13 +210,33 @@ def repair(client, files, journal_path, *, expected_snapshot=None, preserved_ass
                 if source.name in known:continue
                 facts=expected[source.name]
                 state['pending']={'name':source.name,**facts};journal.save()
-                client.upload(source)
-                fresh=inventory()
-                uploaded=fresh.get(source.name)
-                if not uploaded or uploaded['digest']!='sha256:'+facts['sha256'] or uploaded['size']!=facts['bytes']:
-                    raise ValueError('Uploaded server digest/size mismatch')
-                if {name:row for name,row in fresh.items() if name!=source.name}!=known:
-                    raise ValueError('Release asset inventory changed during upload')
+                response=client.upload(source)
+                uploaded_id=None
+                if isinstance(response,dict):
+                    uploaded_id=response.get('id')
+                    if (type(uploaded_id) is not int or uploaded_id<=0 or response.get('name')!=source.name or
+                        response.get('size')!=facts['bytes'] or
+                        (response.get('digest') and response['digest']!='sha256:'+facts['sha256'])):
+                        raise ValueError('Uploaded server asset response mismatch')
+                # An upload can succeed before the release inventory exposes
+                # its asset/digest. Retry only this read, never the POST: an
+                # uncertain write must not create a duplicate asset.
+                for readback in range(7):
+                    fresh=inventory()
+                    if {name:row for name,row in fresh.items() if name!=source.name}!=known:
+                        raise ValueError('Release asset inventory changed during upload')
+                    uploaded=fresh.get(source.name)
+                    if uploaded is not None:
+                        if uploaded_id is not None and uploaded['id']!=uploaded_id:
+                            raise ValueError('Uploaded server asset identity changed')
+                        if uploaded['size']!=facts['bytes'] or (uploaded['digest'] and uploaded['digest']!='sha256:'+facts['sha256']):
+                            raise ValueError('Uploaded server digest/size mismatch')
+                        if uploaded['digest']=='sha256:'+facts['sha256']:
+                            break
+                    if readback==6:
+                        raise ValueError('Uploaded server digest/size mismatch: asset readback did not become available: '+source.name)
+                    print('::warning::Waiting for uploaded asset digest: '+source.name,flush=True)
+                    time.sleep(5)
                 known=fresh;state['uploads'].append(uploaded);state.pop('pending',None);journal.save()
             if inventory()!=known:raise ValueError('Release asset inventory changed before final verification')
             state['phase']='complete';journal.save()

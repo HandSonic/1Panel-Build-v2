@@ -7,6 +7,7 @@ from unittest.mock import patch
 import yaml
 import test_release
 import aggregate_shards
+import matrix_contract
 import validate_artifacts
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,6 +103,34 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual([r['architecture'] for r in manifest['artifacts']],['amd64'])
         self.assertFalse((self.root/'result/dist/1panel-v2.3.2-linux-arm64.tar.gz').exists())
         self.assertEqual(len(validate_artifacts.validate_dist(self.root/'result/dist','v2.3.2',['amd64'])),1)
+
+    def test_api_delay_does_not_discard_successful_shards(self):
+        import copy
+        import json
+        shards=self.shards(['amd64','arm64'])
+        jobs=[{'id':i,'name':name,'run_id':123,'run_attempt':1,'head_sha':'a'*40,
+               'status':'in_progress' if name=='build' else 'completed',
+               'conclusion':None if name=='build' else 'success',
+               'html_url':f'https://github.com/HandSonic/1Panel-Build-v2/actions/runs/123/job/{i}'}
+              for i,name in enumerate(['compile (amd64)','compile (arm64)','build'],1)]
+        stale=copy.deepcopy(jobs);stale[1].update(status='in_progress',conclusion=None)
+        destination=self.root/'result/dist'
+        env=dict(GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',PRODUCER_HEAD_SHA='a'*40,
+                 GITHUB_REPOSITORY='HandSonic/1Panel-Build-v2',MATRIX_RESULT='success')
+        with patch.dict(os.environ,env),patch.object(matrix_contract.time,'sleep'),\
+             patch.object(aggregate_shards.subprocess,'check_output',return_value=b'SOURCE_COMMIT=synthetic\n'),\
+             patch.object(aggregate_shards,'github_json',side_effect=[{'jobs':stale,'total_count':3},{'jobs':jobs,'total_count':3}]) as api:
+            aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        manifest=json.loads((destination/'build-manifest.json').read_text())
+        self.assertEqual([r['architecture'] for r in manifest['artifacts']],['amd64','arm64'])
+        self.assertEqual(api.call_count,2)
+        shutil.rmtree(destination)
+        with patch.dict(os.environ,env),patch.object(matrix_contract.time,'sleep'),\
+             patch.object(aggregate_shards,'github_json',return_value={'jobs':stale,'total_count':3}) as api:
+            with self.assertRaisesRegex(ValueError,'did not settle.*arm64'):
+                aggregate_shards.main([str(shards),str(destination),'v2.3.2','amd64 arm64','123-1'])
+        self.assertFalse(destination.exists())
+        self.assertEqual(api.call_count,13)
 
     def test_workflow_gates_and_pinned_cache(self):
         workflow = yaml.safe_load((ROOT/'.github/workflows/build.yml').read_text())
