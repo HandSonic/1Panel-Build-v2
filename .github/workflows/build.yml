@@ -81,7 +81,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.1'
-      - run: env -u GITHUB_STEP_SUMMARY -u GITHUB_OUTPUT python3 -m unittest discover -s tests -v
+      - run: |
+          unittest_command_token=$(python3 -c 'import uuid; print(uuid.uuid4())')
+          trap 'echo "::$unittest_command_token::"' EXIT
+          echo "::stop-commands::$unittest_command_token"
+          env -u GITHUB_STEP_SUMMARY -u GITHUB_OUTPUT python3 -m unittest discover -s tests -v
       - name: Select integration scope
         id: scope
         run: |
