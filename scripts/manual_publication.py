@@ -13,6 +13,21 @@ def github_json(endpoint):
     return json.loads(result.stdout)
 
 
+def github_job_log(job_id):
+    if type(job_id) is not int or job_id <= 0:
+        raise ValueError('Invalid workflow job identity')
+    command = ['gh', 'api', f'repos/{UPSTREAM}/actions/jobs/{job_id}/logs']
+    try:
+        return subprocess.run(command, check=True, capture_output=True, text=True, timeout=30).stdout
+    except subprocess.CalledProcessError as error:
+        # gh guards terminal controls even for captured output. The checkout
+        # verifier neutralizes them before parsing this data-only response.
+        if 'the response contains terminal escape sequences' not in (error.stderr or ''):
+            raise
+        return subprocess.run(command[:2] + ['--allow-escape-sequences'] + command[2:],
+                              check=True, capture_output=True, text=True, timeout=30).stdout
+
+
 def check_identity(version,tag,repository):
     if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?',version):raise ValueError('Invalid application version')
     if tag!=version:raise ValueError('Existing-release repair tag must equal the application version')
@@ -61,7 +76,8 @@ def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_c
         jobs=read_jobs(github_json,UPSTREAM,run_id)
         run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}/attempts/{attempt}')
         execution=github_json(f'repos/{UPSTREAM}/git/commits/{expected_commit}') if run.get('event')=='pull_request' else None
-        return verify_jobs(manifest,run,jobs,expected_commit,execution,allow_publication_failures=True)
+        return verify_jobs(manifest,run,jobs,expected_commit,execution,allow_publication_failures=True,
+                           fetch_json=github_json,fetch_log=github_job_log)
     retry_pending(snapshot)
     records=manifest['artifacts']
     if not records or any(r['build_repository_commit']!=expected_commit for r in records):raise ValueError('CI artifact built-commit mismatch')

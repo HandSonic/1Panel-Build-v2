@@ -218,3 +218,114 @@ class MatrixContractTests(unittest.TestCase):
         with self.assertRaises(m.PendingJobs):m.verify_current_jobs(value,run,jobs,'a'*40,10,2)
         run.update(status='completed',conclusion='cancelled')
         with self.assertRaises(ValueError):m.verify_jobs(value,run,jobs,'a'*40)
+
+
+class MergedPRMatrixTests(unittest.TestCase):
+    def fixture(self):
+        value,run,jobs=MatrixContractTests().fixture()
+        # CI #654 retained its valid synthetic checkout after the merged PR
+        # disappeared from both run and attempt API pull_requests collections.
+        head='eab95e16be4909bce87112aa6ee762a585a1a66c'
+        base='d34fad401e225855a45ba92b42bce57ae026ad2d'
+        executed='cff245117a6a7b09226556ec546a6d2b548e80bd'
+        value['producer_head_sha']=head
+        run.update(event='pull_request',head_sha=head,pull_requests=[])
+        for job in jobs:job['head_sha']=head
+        build=next(job for job in jobs if job['name']=='build')
+        build['steps']=[{'name':'Run actions/checkout@v4','number':3,'status':'completed',
+                         'conclusion':'success','started_at':'2026-10-22T14:50:45Z',
+                         'completed_at':'2026-10-22T14:50:47Z'}]
+        bodies=[
+            '##[group]Run actions/checkout@v4',
+            'Syncing repository: '+m.REPOSITORY,
+            '[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune '
+            '--no-recurse-submodules --depth=1 origin +'+executed+':refs/remotes/pull/28/merge',
+            '[command]/usr/bin/git checkout --progress --force refs/remotes/pull/28/merge',
+            'HEAD is now at '+executed[:7]+' Merge '+head+' into '+base,
+            '[command]/usr/bin/git log -1 --format=%H',
+            executed,
+        ]
+        lines=['2026-10-22T14:50:47.%07dZ %s'%(index,body) for index,body in enumerate(bodies)]
+        pr={'number':28,'state':'closed','merged':True,
+            'head':{'sha':head,'repo':{'full_name':m.REPOSITORY}},
+            'base':{'sha':base,'repo':{'full_name':m.REPOSITORY}}}
+        commit={'sha':executed,'tree':{'sha':'d'*40},'parents':[{'sha':base},{'sha':head}]}
+        return value,run,jobs,commit,pr,lines
+
+    def verify(self, fixture, fetch_json=None, fetch_log=None):
+        value,run,jobs,commit,pr,lines=fixture
+        return m.verify_jobs(value,run,jobs,commit['sha'],commit,
+                             fetch_json=fetch_json or (lambda path:pr),
+                             fetch_log=fetch_log or (lambda job_id:'\n'.join(lines)+'\n'))
+
+    def test_empty_run_pr_link_requires_authenticated_successful_checkout(self):
+        fixture=self.fixture()
+        api=unittest.mock.Mock(return_value=fixture[4])
+        logs=unittest.mock.Mock(return_value='\n'.join(fixture[5])+'\n')
+        self.assertEqual(self.verify(fixture,api,logs),['amd64'])
+        api.assert_called_once_with(f'repos/{m.REPOSITORY}/pulls/28')
+        logs.assert_called_once_with(3)
+        with self.assertRaisesRegex(ValueError,'authenticated merged PR checkout'):
+            m.verify_jobs(fixture[0],fixture[1],fixture[2],fixture[3]['sha'],fixture[3])
+        for status,conclusion in [('in_progress',None),('completed','failure')]:
+            changed=self.fixture();changed[2][2].update(status=status,conclusion=conclusion)
+            with self.subTest(status=status),self.assertRaises(ValueError):
+                self.verify(changed,api,logs)
+        self.assertEqual(logs.call_count,1)
+
+    def test_live_pr_binding_does_not_use_merged_fallback(self):
+        fixture=self.fixture();pr=fixture[4]
+        fixture[1]['pull_requests']=[{'base':{'sha':pr['base']['sha']},'head':{'sha':pr['head']['sha']}}]
+        api=unittest.mock.Mock(side_effect=AssertionError('No merged fallback for a live binding'))
+        logs=unittest.mock.Mock(side_effect=AssertionError('No checkout log required'))
+        self.assertEqual(self.verify(fixture,api,logs),['amd64'])
+        api.assert_not_called();logs.assert_not_called()
+        for prs in (None,{},'', [{},{}], [None], [{'base':None,'head':None}]):
+            fixture=self.fixture();fixture[1]['pull_requests']=prs
+            with self.subTest(prs=prs),self.assertRaises(ValueError):self.verify(fixture,api,logs)
+        api.assert_not_called();logs.assert_not_called()
+
+    def test_merged_pr_and_merge_object_must_match_frozen_checkout(self):
+        for kind in ('number','open','not_merged','bool','head','base','head_repo','base_repo','parents','tree'):
+            fixture=self.fixture();pr,commit=fixture[4],fixture[3]
+            if kind=='number':pr['number']=29
+            elif kind=='open':pr['state']='open'
+            elif kind=='not_merged':pr['merged']=False
+            elif kind=='bool':pr['merged']=1
+            elif kind in ('head','base'):pr[kind]['sha']='f'*40
+            elif kind.endswith('_repo'):pr[kind[:-5]]['repo']['full_name']='other/repository'
+            elif kind=='parents':commit['parents'].reverse()
+            elif kind=='tree':commit['tree']['sha']='latest'
+            with self.subTest(kind=kind),self.assertRaises(ValueError):self.verify(fixture)
+
+    def test_checkout_markers_cannot_be_spoofed_duplicated_or_moved_to_a_later_step(self):
+        for kind in ('ref','fetch_sha','short_sha','head','repo','duplicate','later_step','out_of_step','missing'):
+            fixture=self.fixture();lines=fixture[5];executed=fixture[3]['sha']
+            if kind=='ref':lines[3]=lines[3].replace('/28/','/29/')
+            elif kind=='fetch_sha':lines[2]=lines[2].replace(executed,'f'*40)
+            elif kind=='short_sha':lines[6]=lines[6].replace(executed,executed[:7])
+            elif kind=='head':lines[4]=lines[4].replace(fixture[1]['head_sha'],'f'*40)
+            elif kind=='repo':lines[1]=lines[1].replace(m.REPOSITORY,'other/repository')
+            elif kind=='duplicate':lines.append(lines[6])
+            elif kind=='later_step':lines.insert(6,'2026-10-22T14:50:47.0000005Z ##[group]Run arbitrary-step')
+            elif kind=='out_of_step':lines[6]=lines[6].replace('14:50:47.','14:50:49.')
+            elif kind=='missing':lines.pop(5)
+            with self.subTest(kind=kind),self.assertRaises(ValueError):self.verify(fixture)
+        fixture=self.fixture();executed=fixture[3]['sha']
+        fixture[5][6]=fixture[5][6].replace(executed,'\x1b[32m'+executed+'\x1b[0m')
+        self.assertEqual(self.verify(fixture),['amd64'])
+        fixture=self.fixture();executed=fixture[3]['sha']
+        fixture[5][6]=fixture[5][6].replace(executed,executed[:20]+'\x1b[32m'+executed[20:])
+        with self.assertRaises(ValueError):self.verify(fixture)
+
+    def test_checkout_metadata_and_parser_budget_are_required(self):
+        for kind in ('missing','duplicate','failed','number','invalid_time','interval','budget'):
+            fixture=self.fixture();build=fixture[2][2]
+            if kind=='missing':build.pop('steps')
+            elif kind=='duplicate':build['steps'].append(copy.deepcopy(build['steps'][0]))
+            elif kind=='failed':build['steps'][0]['conclusion']='failure'
+            elif kind=='number':build['steps'][0]['number']=0
+            elif kind=='invalid_time':build['steps'][0]['started_at']='invalid'
+            elif kind=='interval':build['steps'][0]['started_at']='2026-10-22T14:50:49Z'
+            elif kind=='budget':fixture[5].append('x'*(8*1024*1024))
+            with self.subTest(kind=kind),self.assertRaises(ValueError):self.verify(fixture)

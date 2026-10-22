@@ -46,6 +46,39 @@ class ManualPublicationTests(unittest.TestCase):
  def test_wrong_version_tag_or_repository_rejected(self):
   for version,tag,repo in [('v2.3.2','v2.3.1',manual.REPOS['upstream-matrix']),('../../escape','../../escape',manual.REPOS['upstream-matrix']),('v2.3.2','v2.3.2','other/repo')]:
    with self.assertRaises(ValueError):manual.check_identity(version,tag,repo)
+ def test_merged_pr_bundle_uses_the_exact_successful_checkout_log(self):
+  from test_matrix_contract import MergedPRMatrixTests
+  manifest,run,jobs,commit,pr,lines=MergedPRMatrixTests().fixture()
+  manifest['version']='v2.4.1'
+  for row in manifest['artifacts']:row['build_repository_commit']=commit['sha']
+  with tempfile.TemporaryDirectory() as temporary:
+   root=Path(temporary);archive=root/'original.zip'
+   with zipfile.ZipFile(archive,'w') as bundle:bundle.writestr('build-manifest.json',json.dumps(manifest))
+   data=archive.read_bytes();sha=hashlib.sha256(data).hexdigest()
+   metadata={'expired':False,'workflow_run':{'id':10},'name':f'verified-1panel-v2.4.1-{commit["sha"]}-2',
+             'digest':'sha256:'+sha,'size_in_bytes':len(data)}
+   def api(path):
+    responses={f'repos/{manual.UPSTREAM}/actions/runs/10':run,
+               f'repos/{manual.UPSTREAM}/actions/artifacts/22':metadata,
+               f'repos/{manual.UPSTREAM}/actions/runs/10/jobs?filter=all&per_page=100&page=1':{'jobs':jobs,'total_count':len(jobs)},
+               f'repos/{manual.UPSTREAM}/actions/runs/10/attempts/2':run,
+               f'repos/{manual.UPSTREAM}/git/commits/{commit["sha"]}':commit,
+               f'repos/{manual.UPSTREAM}/pulls/28':pr}
+    return responses[path]
+   def download(command,**kwargs):kwargs['stdout'].write(data);return SimpleNamespace(returncode=0)
+   with patch.object(manual,'github_json',side_effect=api),patch.object(manual.subprocess,'run',side_effect=download),\
+        patch.object(manual,'github_job_log',return_value='\n'.join(lines)+'\n') as logs:
+    result=manual.fetch_ci_bundle(root/'input','v2.4.1','10','22',sha,commit['sha'],'upstream-matrix')
+   self.assertEqual(result['build_repository_commit'],commit['sha']);logs.assert_called_once_with(3)
+ def test_checkout_log_transport_only_retries_the_gh_terminal_control_guard(self):
+  guarded=subprocess.CalledProcessError(1,['gh'],stderr='the response contains terminal escape sequences')
+  with patch.object(manual.subprocess,'run',side_effect=[guarded,SimpleNamespace(stdout='checkout log')]) as request:
+   self.assertEqual(manual.github_job_log(3),'checkout log')
+  self.assertEqual(request.call_count,2)
+  self.assertIn('--allow-escape-sequences',request.call_args_list[1].args[0])
+  with patch.object(manual.subprocess,'run',side_effect=subprocess.CalledProcessError(1,['gh'],stderr='HTTP 403')) as request:
+   with self.assertRaises(subprocess.CalledProcessError):manual.github_job_log(3)
+  self.assertEqual(request.call_count,1)
  def test_proof_retry_keeps_original_attempt_and_rejects_future_identity(self):
   import publication_contract as contract
   from test_matrix_contract import MatrixContractTests
