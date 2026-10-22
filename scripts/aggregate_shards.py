@@ -12,7 +12,7 @@ from validate_artifacts import architectures, validate_dist
 INPUT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
+def aggregate(shards, destination, version, arches, run_suffix, outcomes=None, *, outcome_source=None):
     requested = list(arches)
     if outcomes is not None:
         arches = [row["architecture"] for row in outcomes if row["status"] == "success"]
@@ -47,7 +47,7 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
     records = []
     for arch in arches:
         shard = shards / f'shard-{arch}-{run_suffix}'
-        shard_records = validate_dist(shard, version, [arch])
+        shard_records = validate_dist(shard, version, [arch], branch_result=outcome_source == 'package-step')
         if any(r['build_repository_commit'] != os.environ['BUILD_REPOSITORY_COMMIT'] for r in shard_records):
             raise ValueError('Shard build commit mismatch')
         if (shard / 'build-inputs.env').read_bytes() != inputs:
@@ -76,6 +76,8 @@ def aggregate(shards, destination, version, arches, run_suffix, outcomes=None):
                         producer_run_id=int(os.environ["GITHUB_RUN_ID"]),
                         producer_run_attempt=int(os.environ["GITHUB_RUN_ATTEMPT"]),
                         producer_head_sha=os.environ['PRODUCER_HEAD_SHA'], outcomes=outcomes)
+        if outcome_source is not None:
+            manifest['outcome_source'] = outcome_source
         validate(manifest, version)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         # The shard checks already covered the aggregate package bytes. Only these
@@ -87,18 +89,35 @@ def github_json(endpoint):
 
 
 def main(argv=None):
-    from matrix_contract import collect, read_jobs, retry_pending
+    from matrix_contract import BRANCH_RESULT, collect_recorded, read_jobs, retry_pending
     shards, destination, version, requested, generation = sys.argv[1:] if argv is None else argv
     requested = architectures(requested)
     run_id, attempt = int(os.environ['GITHUB_RUN_ID']), int(os.environ['GITHUB_RUN_ATTEMPT'])
+    if os.environ['MATRIX_RESULT'] != 'success':
+        raise ValueError('Architecture infrastructure, result recording or upload failed; refusing partial infrastructure success')
+    root = Path(shards)
+    expected = {f'shard-{arch}-{generation}' for arch in requested}
+    if {p.name for p in root.iterdir()} != expected:
+        raise ValueError('Missing, extra or unexpected architecture result shards')
+    results = {}
+    for arch in requested:
+        shard = root / f'shard-{arch}-{generation}'
+        path = shard / BRANCH_RESULT
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 16384:
+            raise ValueError('Missing or oversized architecture result: ' + arch)
+        results[arch] = json.loads(path.read_text())
+        if not isinstance(results[arch], dict):
+            raise ValueError('Invalid architecture result: ' + arch)
+        if results[arch].get('status') == 'failure' and {p.name for p in shard.iterdir()} != {BRANCH_RESULT}:
+            raise ValueError('Failed architecture shard contains package files: ' + arch)
     def snapshot():
         jobs = read_jobs(github_json, os.environ['GITHUB_REPOSITORY'], run_id)
-        return collect(jobs, requested, run_id, attempt,
-                       head_sha=os.environ['PRODUCER_HEAD_SHA'],
-                       matrix_result=os.environ['MATRIX_RESULT'], current_job='build')
-    # needs.compile is the scheduler barrier. The API only supplies branch
-    # identities/results and may still lag behind that barrier; refresh its
-    # evidence without accepting a nonterminal or inconsistent branch.
+        return collect_recorded(jobs, results, requested, run_id, attempt,
+                                os.environ['PRODUCER_HEAD_SHA'], os.environ['BUILD_REPOSITORY_COMMIT'],
+                                generation, version)
+    # needs.compile proves all infrastructure/report/upload steps passed.
+    # Package failures are explicit artifact records. REST supplies identities,
+    # never a second scheduling barrier or a live completion verdict.
     outcomes = retry_pending(snapshot)
     for row in outcomes:
         if row['status'] == 'failure':
@@ -107,7 +126,10 @@ def main(argv=None):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
             for row in outcomes:
                 summary.write(f'- {version} / {row["architecture"]}: {row["status"]}; {row["reason"]} {row["job_url"]}\n')
-    aggregate(Path(shards), Path(destination), version, requested, generation, outcomes)
+    aggregate(root, Path(destination), version, requested, generation, outcomes, outcome_source='package-step')
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('complete=' + str(all(row['status'] == 'success' for row in outcomes)).lower() + '\n')
 
 
 if __name__ == '__main__':

@@ -6,7 +6,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from manual_publication import check_identity, github_json
+from manual_publication import check_identity
 from publication_contract import PROOF, make_proof, validate_payloads
 from release_asset_repair import (GitHub, digest, repair, release_snapshot as snapshot,
                                   Journal, optional_release, require_owned_draft,
@@ -50,20 +50,27 @@ def operation_allowed(action,event,ref,default_branch,mode,candidate):
 
 
 def current_producer(manifest,commit):
-    from matrix_contract import read_jobs, retry_pending, verify_current_jobs, verify_jobs
+    """Bind authenticated same-run bytes to the native workflow identity.
+
+    publish() verifies the preparation receipt and every transferred file before
+    this check. The writer's needs.publication_prepare dependency supplies the
+    successful native DAG gate, including on writer-only reruns. Mutable REST
+    job status is not a synchronization barrier for the current workflow.
+    Cross-run promotion authenticates its terminal producer separately.
+    """
+    from matrix_contract import validate
+    successful=validate(manifest)
     run_id=int(os.environ['GITHUB_RUN_ID']);current_attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
     attempt=manifest.get('producer_run_attempt')
     if type(attempt) is not int or not 0 < attempt <= current_attempt:
         raise ValueError('Invalid current producer attempt')
-    def snapshot():
-        run=github_json(f'repos/{GitHubRepo}/actions/runs/{run_id}/attempts/{attempt}')
-        if run.get('event') not in ('push','schedule','workflow_dispatch'):
-            raise ValueError('Automatic publication requires a trusted non-PR execution')
-        jobs=read_jobs(github_json,GitHubRepo,run_id)
-        if attempt==current_attempt:
-            return verify_current_jobs(manifest,run,jobs,commit,run_id,attempt)
-        return verify_jobs(manifest,run,jobs,commit,allow_publication_failures=True)
-    retry_pending(snapshot)
+    if (os.environ.get('GITHUB_REPOSITORY')!=GitHubRepo or manifest['producer_run_id']!=run_id or
+        manifest['producer_head_sha']!=commit or commit!=os.environ.get('GITHUB_SHA')):
+        raise ValueError('Current producer differs from native workflow identity')
+    if os.environ.get('GITHUB_EVENT_NAME') not in ('push','schedule','workflow_dispatch'):
+        raise ValueError('Automatic publication requires a trusted non-PR execution')
+    if not successful or any(row.get('build_repository_commit')!=commit for row in manifest['artifacts']):
+        raise ValueError('Current producer payload commit mismatch')
 
 
 GitHubRepo='HandSonic/1Panel-Build-v2'

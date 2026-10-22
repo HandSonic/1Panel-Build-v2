@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Bind partial architecture output to the effective jobs of one producer attempt."""
 import re
+import json
+import os
+from pathlib import Path
+import shutil
 import sys
 import time
 from resolved_contract import ARCHES
@@ -11,6 +15,10 @@ FIELDS = {'schema_version', 'version', 'artifacts', 'requested_architectures',
 OUTCOME_FIELDS = {'architecture', 'status', 'stage', 'reason', 'job_id', 'job_url'}
 WRITERS = {'candidate', 'automatic_publication', 'publication_repair'}
 PENDING_STATUSES = {'queued', 'in_progress', 'waiting', 'pending', 'requested'}
+BRANCH_RESULT = 'branch-result.json'
+RESULT_FIELDS = {'schema_version', 'version', 'architecture', 'producer_run_id',
+                 'producer_run_attempt', 'producer_head_sha', 'build_repository_commit',
+                 'generation', 'status', 'reason'}
 
 
 class PendingJobs(ValueError):
@@ -61,8 +69,10 @@ def positive(value):
 
 
 def validate(value, version=None):
-    if not isinstance(value, dict) or set(value) != FIELDS or value['schema_version'] != 2:
+    if not isinstance(value, dict) or set(value) not in (FIELDS, FIELDS | {'outcome_source'}) or value['schema_version'] != 2:
         raise ValueError('Unsupported matrix manifest')
+    if 'outcome_source' in value and value['outcome_source'] != 'package-step':
+        raise ValueError('Unsupported architecture outcome source')
     if version is not None and value['version'] != version:
         raise ValueError('Matrix version mismatch')
     if not isinstance(value['producer_head_sha'],str) or not re.fullmatch('[0-9a-f]{40}',value['producer_head_sha']):
@@ -94,6 +104,8 @@ def validate(value, version=None):
             successful.append(arch)
         elif not row['reason']:
             raise ValueError('Failed branch must explain its outcome')
+        elif value.get('outcome_source') == 'package-step' and row['reason'] not in ('Package step failure', 'Package step skipped'):
+            raise ValueError('Invalid recorded package failure reason')
     artifacts = value['artifacts']
     if not isinstance(artifacts, list) or [r.get('architecture') for r in artifacts] != successful:
         raise ValueError('Accepted artifacts must exactly match successful outcomes')
@@ -125,23 +137,13 @@ def effective_jobs(jobs, run_id, attempt, head_sha=None):
     return list(selected.values())
 
 
-def collect(jobs, requested, run_id, attempt, *, head_sha=None, matrix_result=None, current_job=None):
+def collect(jobs, requested, run_id, attempt, *, head_sha=None):
     jobs = effective_jobs(jobs, run_id, attempt, head_sha)
     names = {f'compile ({arch})' for arch in requested}
     extra = {j.get('name') for j in jobs if isinstance(j.get('name'), str) and
              j['name'].startswith('compile')} - names
     if extra:
         raise ValueError('Unrequested architecture jobs: ' + ', '.join(sorted(extra)))
-    if matrix_result is not None and matrix_result not in ('success', 'failure'):
-        raise ValueError('Cancelled, skipped or unsupported matrix result: ' + str(matrix_result))
-    if current_job is not None:
-        active = [j for j in jobs if j.get('name') == current_job and j['run_attempt'] == attempt]
-        if not active:
-            raise PendingJobs(f'Current {current_job} job for attempt {attempt} is not visible as in_progress')
-        if not job_pending(active[0]):
-            raise ValueError(f'Current {current_job} job is already terminal: {active[0].get("conclusion")}')
-        if active[0].get('status') != 'in_progress':
-            raise PendingJobs(f'Current {current_job} job for attempt {attempt} is not visible as in_progress')
     result = []
     for arch in requested:
         matches = [job for job in jobs if job.get('name') == f'compile ({arch})']
@@ -157,10 +159,65 @@ def collect(jobs, requested, run_id, attempt, *, head_sha=None, matrix_result=No
         result.append({'architecture': arch, 'status': 'success' if conclusion == 'success' else 'failure',
                        'stage': 'compile', 'reason': '' if conclusion == 'success' else 'GitHub job ' + conclusion,
                        'job_id': job['id'], 'job_url': job['html_url']})
-    derived = 'failure' if any(row['status'] == 'failure' for row in result) else 'success'
-    if matrix_result is not None and derived != matrix_result:
-        raise PendingJobs(f'Architecture API outcomes ({derived}) differ from scheduler matrix result ({matrix_result})')
     return result
+
+
+def record(directory, version, arch, generation, step_result):
+    """Persist the controlled package step's outcome, including failed retries."""
+    if arch not in ARCHES or step_result not in ('success', 'failure', 'skipped'):
+        raise ValueError('Invalid architecture package result')
+    run_id, attempt = int(os.environ['GITHUB_RUN_ID']), int(os.environ['GITHUB_RUN_ATTEMPT'])
+    head, commit = os.environ['PRODUCER_HEAD_SHA'], os.environ['BUILD_REPOSITORY_COMMIT']
+    if (not positive(run_id) or not positive(attempt) or
+        not re.fullmatch('[0-9a-f]{40}', head) or not re.fullmatch('[0-9a-f]{40}', commit) or
+        not re.fullmatch(str(run_id) + r'-[1-9][0-9]*', generation)):
+        raise ValueError('Invalid architecture result identity')
+    directory = Path(directory)
+    if directory.name != 'dist' or directory.is_symlink():
+        raise ValueError('Architecture result destination must be a dist directory')
+    success = step_result == 'success'
+    if not success and directory.exists():
+        shutil.rmtree(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    value = dict(schema_version=1, version=version, architecture=arch,
+                 producer_run_id=run_id, producer_run_attempt=attempt,
+                 producer_head_sha=head, build_repository_commit=commit,
+                 generation=generation, status='success' if success else 'failure',
+                 reason='' if success else 'Package step ' + step_result)
+    (directory / BRANCH_RESULT).write_text(json.dumps(value, indent=2) + '\n')
+    return value
+
+
+def collect_recorded(jobs, results, requested, run_id, attempt, head, commit, generation, version):
+    """Use artifacts for outcomes and REST only for immutable job identities."""
+    selected = effective_jobs(jobs, run_id, attempt, head)
+    expected = {f'compile ({arch})' for arch in requested}
+    extra = {j.get('name') for j in selected if isinstance(j.get('name'), str) and
+             j['name'].startswith('compile')} - expected
+    if extra:
+        raise ValueError('Unrequested architecture jobs: ' + ', '.join(sorted(extra)))
+    if not any(j.get('name') == 'build' and j['run_attempt'] == attempt for j in selected):
+        raise PendingJobs('Current aggregate job identity is not visible')
+    outcomes = []
+    for arch in requested:
+        value = results[arch]
+        if (not isinstance(value, dict) or set(value) != RESULT_FIELDS or type(value['schema_version']) is not int or value['schema_version'] != 1 or
+            value['version'] != version or value['architecture'] != arch or
+            type(value['producer_run_id']) is not int or value['producer_run_id'] != run_id or
+            not positive(value['producer_run_attempt']) or value['producer_run_attempt'] > attempt or
+            value['producer_head_sha'] != head or value['build_repository_commit'] != commit or
+            value['generation'] != generation or value['status'] not in ('success', 'failure') or
+            value['reason'] not in (('',) if value['status'] == 'success' else ('Package step failure', 'Package step skipped'))):
+            raise ValueError('Invalid or stale architecture result: ' + arch)
+        matches = [j for j in selected if j.get('name') == f'compile ({arch})']
+        if not matches or matches[0]['run_attempt'] < value['producer_run_attempt']:
+            raise PendingJobs('Recorded architecture job identity is not visible: ' + arch)
+        job = matches[0]
+        if job['run_attempt'] != value['producer_run_attempt']:
+            raise ValueError('Architecture result belongs to an older execution: ' + arch)
+        outcomes.append(dict(architecture=arch, status=value['status'], stage='compile',
+                             reason=value['reason'], job_id=job['id'], job_url=job['html_url']))
+    return outcomes
 
 
 def verify_execution(run, expected_commit, execution_commit=None):
@@ -197,9 +254,28 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, all
             raise PendingJobs('Shared producer gate not yet terminal: ' + name)
         if len(matches) != 1 or matches[0].get('conclusion') != 'success' or matches[0].get('status') != 'completed':
             raise ValueError('Shared producer gate failed: ' + name)
-    if collect(jobs, value['requested_architectures'], value['producer_run_id'], value['producer_run_attempt']) != value['outcomes']:
-        raise ValueError('Declared outcomes differ from effective API job identities')
-    declared = {r['job_id'] for r in value['outcomes'] if r['status'] == 'failure'}
+    native = collect(jobs, value['requested_architectures'], value['producer_run_id'], value['producer_run_attempt'])
+    if value.get('outcome_source') == 'package-step':
+        # Package failures are captured by the controlled build step. Every
+        # surrounding native job must succeed, including artifact transport and
+        # post-job cleanup, so infrastructure failures cannot masquerade as an
+        # independently failed package branch.
+        if any(row['status'] != 'success' for row in native):
+            raise ValueError('Native architecture job failed outside the package outcome contract')
+        identity = lambda row: (row['architecture'], row['stage'], row['job_id'], row['job_url'])
+        if [identity(row) for row in native] != [identity(row) for row in value['outcomes']]:
+            raise ValueError('Declared outcomes differ from effective API job identities')
+        status = next((job for job in jobs if job.get('name') == 'matrix_status'), None)
+        if status is None or status['run_attempt'] != value['producer_run_attempt'] or job_pending(status):
+            raise PendingJobs('Final matrix status gate not yet terminal for the producer attempt')
+        partial = any(row['status'] == 'failure' for row in value['outcomes'])
+        if status.get('conclusion') != ('failure' if partial else 'success'):
+            raise ValueError('Final matrix status gate differs from recorded package outcomes')
+        declared = {status['id']} if partial else set()
+    else:
+        if native != value['outcomes']:
+            raise ValueError('Declared outcomes differ from effective API job identities')
+        declared = {r['job_id'] for r in value['outcomes'] if r['status'] == 'failure'}
     # A rerun can reach publication preparation before its new writer is
     # created. A failed writer from an older attempt is not this build's result.
     actual = {j['id'] for j in jobs if j.get('conclusion') not in ('success', 'skipped') and
@@ -223,6 +299,11 @@ def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
     verify_execution(run, expected_commit)
     if run.get('path', '').split('@')[0] != '.github/workflows/build.yml':
         raise ValueError('Producer is not a permitted build workflow')
+    if value.get('outcome_source') == 'package-step':
+        # Current automatic publication uses the native DAG and its bound
+        # preparation receipt. This API verifier must not synthesize the final
+        # matrix gate while that producer is still running.
+        return verify_jobs(value, run, jobs, expected_commit)
     if run.get('status') in PENDING_STATUSES - {'in_progress'} and run.get('conclusion') is None:
         raise PendingJobs('Current producer run not yet visible as in_progress')
     if run.get('status') not in ('in_progress', 'completed') or run.get('conclusion') not in (None, 'success', 'failure'):
@@ -240,3 +321,9 @@ def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
         checked.append(job)
     terminal = dict(run, status='completed', conclusion='failure' if any(r['status']=='failure' for r in value['outcomes']) else 'success')
     return verify_jobs(value, terminal, checked, expected_commit)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 7 or sys.argv[1] != 'record':
+        raise SystemExit('Usage: matrix_contract.py record DIST VERSION ARCH GENERATION RESULT')
+    record(*sys.argv[2:])

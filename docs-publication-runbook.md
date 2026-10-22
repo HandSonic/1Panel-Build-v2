@@ -81,17 +81,29 @@ boundaries. Shared preparation or validation failures block publication. A faile
 architecture is omitted while independently successful output can be published.
 Failure details stay in Actions, not Release notes.
 
-The scheduler dependency waits for the matrix. The jobs API then authenticates
-individual results and rerun identities; temporarily incomplete reads are
-refreshed at most 13 times, five seconds apart. The aggregate requires its current
-job attempt and agreement with the scheduler's matrix result. Invalid identities,
-cancellation and unexpected branches fail immediately; a state that never settles
-fails with the affected job's details. Publication uses the same bounded refresh
-for producer evidence. See [the CI design audit](docs-ci-audit.md).
+The scheduler dependency waits for the matrix. Only the package build step may
+continue after failure; each branch then uploads a result record, with validated
+packages on success or no package files on failure. All surrounding native jobs,
+including result transport and post-job cleanup, must succeed before aggregation.
+The jobs API binds immutable job IDs and attempts; its live status is not used as
+a second completion gate. Missing identities are refreshed at most 13 times,
+five seconds apart. Missing records and infrastructure failures block publication.
+The manifest marks this contract with `outcome_source: package-step`.
 
-Intermediate source/shard artifacts expire after three days. Failed-only retries
-reuse the original preparation artifact and replace only their own intermediate
-shard. Inherited successful jobs remain authenticated by their original job IDs.
+Same-run publication authenticates its native workflow identity and the exact
+preparation receipt supplied by job outputs, without polling live job status.
+Cross-run promotion still verifies the terminal producer and exact job identities.
+After publication, `matrix_status` makes a partially successful run red so failed
+package branches remain visible. See [the CI design audit](docs-ci-audit.md).
+
+Intermediate source/shard artifacts expire after three days. Rerunning a specific
+compile job reuses the original preparation artifact and replaces only its own
+intermediate shard and result record. Inherited successful jobs remain
+authenticated by their original job IDs. For a recorded package failure, rerun
+that architecture's compile job or start a build selecting the missing architectures.
+**Re-run failed jobs** repairs failed infrastructure/publication jobs, but cannot
+recompile a package failure whose native compile job succeeded; rerunning only
+`matrix_status` repeats its red result.
 A new full preparation has a new artifact ID. Final verified build artifacts
 include their producer attempt in the name for exact selection. GitHub controls
 retention: [a full workflow rerun can delete prior artifacts](https://github.com/orgs/community/discussions/45415),

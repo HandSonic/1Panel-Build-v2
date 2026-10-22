@@ -2,16 +2,17 @@
 
 The audit started from [build-offline #652](https://github.com/HandSonic/1Panel-Build-v2/actions/runs/39786190908).
 All seven architecture jobs succeeded and all shards downloaded, but aggregation
-failed with `Nonterminal architecture job`. The failing API response was not
-logged, so the exact delayed job cannot be reconstructed.
+failed with `Nonterminal architecture job`. Hosted validation also showed that
+live API status can remain queued while the actual job has finished. A bounded
+status retry alone therefore does not provide a reliable scheduling barrier.
 
 ## Findings and repairs
 
 | Area | Defect | Repair |
 | --- | --- | --- |
-| Matrix aggregation | One jobs API snapshot was treated as immediately final. | Keep `needs` as the scheduling barrier; refresh incomplete API evidence at most 13 times, with five seconds between reads. Report the architecture, job ID, attempt, status and conclusion. |
-| Matrix identity | An older rerun snapshot could disagree with the scheduler; a manifest could omit a successful architecture. | Require the current aggregate job, compare branch outcomes with `needs.compile.result`, and reject extra compile branches. Preserve inherited successful jobs and prefer the latest execution of every branch. |
-| Publication provenance | Shared gates and run status could still be pending in a single API read. | Reuse the same bounded read-only refresh in automatic publication and explicit artifact promotion. Reject changed identities, cancellation, unsupported states and failed shared gates. |
+| Matrix aggregation | Live jobs API state was used as a second scheduling barrier. | Keep `needs` as the barrier and collect explicit per-architecture outcome artifacts. Live REST status no longer controls aggregation. |
+| Matrix identity | Stale records could hide a newer failed execution; a manifest could omit an architecture. | Require every record to match the run, build commit, prepared generation and effective job attempt. Bind immutable job IDs, reject extra compile branches, and preserve inherited successful executions. |
+| Publication provenance | Running workflow metadata could lag behind successful native gates. | Same-run publication uses the native dependency chain and its bound preparation receipt. Cross-run promotion retains terminal API verification and bounded incomplete-evidence refresh. |
 | Upload verification | A successful upload was immediately rejected if the asset or digest was not yet visible. | Bind the upload response's asset ID and retry only GET readback, at most seven times. Wrong bytes, changed IDs and changed existing inventory still fail immediately. Never repeat an upload POST. |
 | Mixed scheduled repair | A failed new-package publication suppressed the independent checksum repair through the implicit step success condition. | Run the checksum repair unless cancelled, under the existing version writer lock. |
 | Architecture inputs | Commas, tabs and newlines were not normalized before writing job outputs. | Use the shared architecture parser and emit a single normalized line. Invalid and duplicate architectures still stop before input discovery. |
@@ -19,20 +20,31 @@ logged, so the exact delayed job cannot be reconstructed.
 
 ## Design boundaries
 
-`needs` controls execution order. Separate architecture artifacts carry package
-bytes and immutable input metadata. The jobs API authenticates per-architecture
-results and rerun identities, including the reason an architecture is omitted.
-Missing artifacts never imply a legitimate compilation failure.
+`needs` controls execution order. Each architecture records the original package
+step outcome. Only that controlled step uses `continue-on-error`; result creation,
+artifact upload, input checks and post-job cleanup must succeed natively. The
+aggregate requires the native compile matrix to succeed, so an infrastructure
+failure cannot hide behind another branch's recorded package failure.
 
-Incomplete or contradictory evidence cannot authorize publication. A successful
-branch must have a valid shard; failed or timed-out branches are recorded and
-omitted. Cancellation, malformed identities, unexpected branches and shared-gate
-failures block publication. If API evidence does not settle, aggregation fails
-with diagnostics instead of publishing an assumed result.
+A successful record accompanies a complete validated package. A failed record
+replaces that architecture's old shard with a record-only artifact. Records bind
+the run, actual execution attempt, architecture, build commit and prepared-source
+generation. The API supplies only immutable job identities during aggregation;
+queued live statuses are harmless. Missing records, stale attempts, unexpected
+branches and infrastructure failures block publication.
 
-Scheduler-result and current-job checks reject stale aggregate snapshots; they
-do not promise a transactionally consistent API view of every branch. Publication
-rechecks the exact selected producer attempt and recorded job identities.
+The schema-2 manifest explicitly marks `outcome_source: package-step`; historical
+manifests without that marker retain the old terminal-job contract. Same-run
+writers authenticate the exact preparation receipt and all file hashes through
+native job outputs. Explicit cross-run promotion additionally checks all terminal
+compile jobs and the final `matrix_status` result against the recorded outcomes.
+
+After publication, `matrix_status` turns a partial package build red. To retry a
+recorded package failure, rerun its specific compile job or start a build selecting
+that architecture. GitHub's **Re-run failed jobs** targets native infrastructure
+or publication failures; rerunning only the final status job does not recompile
+an architecture. Reruns retain the original prepared generation and replace only
+their own result artifact.
 
 The review also covered PR permissions and scope, cancellation, source/toolchain
 and resource pinning, shared frontend preparation, shard generations, failed-only
@@ -50,8 +62,9 @@ git diff --check
 bash -n scripts/build_release.sh scripts/build_cnb_matrix.sh scripts/download_resources.sh
 ```
 
-Regressions cover delayed and permanently pending job snapshots, scheduler/API
-disagreement, rerun inheritance, cancellation and invalid states, extra branches,
-publication-gate delay, delayed upload metadata without duplicate writes, mixed
-checksum recovery, input normalization and archive bounds. Local simulations do
+Regressions cover permanently queued live API status, recorded partial failures,
+stale rerun records, infrastructure and post-job failure boundaries, same-run
+publication identity, terminal cross-run promotion, delayed upload metadata
+without duplicate writes, mixed checksum recovery, input normalization and archive
+bounds. Local simulations do
 not exercise live Release mutations or replace hosted architecture builds.

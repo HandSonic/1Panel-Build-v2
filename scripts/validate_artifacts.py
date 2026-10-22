@@ -95,7 +95,7 @@ def validate_package(path, version, arch, *, require_embedded=False):
         if data[target] != data[source]: raise ValueError('Service copy mismatch')
     return manifest
 
-def validate_dist(dist,version,arches, *, require_embedded=False):
+def validate_dist(dist,version,arches, *, require_embedded=False, branch_result=False):
     from package_metadata import check_archive_size
     expected=set(); records=[]
     for arch in arches:
@@ -120,6 +120,9 @@ def validate_dist(dist,version,arches, *, require_embedded=False):
     expected|={'checksums.txt','build-manifest.json'}
     # CI may attach the resolved inputs alongside the immutable manifests.
     if (dist/'build-inputs.env').is_file(): expected.add('build-inputs.env')
+    if branch_result:
+        from matrix_contract import BRANCH_RESULT
+        expected.add(BRANCH_RESULT)
     if {p.name for p in dist.iterdir()}!=expected: raise ValueError('Unexpected or missing release files')
     aggregate=''.join((dist/(r['file']+'.sha256')).read_text() for r in records)
     if (dist/'checksums.txt').read_text()!=aggregate: raise ValueError('Aggregate checksums mismatch')
