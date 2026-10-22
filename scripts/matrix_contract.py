@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import sys
 import time
+from datetime import datetime, timedelta
 from resolved_contract import ARCHES
 
 REPOSITORY = 'HandSonic/1Panel-Build-v2'
@@ -220,7 +221,83 @@ def collect_recorded(jobs, results, requested, run_id, attempt, head, commit, ge
     return outcomes
 
 
-def verify_execution(run, expected_commit, execution_commit=None):
+def merged_pr_checkout(job, head, commit, fetch_json, fetch_log):
+    """Recover an absent run/PR link from the authenticated checkout and PR."""
+    def require(condition, message):
+        if not condition:
+            raise ValueError(message)
+
+    require(positive(job.get('id')) and job.get('name') == 'build' and
+            job.get('status') == 'completed' and job.get('conclusion') == 'success',
+            'PR checkout requires a successful exact build job')
+    steps = job.get('steps')
+    require(isinstance(steps, list), 'Missing PR checkout steps')
+    matches = [step for step in steps if isinstance(step, dict) and isinstance(step.get('name'), str) and
+               re.fullmatch(r'Run actions/checkout@(?:v[1-9][0-9]*|[0-9a-f]{40})', step['name'])]
+    require(len(matches) == 1, 'Missing or ambiguous PR checkout step')
+    step = matches[0]
+    require(step.get('status') == 'completed' and step.get('conclusion') == 'success' and
+            positive(step.get('number')), 'PR checkout step did not succeed')
+
+    def timestamp(value):
+        require(isinstance(value, str) and re.fullmatch(
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z', value),
+            'Invalid PR checkout timestamp')
+        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+    start, end = timestamp(step.get('started_at')), timestamp(step.get('completed_at'))
+    require(start <= end, 'Invalid PR checkout interval')
+    end += timedelta(seconds=1)  # API step times omit the log's fractional second.
+    log = fetch_log(job['id'])
+    require(isinstance(log, str) and len(log.encode('utf-8')) <= 8 * 1024 * 1024,
+            'PR checkout log exceeds parser budget')
+    escape = r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))'
+    def neutralize(match):
+        left, right = log[match.start()-1:match.start()], log[match.end():match.end()+1]
+        inside = bool(left and right and re.match(r'[A-Za-z0-9_=]', left) and re.match(r'[A-Za-z0-9_=]', right))
+        return '' if re.fullmatch(r'\x1b\[[0-9;]*m', match[0]) and not inside else '[CONTROL]'
+    log = re.sub(escape, neutralize, log)
+    log = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '[CONTROL]', log)
+    lines = []
+    for line in log.splitlines():
+        record = re.fullmatch(r'([0-9T:.-]+Z) (.*)', line)
+        lines.append((record[1], record[2]) if record else (None, line))
+
+    def one(pattern):
+        found = [(index, stamp, re.fullmatch(pattern, body))
+                 for index, (stamp, body) in enumerate(lines) if re.fullmatch(pattern, body)]
+        require(len(found) == 1, 'Missing or ambiguous PR checkout log evidence')
+        index, stamp, match = found[0]
+        require(start <= timestamp(stamp) < end, 'PR checkout evidence is outside its authenticated step')
+        return index, match
+
+    opened, _ = one(r'##\[group\]' + re.escape(step['name']))
+    synced, _ = one(r'Syncing repository: ' + re.escape(REPOSITORY))
+    fetched, fetch = one(r'\[command\]/\S+/git -c protocol\.version=2 fetch --no-tags --prune '
+                         r'--no-recurse-submodules --depth=1 origin \+([0-9a-f]{40}):refs/remotes/pull/([1-9][0-9]*)/merge')
+    checked, checkout = one(r'\[command\]/\S+/git checkout --progress --force refs/remotes/pull/([1-9][0-9]*)/merge')
+    described, description = one(r'HEAD is now at ([0-9a-f]{7,40}) Merge ([0-9a-f]{40}) into ([0-9a-f]{40})')
+    queried, _ = one(r'\[command\]/\S+/git log -1 --format=%H')
+    executed, execution = one(r'([0-9a-f]{40})')
+    later = [index for index, (_, body) in enumerate(lines) if index > opened and
+             re.match(r'##\[group\](?:Run |Post )', body)]
+    require(not later or executed < min(later), 'PR checkout evidence crosses a later step boundary')
+    require(opened < synced < fetched < checked < described < queried and executed == queried + 1 and
+            fetch[1] == execution[1] == commit and commit.startswith(description[1]) and
+            fetch[2] == checkout[1] and description[2] == head,
+            'PR checkout does not bind the executed merge')
+    number, base = int(fetch[2]), description[3]
+    pr = fetch_json(f'repos/{REPOSITORY}/pulls/{number}')
+    require(isinstance(pr, dict) and pr.get('number') == number and pr.get('state') == 'closed' and
+            pr.get('merged') is True and all(isinstance(pr.get(side), dict) and
+                isinstance(pr[side].get('repo'), dict) and pr[side]['repo'].get('full_name') == REPOSITORY
+                for side in ('base', 'head')) and
+            pr['base'].get('sha') == base and pr['head'].get('sha') == head,
+            'Recovered PR does not bind the exact merged repository/base/head')
+    return base
+
+
+def verify_execution(run, expected_commit, execution_commit=None, *, checkout_job=None, fetch_json=None, fetch_log=None):
     head=run.get('head_sha')
     if not isinstance(head,str) or not re.fullmatch('[0-9a-f]{40}',head) or not re.fullmatch('[0-9a-f]{40}',expected_commit):
         raise ValueError('Invalid immutable producer execution identity')
@@ -230,18 +307,33 @@ def verify_execution(run, expected_commit, execution_commit=None):
         return
     if not isinstance(execution_commit,dict) or execution_commit.get('sha')!=expected_commit:
         raise ValueError('PR build requires authenticated synthetic merge commit')
-    parents=[p.get('sha') for p in execution_commit.get('parents',[])]
-    matches=[p for p in run.get('pull_requests',[]) if p.get('head',{}).get('sha')==head]
-    if len(matches)!=1 or parents!=[matches[0].get('base',{}).get('sha'),head] or not re.fullmatch('[0-9a-f]{40}',execution_commit.get('tree',{}).get('sha','')):
+    prs = run.get('pull_requests')
+    if not isinstance(prs, list) or len(prs) > 1:
+        raise ValueError('Ambiguous PR producer head')
+    if prs:
+        pr = prs[0]
+        if (not isinstance(pr, dict) or not isinstance(pr.get('head'), dict) or
+            not isinstance(pr.get('base'), dict) or pr['head'].get('sha') != head or
+            not isinstance(pr['base'].get('sha'), str) or not re.fullmatch('[0-9a-f]{40}', pr['base']['sha'])):
+            raise ValueError('Ambiguous PR producer head')
+        base = pr['base']['sha']
+    else:
+        if checkout_job is None or fetch_json is None or fetch_log is None:
+            raise ValueError('Missing authenticated merged PR checkout evidence')
+        base = merged_pr_checkout(checkout_job, head, expected_commit, fetch_json, fetch_log)
+    parents = execution_commit.get('parents')
+    if (not isinstance(parents, list) or any(not isinstance(parent, dict) for parent in parents) or
+        [parent.get('sha') for parent in parents] != [base, head] or
+        not re.fullmatch('[0-9a-f]{40}', execution_commit.get('tree', {}).get('sha', ''))):
         raise ValueError('PR merge parents do not match the recorded base/head')
 
 
-def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, allow_publication_failures=False):
+def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, allow_publication_failures=False,
+                fetch_json=None, fetch_log=None):
     successful = validate(value)
     jobs = effective_jobs(jobs, value['producer_run_id'], value['producer_run_attempt'], value['producer_head_sha'])
     if run.get('id') != value['producer_run_id'] or run.get('run_attempt') != value['producer_run_attempt'] or run.get('head_sha') != value['producer_head_sha']:
         raise ValueError('Producer run identity mismatch')
-    verify_execution(run,expected_commit,execution_commit)
     if run.get('path', '').split('@')[0] != '.github/workflows/build.yml':
         raise ValueError('Producer is not a terminal permitted build')
     if job_pending(run):
@@ -254,6 +346,9 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, all
             raise PendingJobs('Shared producer gate not yet terminal: ' + name)
         if len(matches) != 1 or matches[0].get('conclusion') != 'success' or matches[0].get('status') != 'completed':
             raise ValueError('Shared producer gate failed: ' + name)
+    verify_execution(run, expected_commit, execution_commit,
+                     checkout_job=next(job for job in jobs if job.get('name') == 'build'),
+                     fetch_json=fetch_json, fetch_log=fetch_log)
     native = collect(jobs, value['requested_architectures'], value['producer_run_id'], value['producer_run_attempt'])
     if value.get('outcome_source') == 'package-step':
         # Package failures are captured by the controlled build step. Every
