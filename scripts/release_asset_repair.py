@@ -81,13 +81,13 @@ def require_owned_draft(release,client):
             {'id':41898282,'login':'github-actions[bot]','type':'Bot'}):
         raise ValueError('Only an owned automatic release draft can be recovered')
 
-def verify_new_release(release,created,files,draft,*,fallback_assets=None):
+def verify_new_release(release,created,expected,draft,*,fallback_assets=None):
+    """Compare remote state with file facts already verified by the transaction."""
     if (release.get('id')!=created['id'] or release.get('tag_name')!=created['tag_name'] or
         release.get('draft') is not draft or (release.get('body') or '')!=(created.get('body') or '')):
         raise ValueError('Created release identity or visibility changed')
     if any(release.get(key)!=created.get(key) for key in ('name','target_commitish','prerelease','author')):
         raise ValueError('Created release metadata changed')
-    expected={p.name:digest(p) for p in files}
     assets=release.get('assets',[])
     if len(assets)!=len(expected) or {a['name'] for a in assets}!=set(expected):
         raise ValueError('Created release canonical inventory changed')
@@ -101,14 +101,14 @@ def verify_new_release(release,created,files,draft,*,fallback_assets=None):
         elif (fallback_assets or {}).get(asset['name'])!={'id':asset['id'],'size':asset['size'],'sha256':facts['sha256']}:
             raise ValueError('Created release canonical bytes changed')
 
-def finalize_release(client,created,files,creation,*,fallback_assets=None):
+def finalize_release(client,created,expected,creation,*,fallback_assets=None):
     """Publish one verified owned draft, retaining its exact ID on recovery."""
-    verify_new_release(client.release(),created,files,True,fallback_assets=fallback_assets)
+    verify_new_release(client.release(),created,expected,True,fallback_assets=fallback_assets)
     creation.state['phase']='finalizing';creation.save()
     try:
         client.run('api','--method','PATCH',f'repos/{client.repo}/releases/{created["id"]}',
                    '-F','draft=false','-f','make_latest=legacy')
-        verify_new_release(client.release(),created,files,False,fallback_assets=fallback_assets)
+        verify_new_release(client.release(),created,expected,False,fallback_assets=fallback_assets)
     except Exception:
         # A failed response can follow an applied publication. Return only the
         # exact owned release to draft; never infer that the PATCH did nothing.
@@ -145,7 +145,8 @@ def draft_metadata(release):
             'body':release.get('body') or '',
             'author_id':(release.get('author') or {}).get('id')}
 
-def repair(client, files, journal_path, *, expected_snapshot=None, preserved_assets=None, expected_draft=None):
+def repair(client, files, journal_path, *, expected_files=None, expected_snapshot=None, preserved_assets=None, expected_draft=None):
+    """Check the upload boundary once; return its facts for final remote checks."""
     before=client.release()
     if expected_snapshot is not None and release_snapshot(before)!=expected_snapshot:
         raise ValueError('Release changed before the bound repair transaction')
@@ -155,6 +156,8 @@ def repair(client, files, journal_path, *, expected_snapshot=None, preserved_ass
     if len(assets)!=len(before['assets']):raise ValueError('Duplicate remote asset names')
     expected={p.name:digest(p) for p in files}
     if len(expected)!=len(files):raise ValueError('Duplicate local publication filenames')
+    if expected_files is not None and expected!=expected_files:
+        raise ValueError('Publication bytes differ from authenticated file facts')
     allowed=set(expected)
     if before.get('draft') is True and set(assets)-set(expected):
         raise ValueError('Draft recovery accepts only the selected validated package files')
@@ -163,7 +166,7 @@ def repair(client, files, journal_path, *, expected_snapshot=None, preserved_ass
     for name,asset in preserved_assets.items():
         if not assets.get(name) or asset_identity(assets[name])!=asset_identity(asset):raise ValueError('Preserved recovery asset changed before transaction')
     check_asset_names(before['assets'],allowed,preserved_assets)
-    state={'repo':client.repo,'tag':client.tag,'phase':'preflight','conflicts':[],'uploads':[]}
+    state={'repo':client.repo,'tag':client.tag,'phase':'preflight','files':expected,'conflicts':[],'uploads':[]}
     journal=Journal(journal_path,state)
     known={name:asset_identity(asset) for name,asset in assets.items()}
     draft_baseline=draft_metadata(expected_draft or before) if before.get('draft') is True else None

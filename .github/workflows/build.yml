@@ -203,6 +203,7 @@ jobs:
           echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        id: source_download
         with:
           artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
           merge-multiple: true
@@ -230,6 +231,7 @@ jobs:
             ~/.cache/go-build
           key: upstream-${{ runner.os }}-${{ needs.prepare.outputs.version }}-go${{ needs.prepare.outputs.go_version }}-${{ matrix.arch }}-${{ hashFiles('prepared-source/core/go.mod', 'prepared-source/core/go.sum', 'prepared-source/agent/go.mod', 'prepared-source/agent/go.sum', 'scripts/go_arch_compat.py') }}
       - name: Verify SQLite compatibility on native and loong64 engines
+        id: sqlite_compat
         if: matrix.arch == 'loong64'
         timeout-minutes: 20
         run: |
@@ -256,6 +258,7 @@ jobs:
         run: |
           python3 scripts/matrix_contract.py record prepared-source/dist "$VERSION" "$TARGET_ARCHES" "$SHARD_GENERATION" "$BRANCH_RESULT"
       - uses: actions/upload-artifact@v4
+        id: shard_upload
         if: ${{ !cancelled() && steps.outcome_record.outcome == 'success' }}
         with:
           name: shard-${{ matrix.arch }}-${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
@@ -294,6 +297,7 @@ jobs:
           echo "$RUNNER_TEMP/build-python/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        id: shards_download
         with:
           pattern: shard-*-${{ github.run_id }}-${{ needs.prepare.outputs.artifact_id }}
           path: shards
@@ -373,7 +377,6 @@ jobs:
       PUBLICATION_OPERATION: ${{ inputs.operation || 'build' }}
       PUBLISH_CANDIDATE: ${{ inputs.publish_candidate && 'true' || 'false' }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      UPSTREAM_SOURCE: verified-ci
       UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
       UPSTREAM_ARTIFACT_ID: ${{ inputs.upstream_artifact_id }}
       UPSTREAM_ARTIFACT_SHA256: ${{ inputs.upstream_artifact_sha256 }}
@@ -405,7 +408,7 @@ jobs:
           RELEASE_TAG=${RELEASE_TAG:-$VERSION}
           python3 scripts/manual_publication.py prepare \
             --repository "$GITHUB_REPOSITORY" --version "$VERSION" --tag "$RELEASE_TAG" --work publication-work \
-            --upstream-source "$UPSTREAM_SOURCE" --run-id "$UPSTREAM_RUN_ID" --artifact-id "$UPSTREAM_ARTIFACT_ID" \
+            --run-id "$UPSTREAM_RUN_ID" --artifact-id "$UPSTREAM_ARTIFACT_ID" \
             --artifact-sha256 "$UPSTREAM_ARTIFACT_SHA256" --build-commit "$UPSTREAM_BUILD_COMMIT"
       - name: Bind the exact validation receipt
         id: receipt
@@ -519,11 +522,13 @@ jobs:
           path: publication-work
           merge-multiple: true
       - name: Create or append verified canonical artifacts
+        id: publish
         if: needs.publication_prepare.result == 'success'
         run: |
           python3 scripts/automatic_publication.py publish --repository "$GITHUB_REPOSITORY" \
             --version "$VERSION" --work publication-work
       - name: Fill missing scheduled checksums from server digests
+        id: repair_checksums
         if: ${{ !cancelled() && github.event_name == 'schedule' && needs.check_update.outputs.checksum_required == 'true' }}
         run: |
           python3 scripts/scheduled_release.py --repository "$GITHUB_REPOSITORY" \
@@ -546,6 +551,7 @@ jobs:
       MATRIX_COMPLETE: ${{ needs.build.outputs.complete }}
     steps:
       - name: Report complete architecture result after publication
+        id: report
         run: |
           if [[ "$MATRIX_COMPLETE" != true ]]; then
             echo '::error title=Partial architecture build::Some requested architectures failed. Verified successful outputs were retained; see the architecture outcomes.'

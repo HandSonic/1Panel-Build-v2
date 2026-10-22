@@ -1,9 +1,18 @@
 import json,os,subprocess,sys,tempfile,unittest
 from pathlib import Path
+import yaml
 
 ROOT=Path(__file__).resolve().parents[1]
 
 class CNBMatrixTests(unittest.TestCase):
+ def config(self):
+  return yaml.safe_load((ROOT/'.cnb.yml').read_text())
+
+ def resolver_script(self):
+  stages=self.config()['.build_pipeline'][0]['stages']
+  return next(stage['script'] for stage in stages
+              if set(stage.get('exports',{}))=={'BUILD_VERSION','BUILD_ARCHES'})
+
  def run_case(self,fail='',bad='',prepare=False,arches='amd64 arm64 armv7',stale=False):
   temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup);root=Path(temp.name)
   (root/'bin').mkdir();(root/'scripts').mkdir()
@@ -56,13 +65,18 @@ name='1panel-'+os.environ['BUILD_VERSION']+'-linux-'+arch+'.tar.gz'
    self.assertFalse((root/'dist/build-manifest.json').exists())
    self.assertFalse((root/'cnb-verified-artifacts').exists())
  def test_fail_stage_does_not_mask_pipeline_failure(self):
-  import yaml
-  config=yaml.safe_load((ROOT/'.cnb.yml').read_text());pipeline=config['.build_pipeline'][0]
+  config=self.config();pipeline=config['.build_pipeline'][0]
   self.assertFalse(pipeline.get('allowFailure',False))
-  self.assertEqual(pipeline['failStages'][0],config['.build_stages'][-1])
+  preservation=next(stage for stage in pipeline['stages'] if 'attachments' in stage.get('settings',{}))
+  self.assertEqual(pipeline['failStages'],[preservation])
   self.assertIn('$CNB_BUILD_ID:$CNB_PIPELINE_ID:$CNB_COMMIT',pipeline['failStages'][0]['if'])
-  first=config['.build_stages'][0]['script']
-  self.assertLess(first.index('rm -f -- cnb-verified-artifacts'),first.index('apk add'))
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);marker=root/'cnb-verified-artifacts';marker.write_text('stale')
+   # Stop at setup failure and check that a preceding run cannot export its marker.
+   result=subprocess.run(['bash','-c','apk() { return 23; }\n'+self.resolver_script()],
+                         cwd=root,capture_output=True,text=True)
+   self.assertEqual(result.returncode,23,result.stderr)
+   self.assertFalse(marker.exists())
 
  def test_normalizes_separators_and_invalidates_stale_marker(self):
   for arches in ('amd64,arm64','amd64;arm64'):
@@ -72,9 +86,28 @@ name='1panel-'+os.environ['BUILD_VERSION']+'-linux-'+arch+'.tar.gz'
   self.assertNotEqual(result.returncode,0);self.assertFalse((root/'cnb-verified-artifacts').exists())
 
  def test_cnb_uses_the_same_exact_automatic_resolver_toolchain(self):
-  import yaml
-  config=yaml.safe_load((ROOT/'.cnb.yml').read_text())
-  first=config['.build_pipeline'][0]['stages'][0]['script']
-  self.assertIn('test "$(node --version)" = v22.22.1',first)
-  self.assertIn('test "$(npm --version)" = 10.9.4',first)
-  self.assertLess(first.index('test "$(npm --version)"'),first.index('scripts/discover_inputs.py'))
+  setup='''
+apk() { :; }
+mkdir() { :; }
+docker() { echo fixture-toolchain; }
+node() { echo node >> "$FIXTURE_LOG"; echo "$FIXTURE_NODE"; }
+npm() { echo npm >> "$FIXTURE_LOG"; echo "$FIXTURE_NPM"; }
+python3() {
+  if [[ "$1" == -m && "$2" == venv ]]; then
+    echo venv >> "$FIXTURE_LOG"
+    return 23
+  fi
+  echo unexpected-python >> "$FIXTURE_LOG"
+  return 47
+}
+'''
+  for node,npm,expected,calls in (
+    ('v22.22.1','10.9.4',23,['node','npm','venv']),
+    ('v22.0.0','10.9.4',1,['node']),
+    ('v22.22.1','10.0.0',1,['node','npm'])):
+   with self.subTest(node=node,npm=npm),tempfile.TemporaryDirectory() as directory:
+    root=Path(directory)
+    env=dict(os.environ,FIXTURE_LOG=str(root/'calls'),FIXTURE_NODE=node,FIXTURE_NPM=npm)
+    result=subprocess.run(['bash','-c',setup+self.resolver_script()],cwd=root,env=env,capture_output=True,text=True)
+    self.assertEqual(result.returncode,expected,result.stderr)
+    self.assertEqual((root/'calls').read_text().splitlines(),calls)

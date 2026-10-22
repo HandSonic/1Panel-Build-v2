@@ -11,7 +11,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import scheduled_release as scheduled
-from test_ci_contract import ROOT, github_block
+from workflow_helpers import ROOT, github_jobs, step_by_id
 
 
 def release(*arches):
@@ -121,8 +121,8 @@ class ScheduledRelease(unittest.TestCase):
                 code = code.replace(old, new)
             self.assertEqual(eval(code.replace('!', ' not ').replace('&&', ' and ').replace('||', ' or '), {'__builtins__': {}}), expected)
         steps = writer['steps']
-        publish = next(i for i, step in enumerate(steps) if step.get('name') == 'Create or append verified canonical artifacts')
-        checksum = next(i for i, step in enumerate(steps) if step.get('name') == 'Fill missing scheduled checksums from server digests')
+        publish = steps.index(step_by_id(writer, 'publish'))
+        checksum = steps.index(step_by_id(writer, 'repair_checksums'))
         self.assertLess(publish, checksum)
         # Repairing an existing attachment's checksum is independent of new
         # package publication, including when that preceding step failed.
@@ -167,7 +167,7 @@ class ScheduledRelease(unittest.TestCase):
                        SCHEDULED_VERSION='v2.4.0', SCHEDULED_ARCHES=missing,
                        GITHUB_EVENT_NAME=event, GITHUB_REF='refs/heads/master',
                        GITHUB_OUTPUT=str(root / 'outputs'), GITHUB_ENV=str(root / 'env'))
-            result = subprocess.run(['bash', '-c', github_block('Resolve immutable build inputs')],
+            result = subprocess.run(['bash', '-c', step_by_id(github_jobs()['prepare'], 'inputs')['run']],
                                     cwd=root, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             outputs = (root / 'outputs').read_text()

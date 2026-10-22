@@ -49,7 +49,7 @@ def extract_verified_zip(path,destination):
             with archive.open(info) as src,(destination/info.filename).open('wb') as dst:shutil.copyfileobj(src,dst)
 
 
-def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_commit,contract):
+def fetch_ci_bundle(directory,version,run_id,artifact_id,expected_sha,expected_commit):
     if not str(run_id).isdigit() or not str(artifact_id).isdigit() or not re.fullmatch('[0-9a-f]{64}',expected_sha) or not re.fullmatch('[0-9a-f]{40}',expected_commit):
         raise ValueError('Exact run/artifact IDs, ZIP hash and built commit are required')
     run=github_json(f'repos/{UPSTREAM}/actions/runs/{run_id}')
@@ -90,22 +90,19 @@ def prepare(args):
     work=Path(args.work)
     if work.exists() and any(work.iterdir()):raise ValueError('Preparation work directory must be empty')
     work.mkdir(parents=True,exist_ok=True)
-    control=work/'control';control.mkdir();source=None;provenance=None
-    if args.upstream_source=='verified-ci':
-        source=work/'upstream-input'
-        provenance=fetch_ci_bundle(source,args.version,args.run_id,args.artifact_id,args.artifact_sha256,args.build_commit,contract)
-        from resolved_contract import activate_release
-        activate_release(source,args.version)
-        # The exact CI ZIP and producer are authenticated above. Legacy migration
-        # preserves payload bytes; validate the final package content once below.
-        from package_metadata import embed_legacy
-        embed_legacy(source,args.version)
-    elif contract=='upstream-matrix':raise ValueError('Upstream promotion requires a verified CI input, never old release bytes')
+    control=work/'control';control.mkdir();source=work/'upstream-input'
+    provenance=fetch_ci_bundle(source,args.version,args.run_id,args.artifact_id,args.artifact_sha256,args.build_commit)
+    from resolved_contract import activate_release
+    activate_release(source,args.version)
+    # The exact CI ZIP and producer are authenticated above. Legacy migration
+    # preserves payload bytes; validate the final package content once below.
+    from package_metadata import embed_legacy
+    embed_legacy(source,args.version)
     destination=work/'release'
     shutil.move(source,destination)
     files=validate_payloads(destination,contract,args.version)
     proof=make_proof(files,contract,args.version,args.tag,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'])
-    proof['upstream_input']=provenance or {'source_kind':'verified-public-release'}
+    proof['upstream_input']=provenance
     (control/PROOF).write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
     print(json.dumps({'contract':contract,'version':args.version,'package_count':sum(p.name.endswith('.tar.gz') for p in files),'publication_file_count':len(files)+1,'state':'validated_no_release_writes'}))
 
@@ -116,9 +113,8 @@ def publish(args):
     proof_path=work/'control'/PROOF
     if digest(proof_path)['sha256']!=os.environ.get('EXPECTED_VALIDATION_RECEIPT_SHA256'):
         raise ValueError('Downloaded validation receipt differs from the read-only preparation job')
-    if contract=='upstream-matrix':
-        from resolved_contract import activate_release
-        activate_release(work/'release',args.version)
+    from resolved_contract import activate_release
+    activate_release(work/'release',args.version)
     # The bound receipt covers the already validated files, including metadata.
     files=sorted((work/'release').iterdir(),key=lambda path:path.name)
     proof=json.loads(proof_path.read_text())
@@ -136,6 +132,7 @@ def publish(args):
     # Public downloads contain only packages and their standard SHA sidecars.
     from public_packages import package_files
     files=package_files(files)
+    file_facts={path.name:proof['files'][path.name] for path in files}
     journal=work/'control'/'repair-journal.json'
     if journal.exists():raise ValueError('Review the existing journal before retrying')
     if release.get('draft') is True:
@@ -154,24 +151,26 @@ def publish(args):
         if creation_path.exists():raise ValueError('Review the existing creation journal before retrying')
         creation=Journal(creation_path,{'phase':'resuming','repository':client.repo,'tag':client.tag,
                                       'release_id':release['id'],'upstream_input':upstream})
-        state=repair(client,files,journal,expected_snapshot=release_snapshot(release),expected_draft=release)
+        state=repair(client,files,journal,expected_files=file_facts,
+                     expected_snapshot=release_snapshot(release),expected_draft=release)
         if state['phase']!='complete':raise ValueError('Draft recovery upload did not complete')
-        finalize_release(client,release,files,creation,fallback_assets=state.get('verified_legacy_assets'))
+        finalize_release(client,release,file_facts,creation,fallback_assets=state.get('verified_legacy_assets'))
         print(json.dumps({'state':creation.state['phase'],'repository':args.repository,'tag':args.tag}))
         return
     names={path.name for path in files}
     preserved={asset['name']:asset for asset in release['assets'] if asset['name'] not in names}
-    state=repair(client,files,journal,preserved_assets=preserved,expected_snapshot=release_snapshot(release))
+    state=repair(client,files,journal,expected_files=file_facts,
+                 preserved_assets=preserved,expected_snapshot=release_snapshot(release))
     print(json.dumps({'state':state['phase'],'repository':args.repository,'tag':args.tag}))
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('operation',choices=['prepare','publish'])
     parser.add_argument('--repository',required=True);parser.add_argument('--version',required=True);parser.add_argument('--tag',required=True)
-    parser.add_argument('--work',type=Path,required=True);parser.add_argument('--upstream-source',choices=['release','verified-ci'],default='verified-ci')
+    parser.add_argument('--work',type=Path,required=True)
     parser.add_argument('--run-id',default='');parser.add_argument('--artifact-id',default='');parser.add_argument('--artifact-sha256',default='');parser.add_argument('--build-commit',default='')
     args=parser.parse_args()
     if args.operation=='prepare':prepare(args)
     else:
-        if os.environ.get('GITHUB_EVENT_NAME')!='workflow_dispatch' or os.environ.get('PUBLICATION_OPERATION')!={'upstream-matrix':'promote-existing'}[contract_for_repo(args.repository)]:
+        if os.environ.get('GITHUB_EVENT_NAME')!='workflow_dispatch' or os.environ.get('PUBLICATION_OPERATION')!='promote-existing':
             raise SystemExit('Publication is permitted only by the explicitly selected manual promotion/repair mode')
         publish(args)

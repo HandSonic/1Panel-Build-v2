@@ -165,11 +165,12 @@ class Compat(unittest.TestCase):
 
 class WorkflowIntegration(unittest.TestCase):
     def test_loong64_requires_runtime_smoke_before_packaging(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/build.yml').read_text()
-        smoke = workflow.index('      - name: Verify SQLite compatibility on native and loong64 engines')
-        build = workflow.index('      - name: Build and validate every requested architecture')
-        self.assertLess(smoke, build)
-        block = workflow[smoke:build]
-        self.assertIn("if: matrix.arch == 'loong64'", block)
-        self.assertIn('--qemu qemu-loongarch64', block)
-        self.assertNotIn('continue-on-error', block)
+        import shlex
+        from workflow_helpers import github_jobs, step_by_id
+        job = github_jobs()['compile']
+        smoke = step_by_id(job, 'sqlite_compat')
+        self.assertLess(job['steps'].index(smoke), job['steps'].index(step_by_id(job, 'package')))
+        self.assertEqual(smoke['if'], "matrix.arch == 'loong64'")
+        command = shlex.split(smoke['run'])
+        self.assertEqual(command[command.index('--qemu') + 1], 'qemu-loongarch64')
+        self.assertFalse(smoke.get('continue-on-error', False))

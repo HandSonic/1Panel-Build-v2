@@ -114,13 +114,12 @@ def publish(args,client=None):
     if before is not None:client.bind_release(before['id'])
     from public_packages import package_files, metadata_inventory
     published=package_files(files)
-    preserved={}
+    preserved={};derived={}
     expected_snapshot=snapshot(before)
     if before is not None and before.get('draft') is False:
         pairs,actual=metadata_inventory(before,args.version)
         preserved={asset['name']:asset for asset in before['assets']}
         complete_names={asset['name'] for pair in pairs.values() for asset in pair}
-        derived={}
         for path in published:
             if path.name in actual and path.name not in complete_names:
                 old=actual[path.name]
@@ -133,7 +132,7 @@ def publish(args,client=None):
                     sidecar.write_text(old_sha[7:]+'  '+path.name+'\n')
                     derived[sidecar.name]=sidecar
                 else:
-                    facts=digest(path)
+                    facts=proof['files'][path.name]
                     if old.get('size')!=facts['bytes'] or old.get('digest')!='sha256:'+facts['sha256']:
                         raise ValueError('Incomplete public pair differs from this build; explicit repair required')
         published=[derived.get(path.name,path) for path in published if path.name not in actual]
@@ -168,11 +167,12 @@ def publish(args,client=None):
         client.bind_release(created['id'])
         if draft_identity(client.release())!=draft_identity(created):raise ValueError('Created draft differs from bound identity')
         expected_snapshot=snapshot(created)
-    state=repair(client,published,journal,expected_snapshot=expected_snapshot,preserved_assets=preserved,expected_draft=created)
+    published_facts={path.name:(digest(path) if path.name in derived else proof['files'][path.name]) for path in published}
+    state=repair(client,published,journal,expected_files=published_facts,
+                 expected_snapshot=expected_snapshot,preserved_assets=preserved,expected_draft=created)
     if state['phase']!='complete':raise ValueError('Automatic upload did not complete')
     if created is not None:
-        current_producer(current,os.environ['GITHUB_SHA'])
-        finalize_release(client,created,published,creation,fallback_assets=state.get('verified_legacy_assets'))
+        finalize_release(client,created,published_facts,creation,fallback_assets=state.get('verified_legacy_assets'))
     return 'published'
 
 

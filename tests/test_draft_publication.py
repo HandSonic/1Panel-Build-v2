@@ -211,6 +211,17 @@ class DraftTransactions(unittest.TestCase):
         self.assertTrue(client.value['draft'])
         self.assertEqual(client.value['assets'], [])
 
+    def test_finalization_uses_verified_remote_facts_after_local_payload_cleanup(self):
+        client=TransportGitHub(draft())
+        def uploaded(client,files,*args,**kwargs):
+            state=repair(client,files,*args,**kwargs)
+            for path in files:path.unlink()
+            return state
+        with patch.object(ap,'optional_release',OPTIONAL_RELEASE),patch.object(ap,'repair',side_effect=uploaded):
+            self.assertEqual(ap.publish(self.args,client),'published')
+        self.assertFalse(client.value['draft'])
+        self.assertEqual({asset['name'] for asset in client.value['assets']},{path.name for path in self.files[:2]})
+
 
 if __name__ == '__main__':
     unittest.main()

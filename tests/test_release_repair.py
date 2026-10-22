@@ -45,6 +45,17 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(client.calls,[])
         for key in before:self.assertEqual(client.assets[key],before[key])
 
+    def test_changed_local_bytes_cannot_replace_the_authenticated_file_facts(self):
+        from release_asset_repair import digest
+        client,files,journal=self.fixture();before=copy.deepcopy(client.assets)
+        authenticated={path.name:digest(path) for path in files}
+        files[0].write_bytes(b'bad archive')  # Same size as the authenticated archive.
+        with self.assertRaisesRegex(ValueError,'authenticated file facts'):
+            repair(client,files,journal,expected_files=authenticated)
+        self.assertEqual(client.calls,[])
+        self.assertEqual(client.assets,before)
+        self.assertFalse(journal.exists())
+
     def test_legacy_readback_is_pinned_to_asset_id_during_name_reuse(self):
         client,files,journal=self.fixture();files=files[:1]
         original=b'oldAA';replacement=b'newBB';name=files[0].name
