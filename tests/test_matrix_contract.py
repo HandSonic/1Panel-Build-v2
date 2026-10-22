@@ -220,6 +220,113 @@ class MatrixContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):m.verify_jobs(value,run,jobs,'a'*40)
 
 
+class InheritedJobCopyTests(unittest.TestCase):
+    def fixture(self):
+        value,run,jobs=MatrixContractTests().package_fixture()
+        original=jobs[3]
+        # GitHub run #524 returned this shape: a new attempt/ID created the
+        # next day, preserving the complete execution metadata from attempt 1.
+        original.update(id=114777546673,run_attempt=1,created_at='2026-10-12T10:54:44Z',
+                        started_at='2026-10-12T10:54:46Z',completed_at='2026-10-12T10:55:58Z',
+                        runner_id=1000013085,runner_name='GitHub Actions 1000013085',
+                        runner_group_id=0,runner_group_name='GitHub Actions',labels=['ubuntu-latest'],
+                        steps=[{'name':'Package','number':1,'status':'completed','conclusion':'success',
+                                'started_at':'2026-10-12T10:54:46Z','completed_at':'2026-10-12T10:55:58Z'}],
+                        html_url=f'https://github.com/{m.REPOSITORY}/actions/runs/10/job/114777546673')
+        inherited=copy.deepcopy(original)
+        inherited.update(id=115090810557,run_attempt=2,created_at='2026-10-13T01:53:43Z',runner_group_id=None,
+                         html_url=f'https://github.com/{m.REPOSITORY}/actions/runs/10/job/115090810557')
+        jobs.append(inherited)
+        value['outcomes'][0].update(job_id=original['id'],job_url=original['html_url'])
+        results={arch:dict(schema_version=1,version=value['version'],architecture=arch,producer_run_id=10,
+                          producer_run_attempt=1 if arch=='amd64' else 2,producer_head_sha='a'*40,
+                          build_repository_commit='a'*40,generation='10-44',
+                          status='success' if arch=='amd64' else 'failure',
+                          reason='' if arch=='amd64' else 'Package step failure')
+                 for arch in value['requested_architectures']}
+        return value,run,jobs,results,original,inherited
+
+    def test_copied_success_keeps_record_and_historical_producer_bound_to_original_job(self):
+        for group in (None,0):
+            value,run,jobs,results,original,inherited=self.fixture()
+            inherited['runner_group_id']=group
+            effective=m.effective_jobs(jobs,10,2,'a'*40)
+            self.assertIs(next(job for job in effective if job['name']=='compile (amd64)'),original)
+            outcomes=m.collect_recorded(jobs,results,value['requested_architectures'],10,2,
+                                        'a'*40,'a'*40,'10-44',value['version'])
+            self.assertEqual(outcomes,value['outcomes'])
+            self.assertEqual(m.verify_jobs(value,run,jobs,'a'*40),['amd64'])
+        # Historical manifests bind native job failures rather than package
+        # step reports; their original successful job ID must also survive.
+        value,run,jobs,_,_,_=self.fixture();value.pop('outcome_source')
+        jobs[4]['conclusion']='failure';value['outcomes'][1]['reason']='GitHub job failure'
+        jobs=[job for job in jobs if job['name']!='matrix_status']
+        self.assertEqual(m.verify_jobs(value,run,jobs,'a'*40),['amd64'])
+
+    def test_genuine_new_executions_are_decisive_even_when_old_success_exists(self):
+        for conclusion in ('success','failure','timed_out','cancelled','skipped',None):
+            value,run,jobs,results,original,newest=self.fixture()
+            newest.update(created_at='2026-10-13T01:53:43Z',started_at='2026-10-13T01:53:45Z',
+                          completed_at='2026-10-13T01:54:57Z' if conclusion else None,
+                          status='completed' if conclusion else 'in_progress',conclusion=conclusion)
+            with self.subTest(conclusion=conclusion):
+                effective=m.effective_jobs(jobs,10,2,'a'*40)
+                self.assertIs(next(job for job in effective if job['name']=='compile (amd64)'),newest)
+                with self.assertRaisesRegex(ValueError,'older execution: amd64'):
+                    m.collect_recorded(jobs,results,value['requested_architectures'],10,2,
+                                       'a'*40,'a'*40,'10-44',value['version'])
+                with self.assertRaises(ValueError):m.verify_jobs(value,run,jobs,'a'*40)
+
+    def test_copied_metadata_must_authenticate_one_exact_original_execution(self):
+        for fault in ('steps','runner','group','labels','started','failed','missing_field','missing_original',
+                      'bad_original_created','unzoned','wrong_run','wrong_head','duplicate_id','duplicate_attempt'):
+            value,run,jobs,_,original,inherited=self.fixture()
+            if fault=='steps':inherited['steps'][0]['name']='Different execution'
+            elif fault=='runner':inherited['runner_id']+=1
+            elif fault=='group':inherited['runner_group_id']=7
+            elif fault=='labels':inherited['labels']=['self-hosted']
+            elif fault=='started':inherited['started_at']='2026-10-12T10:54:47Z'
+            elif fault=='failed':inherited['conclusion']='failure'
+            elif fault=='missing_field':inherited.pop('steps')
+            elif fault=='missing_original':jobs.remove(original)
+            elif fault=='bad_original_created':original['created_at']='2026-10-12T10:55:00Z'
+            elif fault=='unzoned':inherited['created_at']='2026-10-13T01:53:43'
+            elif fault=='wrong_run':inherited['run_id']=11
+            elif fault=='wrong_head':inherited['head_sha']='b'*40
+            elif fault=='duplicate_id':inherited['id']=original['id']
+            elif fault=='duplicate_attempt':inherited['run_attempt']=1
+            with self.subTest(fault=fault),self.assertRaises(ValueError):
+                m.effective_jobs(jobs,10,2,'a'*40)
+
+    def test_ambiguous_originals_and_copies_without_timing_evidence_never_inherit(self):
+        _,_,jobs,_,original,inherited=self.fixture()
+        second=copy.deepcopy(original)
+        second.update(id=99,run_attempt=2)
+        inherited['run_attempt']=3
+        with self.assertRaisesRegex(ValueError,'ambiguous original'):
+            m.effective_jobs(jobs+[second],10,3,'a'*40)
+        for missing in ('created_at','completed_at'):
+            value,_,jobs,results,_,inherited=self.fixture();inherited.pop(missing)
+            with self.subTest(missing=missing):
+                self.assertEqual(next(job for job in m.effective_jobs(jobs,10,2,'a'*40)
+                                      if job['name']=='compile (amd64)')['id'],inherited['id'])
+                with self.assertRaisesRegex(ValueError,'older execution: amd64'):
+                    m.collect_recorded(jobs,results,value['requested_architectures'],10,2,
+                                       'a'*40,'a'*40,'10-44',value['version'])
+
+    def test_skipped_nodes_with_late_creation_remain_skipped_and_future_copies_are_ignored(self):
+        value,run,jobs,_,original,inherited=self.fixture()
+        skipped=dict(jobs[0],id=77,name='candidate',status='completed',conclusion='skipped',steps=[],
+                     created_at='2026-10-22T13:36:44Z',completed_at='2026-10-22T13:36:34Z')
+        self.assertEqual(m.verify_jobs(value,run,jobs+[skipped],'a'*40),['amd64'])
+        future=dict(inherited,id=78,run_attempt=3,head_sha='b'*40)
+        self.assertEqual(next(job for job in m.effective_jobs(jobs+[future],10,2,'a'*40)
+                              if job['name']=='compile (amd64)')['id'],original['id'])
+        skipped.update(name='compile (amd64)',run_attempt=3)
+        self.assertIs(next(job for job in m.effective_jobs(jobs+[skipped],10,3,'a'*40)
+                           if job['name']=='compile (amd64)'),skipped)
+
+
 class MergedPRMatrixTests(unittest.TestCase):
     def fixture(self):
         value,run,jobs=MatrixContractTests().fixture()
