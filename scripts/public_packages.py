@@ -12,7 +12,7 @@ def metadata_inventory(release, version):
     Automatic gap checks trust the repository's asset names. They deliberately
     do not download packages or require historical digest/size metadata.
     """
-    if release.get('draft') is not False or release.get('tag_name') != version or release.get('prerelease', False) is not ('-' in version):
+    if release.get('draft') is not False or release.get('tag_name') != version or release.get('prerelease') is not ('-' in version):
         raise ValueError('Canonical public release identity mismatch')
     assets = {a['name']: a for a in release['assets']}
     if len(assets) != len(release['assets']):

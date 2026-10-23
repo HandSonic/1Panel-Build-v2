@@ -89,9 +89,10 @@ class ManualRecovery(unittest.TestCase):
     version='v2.4.0'
     built_commit='a'*40
 
-    def fixture(self,root,*,draft,existing=False,change_tag=False,mutation=None):
+    def fixture(self,root,*,draft,existing=False,change_tag=False,mutation=None,version=None):
+        version=version or self.version
         work=root/'work';(work/'release').mkdir(parents=True);(work/'control').mkdir()
-        archive=work/'release'/f'1panel-{self.version}-linux-amd64.tar.gz'
+        archive=work/'release'/f'1panel-{version}-linux-amd64.tar.gz'
         archive.write_bytes(b'verified CI package bytes')
         checksum=archive.with_name(archive.name+'.sha256')
         checksum.write_text(sha(archive.read_bytes())+'  '+archive.name+'\n')
@@ -100,7 +101,7 @@ class ManualRecovery(unittest.TestCase):
                   'outcomes':[{'architecture':'amd64','status':'success'}]}
         proof=dict(expected,upstream_input={'repository':manual.UPSTREAM,'run_id':10,'artifact_id':22,
                    'artifact_sha256':'b'*64,'build_repository_commit':self.built_commit})
-        release={'id':17,'tag_name':self.version,'name':self.version,'draft':draft,'prerelease':False,
+        release={'id':17,'tag_name':version,'name':version,'draft':draft,'prerelease':'-' in version,
                  'body':'','target_commitish':self.built_commit,
                  'author':{'id':41898282,'login':'github-actions[bot]','type':'Bot'},'assets':[]}
         if existing:
@@ -109,7 +110,7 @@ class ManualRecovery(unittest.TestCase):
         if mutation=='target':release['target_commitish']='c'*40
         if mutation=='author':release['author']={'id':5,'login':'someone','type':'User'}
         if mutation=='provenance':proof['upstream_input']['artifact_id']=0
-        remote=RemoteRelease(self.version,release,files,change_tag=change_tag)
+        remote=RemoteRelease(version,release,files,change_tag=change_tag)
         if mutation=='bytes':
             # No trustworthy digest is available, so the fallback download
             # must detect corrupt bytes even when their size is unchanged.
@@ -117,7 +118,7 @@ class ManualRecovery(unittest.TestCase):
             remote.contents[100]=b'x'*len(remote.contents[100])
         proof_path=work/'control'/manual.PROOF
         proof_path.write_text(json.dumps(proof))
-        args=SimpleNamespace(repository=manual.UPSTREAM,version=self.version,tag=self.version,work=work)
+        args=SimpleNamespace(repository=manual.UPSTREAM,version=version,tag=version,work=work)
         return args,remote,files,expected,proof_path
 
     def publish(self,args,remote,files,expected,proof_path):
@@ -139,6 +140,63 @@ class ManualRecovery(unittest.TestCase):
             self.assertEqual(remote.releases[18]['assets'],[])
             self.assertTrue(all(release_id==17 for release_id,_ in remote.uploads))
             self.assertEqual(remote.downloads,[])
+
+    def test_public_repair_requires_the_correct_stable_or_prerelease_channel(self):
+        for version in ('v2.4.0','v2.4.0-beta.1'):
+            for correct in (True,False):
+                with self.subTest(version=version,correct=correct),tempfile.TemporaryDirectory() as temporary:
+                    args,remote,files,expected,proof=self.fixture(Path(temporary),draft=False,version=version)
+                    if not correct:remote.releases[17]['prerelease']=not remote.releases[17]['prerelease']
+                    before=copy.deepcopy(remote.releases)
+                    if correct:
+                        self.publish(args,remote,files,expected,proof)
+                        self.assertEqual(remote.uploads,[(17,path.name) for path in files])
+                        self.assertEqual(remote.releases[17]['prerelease'],'-' in version)
+                    else:
+                        with self.assertRaisesRegex(ValueError,'Canonical public release identity mismatch'):
+                            self.publish(args,remote,files,expected,proof)
+                        self.assertEqual(remote.uploads,[])
+                        self.assertEqual(remote.releases,before)
+                        self.assertTrue(all('--method' not in call for call in remote.calls))
+
+    def test_public_channel_drift_before_upload_never_mutates_the_release(self):
+        # Bound read 1 checks discovery, 2 enters repair, and 3 precedes upload.
+        for version in ('v2.4.0','v2.4.0-beta.1'):
+            for change_at in (1,2,3):
+                for mutation in ('opposite','non-boolean','missing'):
+                    with self.subTest(version=version,change_at=change_at,mutation=mutation),tempfile.TemporaryDirectory() as temporary:
+                        args,remote,files,expected,proof=self.fixture(Path(temporary),draft=False,version=version)
+                        run=remote.run;reads=[0]
+                        def changed_channel(*args):
+                            if args==('api',f'repos/{remote.repo}/releases/17'):
+                                reads[0]+=1
+                                if reads[0]==change_at:
+                                    if mutation=='missing':remote.releases[17].pop('prerelease')
+                                    else:remote.releases[17]['prerelease']=int('-' in version) if mutation=='non-boolean' else not ('-' in version)
+                            return run(*args)
+                        remote.run=changed_channel
+                        with self.assertRaisesRegex(ValueError,'Release (.*changed|channel metadata)'):
+                            self.publish(args,remote,files,expected,proof)
+                        self.assertEqual(remote.uploads,[])
+                        self.assertEqual(remote.releases[17]['assets'],[])
+                        self.assertTrue(all('--method' not in call for call in remote.calls))
+
+    def test_public_channel_drift_during_readback_stops_further_uploads(self):
+        for version in ('v2.4.0','v2.4.0-beta.1'):
+            with self.subTest(version=version),tempfile.TemporaryDirectory() as temporary:
+                args,remote,files,expected,proof=self.fixture(Path(temporary),draft=False,version=version)
+                run=remote.run;reads=[0]
+                def changed_channel(*args):
+                    if args==('api',f'repos/{remote.repo}/releases/17'):
+                        reads[0]+=1
+                        if reads[0]==4:remote.releases[17]['prerelease']=not ('-' in version)
+                    return run(*args)
+                remote.run=changed_channel
+                with self.assertRaisesRegex(ValueError,'Release identity or visibility changed'):
+                    self.publish(args,remote,files,expected,proof)
+                self.assertEqual(remote.uploads,[(17,files[0].name)])
+                self.assertEqual([asset['name'] for asset in remote.releases[17]['assets']],[files[0].name])
+                self.assertFalse(any('PATCH' in call or 'DELETE' in call for call in remote.calls))
 
     def test_public_gap_fill_preserves_other_assets_and_refuses_payload_conflicts(self):
         for conflict in (False,True):

@@ -438,41 +438,6 @@ def verify_jobs(value, run, jobs, expected_commit, execution_commit=None, *, all
     return successful
 
 
-def verify_current_jobs(value, run, jobs, expected_commit, run_id, attempt):
-    """Validate the current non-PR producer before its own publication jobs finish."""
-    if run.get('event') not in ('push', 'schedule', 'workflow_dispatch'):
-        raise ValueError('Automatic publication requires a trusted non-PR execution')
-    if value.get('producer_run_id') != run_id or value.get('producer_run_attempt') != attempt:
-        raise ValueError('Automatic publication must consume its own exact attempt')
-    if run.get('id') != run_id or run.get('run_attempt') != attempt or run.get('head_sha') != value.get('producer_head_sha'):
-        raise ValueError('Producer run identity mismatch')
-    verify_execution(run, expected_commit)
-    if run.get('path', '').split('@')[0] != '.github/workflows/build.yml':
-        raise ValueError('Producer is not a permitted build workflow')
-    if value.get('outcome_source') == 'package-step':
-        # Current automatic publication uses the native DAG and its bound
-        # preparation receipt. This API verifier must not synthesize the final
-        # matrix gate while that producer is still running.
-        return verify_jobs(value, run, jobs, expected_commit)
-    if run.get('status') in PENDING_STATUSES - {'in_progress'} and run.get('conclusion') is None:
-        raise PendingJobs('Current producer run not yet visible as in_progress')
-    if run.get('status') not in ('in_progress', 'completed') or run.get('conclusion') not in (None, 'success', 'failure'):
-        raise ValueError('Current workflow is cancelled or unavailable')
-    if run.get('status')=='completed':
-        return verify_jobs(value,run,jobs,expected_commit)
-    jobs = effective_jobs(jobs, run_id, attempt, value.get('producer_head_sha'))
-    pending = {'publication_prepare', 'automatic_publication', 'publication_repair', 'candidate'}
-    checked = []
-    for job in jobs:
-        if job_pending(job):
-            if job.get('name') not in pending:
-                raise PendingJobs('Unfinished shared or architecture gate: ' + str(job.get('name')))
-            continue
-        checked.append(job)
-    terminal = dict(run, status='completed', conclusion='failure' if any(r['status']=='failure' for r in value['outcomes']) else 'success')
-    return verify_jobs(value, terminal, checked, expected_commit)
-
-
 if __name__ == '__main__':
     if len(sys.argv) != 7 or sys.argv[1] != 'record':
         raise SystemExit('Usage: matrix_contract.py record DIST VERSION ARCH GENERATION RESULT')
