@@ -134,7 +134,9 @@ def asset_identity(asset):
 
 def release_snapshot(release):
     if release is None:return None
+    if type(release.get('prerelease')) is not bool:raise ValueError('Release channel metadata is missing or invalid')
     return {'id':release['id'],'draft':release['draft'],'tag_name':release['tag_name'],
+            'prerelease':release['prerelease'],
             # Public notes are editable prose; only owned draft transactions
             # bind their exact text. No append operation writes public notes.
             'body':(release.get('body') or '') if release.get('draft') is True else '',
@@ -170,12 +172,12 @@ def repair(client, files, journal_path, *, expected_files=None, expected_snapsho
     journal=Journal(journal_path,state)
     known={name:asset_identity(asset) for name,asset in assets.items()}
     draft_baseline=draft_metadata(expected_draft or before) if before.get('draft') is True else None
-    identity={key:before.get(key) for key in ('id','tag_name','draft')}
+    identity={key:before.get(key) for key in ('id','tag_name','draft','prerelease')}
     def inventory():
         release=client.release()
         if draft_baseline is not None and draft_metadata(release)!=draft_baseline:
             raise ValueError('Draft release metadata changed during publication')
-        if any(release.get(key)!=value for key,value in identity.items()):
+        if release.get('prerelease') is not identity['prerelease'] or any(release.get(key)!=value for key,value in identity.items()):
             raise ValueError('Release identity or visibility changed during publication')
         rows=release['assets']
         result={a['name']:asset_identity(a) for a in rows}

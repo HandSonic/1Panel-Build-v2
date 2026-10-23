@@ -162,7 +162,7 @@ class AutomaticTransaction(unittest.TestCase):
         self.assertEqual(c.calls, [])
 
     def test_writer_ignores_obsolete_plan_and_noops_when_another_writer_finished(self):
-        c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False,
+        c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False, 'prerelease': False,
             'body': '', 'assets': [dict(id=91+i,name=p.name,size=facts(p)['bytes'],
                 digest='sha256:'+facts(p)['sha256']) for i,p in enumerate(self.files[:2])]})
         (self.work/'control'/'automatic-plan.json').write_text('{"operation":"create","before":null}')
@@ -234,7 +234,7 @@ class RealAppendTransactions(unittest.TestCase):
                   3:(f'1panel-{Client.tag}-linux-amd64.tar.gz.sha256',b'archive checksum'),
                   4:(f'1panel-{Client.tag}-linux-arm.tar.gz.backup-012345abcdef',b'old missing branch')}
         release=c.release
-        c.release=lambda:dict(release(),id=8,draft=False,tag_name=Client.tag)
+        c.release=lambda:dict(release(),id=8,draft=False,prerelease=False,tag_name=Client.tag)
         # Rebuilding an already-public architecture must not replace its old bytes.
         self.files[0].write_bytes(b'rebuilt amd64 archive')
         self.proof['files'][self.files[0].name]=facts(self.files[0])
@@ -315,7 +315,7 @@ class PrepareControlFlow(unittest.TestCase):
         directory=self.root/'previous'
         self.payload(directory,successful,10,'a'*40)
         packages=[p for p in directory.iterdir() if p.name.endswith(('.tar.gz','.tar.gz.sha256'))]
-        client=Client({'id':8,'tag_name':Client.tag,'draft':False,'body':'kept notes',
+        client=Client({'id':8,'tag_name':Client.tag,'draft':False,'prerelease':False,'body':'kept notes',
             'assets':[{'id':i+1,'name':p.name,'size':p.stat().st_size,
                        'digest':'sha256:'+facts(p)['sha256']} for i,p in enumerate(packages)]})
         return client

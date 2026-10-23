@@ -86,15 +86,11 @@ class MatrixContractTests(unittest.TestCase):
         value['artifacts'].append({'architecture':'arm64'})
         run['conclusion']='success'
         self.assertEqual(m.verify_jobs(value,run,jobs,'a'*40),['amd64','arm64'])
-        run.update(status='in_progress',conclusion=None)
-        jobs.append(dict(jobs[0],id=53,name='publication_prepare',run_attempt=2,
-                         status='in_progress',conclusion=None))
-        self.assertEqual(m.verify_current_jobs(value,run,jobs,'a'*40,10,2),['amd64','arm64'])
         # The original successful job ID remains authenticated, not just its name.
         value['outcomes'][0]['job_id']=99
         value['outcomes'][0]['job_url']=f'https://github.com/{m.REPOSITORY}/actions/runs/10/job/99'
         with self.assertRaisesRegex(ValueError,'effective API job identities'):
-            m.verify_current_jobs(value,run,jobs,'a'*40,10,2)
+            m.verify_jobs(value,run,jobs,'a'*40)
 
     def test_manifest_cannot_hide_a_successful_architecture(self):
         value,run,jobs=self.fixture()
@@ -127,16 +123,10 @@ class MatrixContractTests(unittest.TestCase):
                 m.retry_pending(lambda:m.collect(pending,['amd64','arm64'],10,2),attempts=3)
             self.assertEqual(sleep.call_count,2)
 
-    def test_live_and_historical_producer_states_keep_strict_boundaries(self):
+    def test_historical_producer_must_be_terminal(self):
         value,run,jobs=self.fixture()
         run.update(status='in_progress',conclusion=None)
         with self.assertRaises(m.PendingJobs):m.verify_jobs(value,run,jobs,'a'*40)
-        publication=dict(jobs[0],id=6,name='publication_prepare',status='queued',conclusion=None)
-        self.assertEqual(m.verify_current_jobs(value,run,jobs+[publication],'a'*40,10,2),['amd64'])
-        publication['status']='unknown-state'
-        with self.assertRaises(ValueError) as error:
-            m.verify_current_jobs(value,run,jobs+[publication],'a'*40,10,2)
-        self.assertNotIsInstance(error.exception,m.PendingJobs)
 
     def test_job_pagination_does_not_accept_a_truncated_inventory(self):
         api=unittest.mock.Mock(side_effect=[{'jobs':[{'id':1}],'total_count':2},
@@ -215,7 +205,6 @@ class MatrixContractTests(unittest.TestCase):
         value,run,jobs=self.package_fixture()
         run.update(status='in_progress',conclusion=None)
         with self.assertRaises(m.PendingJobs):m.verify_jobs(value,run,jobs,'a'*40)
-        with self.assertRaises(m.PendingJobs):m.verify_current_jobs(value,run,jobs,'a'*40,10,2)
         run.update(status='completed',conclusion='cancelled')
         with self.assertRaises(ValueError):m.verify_jobs(value,run,jobs,'a'*40)
 

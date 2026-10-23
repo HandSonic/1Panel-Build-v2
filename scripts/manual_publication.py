@@ -121,16 +121,17 @@ def publish(args):
     expected=make_proof(files,contract,args.version,args.tag,args.repository,os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_SHA'],
                         workflow_run_attempt=proof.get('workflow_run_attempt'))
     if any(proof.get(k)!=v for k,v in expected.items()):raise ValueError('Prepared publication receipt changed')
+    from public_packages import metadata_inventory,package_files
     client=GitHub(args.repository,args.tag)
     release=optional_release(client)
     if release is None:raise ValueError('Existing-release repair requires a public release or an owned recovery draft')
+    if release.get('draft') is not True:metadata_inventory(release,args.version)
     client.bind_release(release['id'])
     observed=client.release()
     if release_snapshot(observed)!=release_snapshot(release):raise ValueError('Release changed before manual publication')
     if release.get('draft') is True and any(observed.get(key)!=release.get(key) for key in ('name','target_commitish','prerelease','author')):
         raise ValueError('Draft metadata changed before manual publication')
     # Public downloads contain only packages and their standard SHA sidecars.
-    from public_packages import package_files
     files=package_files(files)
     file_facts={path.name:proof['files'][path.name] for path in files}
     journal=work/'control'/'repair-journal.json'
