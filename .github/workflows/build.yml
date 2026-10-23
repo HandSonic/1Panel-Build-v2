@@ -277,7 +277,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ needs.prepare.outputs.version }}
-      arches: ${{ needs.prepare.outputs.arches }}
       artifact_id: ${{ steps.bundle.outputs.artifact-id }}
       complete: ${{ steps.aggregate.outputs.complete }}
     env:
@@ -327,7 +326,6 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       VERSION: ${{ needs.build.outputs.version }}
-      TARGET_ARCHES: ${{ needs.build.outputs.arches }}
     steps:
       - name: Set up isolated configuration parser
         run: |
