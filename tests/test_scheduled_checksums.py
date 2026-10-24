@@ -41,6 +41,23 @@ class ChecksumClient(FakeGitHub):
 
 
 class ScheduledChecksums(unittest.TestCase):
+    def test_incomplete_upload_stops_checksum_repair_without_writes(self):
+        for suffix in ('', '.sha256'):
+            client = ChecksumClient()
+            release = client.release
+            name = f'1panel-{client.tag}-linux-arm64.tar.gz' + suffix
+            def incomplete():
+                value = release()
+                next(row for row in value['assets'] if row['name'] == name).update(state='starter', size=0, digest=None)
+                return value
+            client.release = incomplete
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(scheduled, 'GitHub', return_value=client):
+                with self.assertRaisesRegex(ValueError, 'Incomplete public asset'):
+                    scheduled.repair_checksums(client.repo, client.tag, Path(directory) / 'work')
+            self.assertEqual(client.calls, [])
+            self.assertEqual(client.downloads, [])
+
     def test_repairs_only_missing_sidecar_on_bound_release_and_preserves_all_assets(self):
         client = ChecksumClient()
         before = copy.deepcopy(client.assets)

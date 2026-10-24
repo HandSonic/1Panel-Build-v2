@@ -14,7 +14,7 @@ class FakeGitHub:
     def __init__(self):
         self.assets={1:('package.tar.gz',b'old archive'),2:('checksums.txt',b'old checksum')}
         self.body='old release notes';self.calls=[];self.downloads=[]
-    def release(self):return {'body':self.body,'assets':[{'id':i,'name':n,'size':len(b),'digest':'sha256:'+hashlib.sha256(b).hexdigest()} for i,(n,b) in self.assets.items()]}
+    def release(self):return {'body':self.body,'assets':[{'id':i,'name':n,'state':'uploaded','size':len(b),'digest':'sha256:'+hashlib.sha256(b).hexdigest()} for i,(n,b) in self.assets.items()]}
     def bind_release(self,release_id):self.release_id=release_id
     def upload(self,path):self.assets[max(self.assets)+1]=(path.name,path.read_bytes());self.calls.append(('upload',path.name))
     def download(self,name,directory):

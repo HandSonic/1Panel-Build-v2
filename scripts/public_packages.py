@@ -9,8 +9,8 @@ def package_files(files):
 def metadata_inventory(release, version):
     """List complete architecture pairs and individual canonical members.
 
-    Automatic gap checks trust the repository's asset names. They deliberately
-    do not download packages or require historical digest/size metadata.
+    Automatic gap checks require completed, nonempty uploads. They deliberately
+    do not download packages or require historical digest metadata.
     """
     if release.get('draft') is not False or release.get('tag_name') != version or release.get('prerelease') is not ('-' in version):
         raise ValueError('Canonical public release identity mismatch')
@@ -21,7 +21,11 @@ def metadata_inventory(release, version):
     for arch in ARCHES:
         name = f'1panel-{version}-linux-{arch}.tar.gz'
         for member in (name,name+'.sha256'):
-            if member in assets:members[member]=assets[member]
+            if member in assets:
+                asset = assets[member]
+                if asset.get('state') != 'uploaded' or type(asset.get('size')) is not int or asset['size'] <= 0:
+                    raise ValueError(f'Incomplete public asset requires explicit repair: {member} (id={asset.get("id")})')
+                members[member]=asset
         if name in assets and name + '.sha256' in assets:
             found[arch] = (assets[name], assets[name + '.sha256'])
     return found,members

@@ -69,7 +69,7 @@ class RemoteRelease(GitHub):
                 raise AssertionError('The transaction attempted to overwrite an existing asset')
             data=Path(args[args.index('--input')+1]).read_bytes()
             asset_id=max(self.contents,default=99)+1
-            asset={'id':asset_id,'name':name,'size':len(data),'digest':'sha256:'+sha(data)}
+            asset={'id':asset_id,'name':name,'state':'uploaded','size':len(data),'digest':'sha256:'+sha(data)}
             self.contents[asset_id]=data;release['assets'].append(asset)
             self.uploads.append((release_id,name))
             return json.dumps(asset)
@@ -105,7 +105,7 @@ class ManualRecovery(unittest.TestCase):
                  'body':'','target_commitish':self.built_commit,
                  'author':{'id':41898282,'login':'github-actions[bot]','type':'Bot'},'assets':[]}
         if existing:
-            release['assets']=[{'id':100,'name':archive.name,'size':archive.stat().st_size,
+            release['assets']=[{'id':100,'name':archive.name,'state':'uploaded','size':archive.stat().st_size,
                                 'digest':'sha256:'+sha(archive.read_bytes())}]
         if mutation=='target':release['target_commitish']='c'*40
         if mutation=='author':release['author']={'id':5,'login':'someone','type':'User'}
@@ -212,11 +212,11 @@ class ManualRecovery(unittest.TestCase):
                     raw=('preserve '+name).encode()
                     remote.contents[asset_id]=raw
                     # Non-payload attachments need no digest or readback.
-                    remote.releases[17]['assets'].append({'id':asset_id,'name':name,'size':len(raw)})
+                    remote.releases[17]['assets'].append({'id':asset_id,'name':name,'state':'uploaded','size':len(raw)})
                 if conflict:
                     raw=b'existing different package'
                     remote.contents[300]=raw
-                    remote.releases[17]['assets'].append({'id':300,'name':files[0].name,
+                    remote.releases[17]['assets'].append({'id':300,'name':files[0].name,'state':'uploaded',
                                                          'size':len(raw),'digest':'sha256:'+sha(raw)})
                 before=copy.deepcopy(remote.releases[17]['assets'])
                 if conflict:

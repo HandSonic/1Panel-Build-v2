@@ -16,7 +16,7 @@ from workflow_helpers import ROOT, github_jobs, step_by_id
 
 def release(*arches):
     return {'id': 17, 'tag_name': 'v2.4.0', 'draft': False, 'prerelease': False,
-            'assets': [{'name': f'1panel-v2.4.0-linux-{arch}.tar.gz{suffix}'}
+            'assets': [{'name': f'1panel-v2.4.0-linux-{arch}.tar.gz{suffix}', 'state': 'uploaded', 'size': 100}
                        for arch in arches for suffix in ('', '.sha256')]}
 
 
@@ -40,6 +40,20 @@ class ScheduledRelease(unittest.TestCase):
                 self.assertEqual(self.plan(), {'version': 'v2.4.0', 'arches': missing,
                                                'build_required': 'true' if missing else 'false',
                                                'checksum_required': 'false'})
+        self.client.download.assert_not_called()
+        self.client.download_asset.assert_not_called()
+
+    def test_incomplete_upload_never_counts_as_a_complete_pair(self):
+        for suffix in ('', '.sha256'):
+            for change in ({'state': 'starter', 'size': 0}, {'state': 'starter'},
+                           {'size': 0}, {'state': None}, {'size': True}):
+                current = release('amd64', 'arm64', 'riscv64')
+                name = '1panel-v2.4.0-linux-amd64.tar.gz' + suffix
+                asset = next(row for row in current['assets'] if row['name'] == name)
+                asset.update(change, id=91)
+                self.client.release.return_value = current
+                with self.subTest(suffix=suffix, change=change), self.assertRaisesRegex(ValueError, r'Incomplete public asset.*id=91'):
+                    self.plan()
         self.client.download.assert_not_called()
         self.client.download_asset.assert_not_called()
 
