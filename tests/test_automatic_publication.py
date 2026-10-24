@@ -108,7 +108,7 @@ class AutomaticTransaction(unittest.TestCase):
         return None
 
     def repair(self, client, ordered, journal, **kwargs):
-        client.value['assets'] = [dict(id=100+i, name=p.name,
+        client.value['assets'] = [dict(id=100+i, name=p.name, state='uploaded',
              size=facts(p)['bytes'], digest='sha256:'+facts(p)['sha256'])
              for i, p in enumerate(ordered)]
         if self.after_repair:
@@ -163,7 +163,7 @@ class AutomaticTransaction(unittest.TestCase):
 
     def test_writer_ignores_obsolete_plan_and_noops_when_another_writer_finished(self):
         c = Client({'id': 8, 'tag_name': Client.tag, 'draft': False, 'prerelease': False,
-            'body': '', 'assets': [dict(id=91+i,name=p.name,size=facts(p)['bytes'],
+            'body': '', 'assets': [dict(id=91+i,name=p.name,state='uploaded',size=facts(p)['bytes'],
                 digest='sha256:'+facts(p)['sha256']) for i,p in enumerate(self.files[:2])]})
         (self.work/'control'/'automatic-plan.json').write_text('{"operation":"create","before":null}')
         self.assertEqual(ap.publish(self.args,c),'unchanged')
@@ -316,7 +316,7 @@ class PrepareControlFlow(unittest.TestCase):
         self.payload(directory,successful,10,'a'*40)
         packages=[p for p in directory.iterdir() if p.name.endswith(('.tar.gz','.tar.gz.sha256'))]
         client=Client({'id':8,'tag_name':Client.tag,'draft':False,'prerelease':False,'body':'kept notes',
-            'assets':[{'id':i+1,'name':p.name,'size':p.stat().st_size,
+            'assets':[{'id':i+1,'name':p.name,'state':'uploaded','size':p.stat().st_size,
                        'digest':'sha256:'+facts(p)['sha256']} for i,p in enumerate(packages)]})
         return client
 

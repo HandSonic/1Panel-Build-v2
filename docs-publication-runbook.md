@@ -7,7 +7,7 @@ Use the existing `build-offline` workflow in `.github/workflows/build.yml`.
 The check is scheduled for 08:00 UTC (16:00 Beijing time); GitHub may delay its
 actual start. It reads the official Latest stable Release and this repository's
 matching public Release attachment names. An architecture is
-present when its archive and `.sha256` attachment both exist. Existing pairs
+present when its archive and `.sha256` attachment are both uploaded and nonempty. Existing pairs
 are trusted without downloading or validating their contents.
 
 - All seven architectures present: stop before tests and source preparation.
@@ -16,6 +16,8 @@ are trusted without downloading or validating their contents.
   SHA-256 metadata, under the same version writer lock. No build or package download.
 - No matching public Release: build all seven architectures.
 - Authentication, network or API errors: fail the check.
+- An unfinished or empty canonical asset, including a failed upload's `starter`
+  placeholder: fail with its name and ID for explicit repair; never treat it as complete or delete it automatically.
 - A checksum without its archive, or an archive-only asset without a server
   digest: stop before building and use the exact original artifact for repair.
 
@@ -56,7 +58,7 @@ The source/preparation/aggregate gates must have passed. Only independently
 successful architecture outputs are accepted. A known publication-writer failure
 does not invalidate already verified build output; it does not require a rebuild.
 Explicit promotion validates the selected CI package content once after any
-legacy metadata migration. Normal builds trust existing public pairs by name
+legacy metadata migration. Normal builds trust completed, nonempty public pairs by name
 and append only missing output, without downloading those old packages.
 
 ## Builds and PR checks
@@ -131,6 +133,11 @@ A new canonical Release is staged as an owned draft. Its new attachments are
 verified before it becomes public. If finalization has an uncertain result, the
 writer attempts to return that same Release ID to draft and saves a journal.
 Public notes are preserved.
+
+Legacy metadata migration fixes the gzip header so preparing the same original
+CI artifact again produces identical package bytes. A partial upload from an
+older migration still needs its original prepared bytes; a conflicting existing
+asset is never overwritten.
 
 - An empty draft created by this workflow can be resumed by a descendant build.
 - A nonempty owned draft can resume from the same verified build commit, or via

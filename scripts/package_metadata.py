@@ -1,4 +1,5 @@
 """Small, non-executable build inputs carried by ordinary installation archives."""
+import gzip
 import hashlib
 import io
 import json
@@ -61,7 +62,11 @@ def embed_legacy(directory, version):
         prefix = name.removesuffix('.tar.gz') + '/'
         with tempfile.TemporaryDirectory(dir=directory) as temporary:
             output = Path(temporary) / name
-            with tarfile.open(path, 'r:gz') as old, tarfile.open(output, 'w:gz') as new:
+            # The same authenticated legacy artifact must prepare identical
+            # bytes in another run, including after a partial public upload.
+            with tarfile.open(path, 'r:gz') as old, output.open('wb') as stream, \
+                    gzip.GzipFile(filename='', mode='wb', fileobj=stream, mtime=0) as compressed, \
+                    tarfile.open(fileobj=compressed, mode='w') as new:
                 members = old.getmembers()
                 if any(PurePosixPath(m.name) == PurePosixPath(prefix + DIRECTORY) and not m.isdir() for m in members):
                     raise ValueError('Legacy payload conflicts with metadata directory')

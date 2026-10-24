@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import automatic_publication as automatic
+import scheduled_release as scheduled
 import test_automatic_publication as automatic_tests
 import test_publication_recovery as recovery_tests
 
@@ -67,6 +68,36 @@ class ScheduledPublication(unittest.TestCase):
                     self.publish(remote)
                 self.assertEqual(remote.uploads,[])
                 self.assertEqual(remote.downloads,[])
+
+    def test_failed_upload_placeholder_cannot_turn_retry_or_daily_check_green(self):
+        self.payload(self.source,('arm64',),11,'b'*40)
+        self.prepare()
+        for suffix in ('', '.sha256'):
+            remote = self.remote()
+            upload = remote.upload
+            failed_name = f'1panel-{remote.tag}-linux-arm64.tar.gz' + suffix
+            def failed_upload(path):
+                if path.name == failed_name:
+                    remote.releases[8]['assets'].append({'id': 999, 'name': path.name,
+                        'state': 'starter', 'size': 0, 'digest': None})
+                    raise OSError('HTTP 502 after creating an empty starter asset')
+                return upload(path)
+            remote.upload = failed_upload
+            journal = self.args.work / 'control' / 'automatic-journal.json'
+            if journal.exists(): journal.unlink()
+            with self.subTest(suffix=suffix):
+                with self.assertRaisesRegex(OSError, 'HTTP 502'):
+                    self.publish(remote)
+                before = copy.deepcopy(remote.releases[8])
+                uploads = list(remote.uploads)
+                with patch.object(scheduled, 'GitHub', return_value=remote), \
+                     self.assertRaisesRegex(ValueError, r'Incomplete public asset.*id=999'):
+                    scheduled.plan(remote.repo, remote.tag, 'amd64 arm64')
+                with self.assertRaisesRegex(ValueError, r'Incomplete public asset.*id=999'):
+                    self.publish(remote)
+                self.assertEqual(remote.uploads, uploads)
+                self.assertEqual(remote.releases[8], before)
+                self.assertEqual(remote.downloads, [])
 
     def partial(self,suffix,*,matching):
         remote=self.remote()

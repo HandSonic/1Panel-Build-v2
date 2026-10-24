@@ -1,8 +1,12 @@
 import copy
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +15,7 @@ import aggregate_shards
 import automatic_frontend_lock as automatic
 import discover_inputs
 import package_release
+import package_metadata
 import resolved_contract
 import validate_artifacts
 from semantic_configuration import production
@@ -74,6 +79,55 @@ class AutomaticLockTransportTests(unittest.TestCase):
         self.assertEqual(len(records), len(arches))
         self.assertEqual({row['resolved_contract_sha256'] for row in records}, {self.entry['resolved_contract_sha256']})
         self.assertEqual((dist / 'resolved-source.json').read_bytes(), resolved_contract.canonical(self.contract))
+
+    def test_repreparing_the_same_legacy_artifact_resumes_a_partial_publication(self):
+        from release_asset_repair import repair
+        from test_release_repair import FakeGitHub
+        self.build(['amd64'])
+        dist = self.root / 'dist'
+        archive = dist / '1panel-v2.3.2-linux-amd64.tar.gz'
+        prefix = archive.name.removesuffix('.tar.gz') + '/'
+        # Recreate the valid pre-metadata format from a complete package fixture.
+        with tarfile.open(archive) as original:
+            members = [(member, original.extractfile(member).read() if member.isfile() else None)
+                       for member in original.getmembers()]
+        with tarfile.open(archive, 'w:gz') as legacy:
+            for member, body in members:
+                if member.name.startswith(prefix + package_metadata.DIRECTORY + '/'):
+                    continue
+                if member.name == prefix + 'manifest.json':
+                    manifest = json.loads(body)
+                    manifest.pop('publication_format')
+                    manifest['files'] = {name: facts for name, facts in manifest['files'].items()
+                                         if not name.startswith(package_metadata.DIRECTORY + '/')}
+                    body = resolved_contract.canonical(manifest)
+                    member.size = len(body)
+                legacy.addfile(member, io.BytesIO(body) if body is not None else None)
+        summary = json.loads((dist / 'build-manifest.json').read_bytes())
+        sha = hashlib.sha256(archive.read_bytes()).hexdigest()
+        summary['artifacts'][0].update(sha256=sha, size=archive.stat().st_size)
+        (dist / 'build-manifest.json').write_bytes(resolved_contract.canonical(summary))
+        line = sha + '  ' + archive.name + '\n'
+        (dist / (archive.name + '.sha256')).write_text(line)
+        (dist / 'checksums.txt').write_text(line)
+        self.assertEqual(len(validate_artifacts.validate_dist(dist, 'v2.3.2', ['amd64'])), 1)
+        prepared = []
+        for index in range(2):
+            target = self.root / f'prepared-{index}'
+            shutil.copytree(dist, target)
+            with patch('gzip.time.time', return_value=1700000000 + index):
+                self.assertTrue(package_metadata.embed_legacy(target, 'v2.3.2'))
+            self.assertEqual(len(validate_artifacts.validate_dist(target, 'v2.3.2', ['amd64'], require_embedded=True)), 1)
+            prepared.append(target)
+        self.assertEqual({path.name: path.read_bytes() for path in prepared[0].iterdir()},
+                         {path.name: path.read_bytes() for path in prepared[1].iterdir()})
+        client = FakeGitHub()
+        client.assets = {1: (archive.name, (prepared[0] / archive.name).read_bytes())}
+        files = [prepared[1] / (archive.name + suffix) for suffix in ('', '.sha256')]
+        result = repair(client, files, self.root / 'recovery-journal.json')
+        self.assertEqual(result['phase'], 'complete')
+        self.assertEqual(client.calls, [('upload', archive.name + '.sha256')])
+        self.assertEqual(client.assets[1][1], (prepared[0] / archive.name).read_bytes())
 
     def test_incomplete_or_tampered_shard_pair_fails_before_aggregate_output(self):
         shards = self.shards(['amd64', 'arm64'])

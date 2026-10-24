@@ -122,7 +122,8 @@ Version-tag pushes and non-candidate manual `build` runs build the requested
 matrix, preserve verified artifacts and publish a canonical release.
 Daily runs check the latest official stable version and the names of this
 repository's public release attachments before running tests. Existing archive
-and SHA-256 pairs are trusted without downloading them. A complete seven-architecture
+and SHA-256 pairs must be uploaded and nonempty, and are trusted without downloading
+them. An unfinished or empty asset stops the check for explicit repair. A complete seven-architecture
 release ends the run immediately; otherwise only missing architectures enter the
 build matrix. An existing archive missing only its SHA-256 sidecar is completed
 from GitHub's digest metadata without a build or package download. A sidecar
@@ -170,6 +171,10 @@ resume on the exact build commit when every existing attachment matches the
 verified output. Multiple drafts, changed notes, another author or conflicting
 bytes stop publication. `promote-existing` can also recover that draft using the
 exact original CI artifact, ZIP digest and built commit.
+Legacy metadata conversion uses a fixed gzip header so repeated preparation of
+the same input preserves package hashes. Partial uploads made by an older
+conversion still require their original prepared bytes; conflicting assets are
+never replaced automatically.
 Only older assets without server digests need downloaded-byte verification.
 A run with successful build gates and only a
 known publication-writer failure can supply that artifact without another build.
