@@ -66,6 +66,37 @@ class SourceDiscoveryTests(unittest.TestCase):
   v=FakeVendor();self.assertEqual(discovery.latest(v,'stable'),'v2.99.0');self.assertEqual(discovery.latest(v,'beta'),'v2.100.0-beta.1')
   value,_,_=discovery.resolve_source(v,'v2.99.0');self.assertEqual(value['source']['commit'],'a'*40);self.assertEqual(value['go'],'1.25.8')
   with self.assertRaises(ValueError):discovery.resolve_source(v,'v2.99.0-beta.1','stable')
+ def test_prerelease_discovery_finds_channel_on_second_page(self):
+  first=[{'tag_name':f'v2.99.{i}','draft':False,'prerelease':False} for i in range(100)]
+  second=[{'tag_name':'v2.100.0-beta.1','draft':False,'prerelease':True}]
+  vendor=FakeVendor()
+  with patch.object(vendor,'api',side_effect=[first,second]) as api:
+   self.assertEqual(discovery.latest(vendor,'beta'),'v2.100.0-beta.1')
+  self.assertEqual([call.args for call in api.call_args_list],[(discovery.SOURCE,'releases?per_page=100'),(discovery.SOURCE,'releases?per_page=100&page=2')])
+ def test_prerelease_discovery_selects_numeric_latest_across_pages(self):
+  def release(version,**flags):return dict(tag_name=version,draft=False,prerelease=True)|flags
+  first=[release('v2.9.0-dev.99')]+[release(f'v2.8.{i}',prerelease=False) for i in range(99)]
+  second=[release('v2.10.0-dev.2'),release('v2.10.0-dev.10'),release('v2.999.0-beta.1'),
+          release('v2.999.0-dev.1',draft=True),release('v2.999.0-dev.2',prerelease=False)]
+  vendor=FakeVendor()
+  with patch.object(vendor,'api',side_effect=[first,second]):
+   self.assertEqual(discovery.latest(vendor,'dev'),'v2.10.0-dev.10')
+ def test_prerelease_discovery_rejects_interrupted_or_malformed_catalogue(self):
+  first=[{'tag_name':'v2.100.0-beta.1','draft':False,'prerelease':True}]*100
+  for response in (OSError('network unavailable'),{},[None],[{'tag_name':None}],
+                   [dict(first[0],prerelease='true')],first+[first[0]]):
+   vendor=FakeVendor()
+   with self.subTest(response=response),patch.object(vendor,'api',side_effect=[first,response]) as api:
+    with self.assertRaises(OSError if isinstance(response,OSError) else ValueError):
+     discovery.latest(vendor,'beta')
+    self.assertEqual(api.call_count,2)
+ def test_prerelease_discovery_limit_never_returns_an_incomplete_maximum(self):
+  page=[{'tag_name':'v2.100.0-beta.1','draft':False,'prerelease':True}]*100
+  vendor=FakeVendor()
+  with patch.object(vendor,'api',return_value=page) as api:
+   with self.assertRaisesRegex(ValueError,'catalogue exceeds discovery limit'):
+    discovery.latest(vendor,'beta')
+   self.assertEqual(api.call_count,100)
  def test_npm_resolution_drift_rejected(self):
   for path in ['frontend/.npmrc','package.json','frontend/npm-shrinkwrap.json']:
    v=FakeVendor();v.files[path]=b'{}'

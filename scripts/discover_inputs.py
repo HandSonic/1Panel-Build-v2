@@ -128,16 +128,27 @@ def latest(vendor, mode):
             release.get('prerelease') is not False):
             raise ValueError('Official latest release is not a supported stable v2 release')
         return version
-    releases = vendor.api(SOURCE, 'releases?per_page=100')
     candidates = []
-    for release in releases:
-        v = release.get('tag_name', '')
-        if release.get('draft') or not VERSION.fullmatch(v):
-            continue
-        if identity(v) != mode or bool(release.get('prerelease')) != (mode != 'stable'):
-            continue
-        m = VERSION.fullmatch(v)
-        candidates.append(((int(m[1]), int(m[2]), int(m[4] or 0)), v))
+    for page in range(1, 101):
+        endpoint = 'releases?per_page=100' + (f'&page={page}' if page > 1 else '')
+        releases = vendor.api(SOURCE, endpoint)
+        if not isinstance(releases, list) or len(releases) > 100:
+            raise ValueError('Invalid official release catalogue page')
+        for release in releases:
+            if (not isinstance(release, dict) or not isinstance(release.get('tag_name'), str) or
+                type(release.get('draft')) is not bool or type(release.get('prerelease')) is not bool):
+                raise ValueError('Invalid official release catalogue entry')
+            v = release['tag_name']
+            if release['draft'] or not VERSION.fullmatch(v):
+                continue
+            if identity(v) != mode or release['prerelease'] is not True:
+                continue
+            m = VERSION.fullmatch(v)
+            candidates.append(((int(m[1]), int(m[2]), int(m[4] or 0)), v))
+        if len(releases) < 100:
+            break
+    else:
+        raise ValueError('Official release catalogue exceeds discovery limit')
     if not candidates:
         raise ValueError('No official release found for requested channel')
     return max(candidates)[1]
