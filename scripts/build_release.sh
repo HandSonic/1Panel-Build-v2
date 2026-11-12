@@ -9,10 +9,7 @@ for ARCH in $TARGET_ARCHES; do
     python3 "$TOOLS/prepare_kvm_helper.py" "$ARCH"
     GOARCH="$ARCH"; GOARM=""
     if [[ "$ARCH" == armv7 ]]; then GOARCH=arm; GOARM=7; fi
-    for component in core agent; do
-        (cd "$component"; CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" GOARM="$GOARM" \
-            python3 "$TOOLS/go_arch_compat.py" "$GOARCH" "../build/1panel-$component")
-    done
+    GOARM="$GOARM" python3 "$TOOLS/go_arch_compat.py" "$GOARCH"
     python3 "$TOOLS/package_release.py" package "$PWD" "$VERSION" "$ARCH"
 done
 python3 "$TOOLS/package_release.py" finalize "$PWD" "$VERSION" "$TARGET_ARCHES"

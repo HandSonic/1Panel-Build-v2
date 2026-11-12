@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build-only modernc compatibility for source graphs without linux/loong64.
+"""Check and build Go components with a temporary overlay where loong64 needs it.
 
 No 1Panel release lookup is used. Original go.mod/go.sum remain immutable and
 all other targets use the original graph. Pins are deliberately paired: modernc
 SQLite requires the libc version in its own go.mod (see upstream documentation).
 """
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import json
 import os
 from pathlib import Path
@@ -17,6 +17,7 @@ import tempfile
 
 PINS = {'modernc.org/sqlite': 'v1.29.10', 'modernc.org/libc': 'v1.49.3'}
 PACKAGES = ('modernc.org/sqlite/lib', 'modernc.org/libc/errno')
+SERVER = './cmd/server/main.go'
 
 
 def objects(text):
@@ -143,16 +144,36 @@ def module_for_arch(cwd, arch):
         yield modfile
 
 
+def run_component(args, cwd, arch, modfile):
+    if modfile is not None:
+        run(args, cwd, arch, modfile)
+        return
+    subprocess.run(['go', *args], cwd=cwd,
+                   env=dict(os.environ, CGO_ENABLED='0', GOOS='linux', GOARCH=arch),
+                   stdout=subprocess.DEVNULL if args[0] == 'list' else None, check=True)
+
+
+def build_components(root, arch):
+    with ExitStack() as stack:
+        components = [(root / name, stack.enter_context(module_for_arch(root / name, arch)))
+                      for name in ('core', 'agent')]
+        # Asking for EmbedFiles makes Go resolve the patterns of the actual
+        # build, including transitive packages and target-specific source files.
+        # Check both components before either expensive compilation starts.
+        for directory, modfile in components:
+            print(f'Checking Go build inputs: linux/{arch} {directory.name}', flush=True)
+            run_component(['list', '-deps', '-json=EmbedFiles', '-buildvcs=false', SERVER],
+                          directory, arch, modfile)
+        for directory, modfile in components:
+            output = f'../build/1panel-{directory.name}'
+            run_component(['build', '-trimpath', '-buildvcs=false', '-ldflags', '-s -w', '-o', output, SERVER],
+                          directory, arch, modfile)
+
+
 def main():
-    if len(sys.argv) != 3:
-        raise SystemExit('usage: go_arch_compat.py ARCH OUTPUT')
-    arch, output = sys.argv[1:]
-    with module_for_arch(Path.cwd(), arch) as modfile:
-        if modfile is None:
-            subprocess.run(['go', 'build', '-trimpath', '-buildvcs=false', '-ldflags', '-s -w', '-o', output, './cmd/server/main.go'],
-                           env=dict(os.environ, CGO_ENABLED='0', GOOS='linux', GOARCH=arch), check=True)
-        else:
-            run(['build', '-trimpath', '-buildvcs=false', '-ldflags', '-s -w', '-o', output, './cmd/server/main.go'], Path.cwd(), arch, modfile)
+    if len(sys.argv) != 2:
+        raise SystemExit('usage: go_arch_compat.py ARCH (run from the prepared source root)')
+    build_components(Path.cwd(), sys.argv[1])
 
 
 if __name__ == '__main__':
