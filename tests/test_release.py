@@ -1,7 +1,7 @@
 import hashlib,io,json,os,pathlib,struct,subprocess,sys,tarfile,tempfile,unittest
 from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
-import download_resources,package_release,validate_artifacts
+import download_resources,package_release,prepare_kvm_helper,validate_artifacts
 from embedded_configuration import expected_bytes
 
 def executable_elf(arch,payload=b'\0'):
@@ -34,6 +34,28 @@ class ELFValidation(unittest.TestCase):
             data=bytearray(original);struct.pack_into('<'+fmt,data,offset,value);cases[name]=data
         for name,data in cases.items():
             with self.subTest(case=name),self.assertRaises(ValueError):validate_artifacts.validate_elf(data,'amd64')
+
+
+class KVMHelperTests(unittest.TestCase):
+    def test_only_declared_target_is_downloaded_and_checked_before_install(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = pathlib.Path(work)
+            helper = root / 'agent/utils/vm/helper'
+            with patch.object(prepare_kvm_helper.subprocess, 'run') as download:
+                prepare_kvm_helper.prepare(root, 'amd64')
+                helper.mkdir(parents=True)
+                (helper / 'embedded_arm64.go').write_text('//go:embed bin/1panel-kvm-arm64\n')
+                prepare_kvm_helper.prepare(root, 'amd64')
+                prepare_kvm_helper.prepare(root, 'loong64')
+                download.assert_not_called()
+
+                def save(command, *, check):
+                    pathlib.Path(command[command.index('--output') + 1]).write_bytes(executable_elf('amd64'))
+
+                download.side_effect = save
+                with self.assertRaisesRegex(ValueError, 'Wrong ELF target'):
+                    prepare_kvm_helper.prepare(root, 'arm64')
+                self.assertEqual(list((helper / 'bin').iterdir()), [])
 
 
 class ReleaseTests(unittest.TestCase):

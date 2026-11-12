@@ -6,6 +6,7 @@ TARGET_ARCHES=$(python3 -c 'import sys;sys.path.insert(0,sys.argv[1]);from valid
 if [[ -d dist ]] && [[ -n "$(ls -A dist)" ]]; then echo 'dist must be empty' >&2; exit 1; fi
 mkdir -p build dist
 for ARCH in $TARGET_ARCHES; do
+    python3 "$TOOLS/prepare_kvm_helper.py" "$ARCH"
     GOARCH="$ARCH"; GOARM=""
     if [[ "$ARCH" == armv7 ]]; then GOARCH=arm; GOARM=7; fi
     for component in core agent; do
