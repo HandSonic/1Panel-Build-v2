@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -28,6 +29,18 @@ class Compat(unittest.TestCase):
             with patch.object(compat, 'run') as run, compat.module_for_arch(self.root, arch) as modfile:
                 self.assertIsNone(modfile)
                 run.assert_not_called()
+
+    def test_agent_input_failure_prevents_compiling_either_component(self):
+        def go(command, *, cwd, **kwargs):
+            self.assertEqual(command[:2], ['go', 'list'])
+            if cwd.name == 'agent':
+                raise subprocess.CalledProcessError(1, command)
+
+        with patch.object(compat.subprocess, 'run', side_effect=go) as process:
+            with self.assertRaises(subprocess.CalledProcessError):
+                compat.build_components(self.root, 'arm64')
+        self.assertEqual([call.kwargs['cwd'].name for call in process.call_args_list],
+                         ['core', 'agent'])
 
     def test_supported_graph_stays_original(self):
         with patch.object(compat, 'run', return_value=self.graph('v1.36.0', 'v1.61.0')) as run, patch.object(compat, 'capabilities', return_value=[]), compat.module_for_arch(self.root, 'loong64') as modfile:
